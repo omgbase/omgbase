@@ -142,7 +142,9 @@ vernacular and `--server` does not apply.
   `omg sync --watch` (drives the local reconcile loop — its *engine-side*
   primitives `observe*` **are** in the catalog), `omg mcp` (starts the server).
 - **Admin / maintenance:** `omg rebuild-index`, `omg gc`, `omg doctor`,
-  `omg embed`, `omg config`, and (cli 4.6) `omg history plan | export |
+  `omg embed`, `omg config`, `omg history enable [--provider native|git] |
+  disable | purge | checkpoint` (cli 5.1–5.5; the git provider's checkpoint
+  worker, `spec/store` §5.12), and (cli 4.6) `omg history plan | export |
   attach | detach | list` — history retention writes segment files under the
   workspace, takes the writer lock and is driven by a policy and a
   directory (`spec/store` §7.1); the catalog's whole trace of it is the

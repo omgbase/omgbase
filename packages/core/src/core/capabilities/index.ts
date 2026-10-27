@@ -1,12 +1,14 @@
 export type {
-  Capabilities, CapabilitiesFactory, HistoryRecorder, SemanticProvider, SemanticScorer, SemanticBlockRow, SemanticDrainOptions, SemanticFreshness, IdentityClaims,
+  Capabilities, CapabilitiesFactory, HistoryRecorder, HistoryReader, HistoryProvider, HistoryProviderConfig, HistoryProviderAvailability, HistoryCheckpointResult, CommitRecord, SemanticProvider, SemanticScorer, SemanticBlockRow, SemanticDrainOptions, SemanticFreshness, IdentityClaims,
   RevisionTransition, CapturedRevision, RevisionQueryRow, SemanticVec, BlockContextInput, BlockContextResolver,
 } from "./types.js";
 export { bindCapabilities, capabilitiesOf, requireHistory, requireSemantic, semanticOf, claimsOf } from "./registry.js";
-export { defaultCapabilities, historyCapabilities, semanticCapabilities, envCapabilities, envComposition, compositionCapabilities, compositionHasHistory, compositionHasSemantic, CAPABILITIES_ENV, COMPOSITIONS, type Composition } from "./default.js";
+export { defaultCapabilities, historyCapabilities, semanticCapabilities, gitCapabilities, envCapabilities, envComposition, compositionCapabilities, compositionHasHistory, compositionHasSemantic, compositionHasGitProvider, CAPABILITIES_ENV, COMPOSITIONS, type Composition } from "./default.js";
+export { registerHistoryProvider, unregisterHistoryProvider, registeredHistoryProviders, attachedProviders, type HistoryProviderFactory } from "./providers.js";
 export { coreCapabilities } from "./core.js";
 export {
   CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, HISTORY_WRITER_REQUIRED_MESSAGE, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_DISABLED_MESSAGE, semanticUnavailableMessage,
+  historyProviderUnavailableMessage, historyUnsupportedMessage, historyProviderNotAttachedMessage, HISTORY_PROVIDER_UNAVAILABLE_ALERT,
   CaptureFailed, captureFailedMessage,
   type CapabilityName, type CapabilityState, type HistoryReadState,
 } from "./errors.js";

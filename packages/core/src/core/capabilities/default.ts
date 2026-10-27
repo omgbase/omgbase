@@ -4,6 +4,7 @@ import { HistoryRecorderImpl } from "./history.js";
 import { SemanticProviderImpl } from "./semantic.js";
 import { IdClaims } from "./claims.js";
 import { coreCapabilities } from "./core.js";
+import { attachedProviders } from "./providers.js";
 
 /**
  * The full composition — what every store ran with before Phase 1: the
@@ -19,6 +20,9 @@ export function defaultCapabilities(store: Store): Capabilities {
     history: new HistoryRecorderImpl(store),
     semantic: new SemanticProviderImpl(store),
     claims: new IdClaims(store),
+    // Phase 6a: every alternative history provider the host registered (the git
+    // provider in production) — a `provider: git` repository works on the full build.
+    providers: attachedProviders(store),
   };
 }
 
@@ -35,6 +39,7 @@ export function historyCapabilities(store: Store): Capabilities {
     history: new HistoryRecorderImpl(store),
     semantic: null,
     claims: new IdClaims(store),
+    providers: {},
   };
 }
 
@@ -52,14 +57,35 @@ export function semanticCapabilities(store: Store): Capabilities {
     history: null,
     semantic: new SemanticProviderImpl(store),
     claims: new IdClaims(store),
+    providers: {},
+  };
+}
+
+/**
+ * The core + git-history composition (modular-core Phase 6a; spec/store §9.6's
+ * fifth composition): the claims and every REGISTERED alternative history
+ * provider — the git provider when the host attached it — with NO native
+ * recorder and NO semantic module. A repository it creates is born `disabled`;
+ * `history enable --provider git` turns its capture on through the provider;
+ * the native `history enable` and every read of a native-captured repository
+ * answer `capability_unavailable { history, unavailable }` exactly as on `core`.
+ * Selected by `OMGBASE_CAPABILITIES=git`. Without a registered provider it is
+ * the core composition with a provider that is `unavailable`.
+ */
+export function gitCapabilities(store: Store): Capabilities {
+  return {
+    history: null,
+    semantic: null,
+    claims: new IdClaims(store),
+    providers: attachedProviders(store),
   };
 }
 
 /** The environment variable that selects the composition a factory-less store runs with. */
 export const CAPABILITIES_ENV = "OMGBASE_CAPABILITIES";
 
-/** The four compositions of the modular-core plan (§5): what `OMGBASE_CAPABILITIES` accepts. `full` is the default. */
-export const COMPOSITIONS = ["core", "history", "semantic", "full"] as const;
+/** The compositions of the modular-core plan (§5; Phase 6a added `git`): what `OMGBASE_CAPABILITIES` accepts. `full` is the default. */
+export const COMPOSITIONS = ["core", "history", "semantic", "full", "git"] as const;
 export type Composition = (typeof COMPOSITIONS)[number];
 
 /** The composition the environment names: unset or empty → `full`; anything outside `COMPOSITIONS` is a configuration error. */
@@ -77,6 +103,7 @@ export function compositionCapabilities(composition: Composition): CapabilitiesF
     case "core": return coreCapabilities;
     case "history": return historyCapabilities;
     case "semantic": return semanticCapabilities;
+    case "git": return gitCapabilities;
   }
 }
 
@@ -90,12 +117,18 @@ export function compositionHasSemantic(composition: Composition): boolean {
   return composition === "full" || composition === "semantic";
 }
 
+/** Does the composition attach the registered alternative history providers — the git provider (Phase 6a)? `full` and `git`; the three reduced 5a compositions attach none. */
+export function compositionHasGitProvider(composition: Composition): boolean {
+  return composition === "full" || composition === "git";
+}
+
 /**
  * The composition the environment names: `core` → `coreCapabilities` (no
  * history module, no semantic module — a core-only build, Phase 4a); `history`
  * → `historyCapabilities` (no semantic module); `semantic` →
- * `semanticCapabilities` (no history module); unset, empty or `full` → the
- * defaults (Phase 5a: the plan's four compositions). Anything else is a
+ * `semanticCapabilities` (no history module); `git` → `gitCapabilities` (no
+ * native recorder, no semantic module, the registered git provider — Phase 6a);
+ * unset, empty or `full` → the defaults (Phase 5a: the plan's four compositions). Anything else is a
  * configuration error. `OMGBASE_CAPABILITIES` is a TEST-ONLY override, not a
  * production mechanism: in production the composition is the build's (the
  * TypeScript engine always carries both modules) and whether a repository's

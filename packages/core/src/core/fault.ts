@@ -18,6 +18,7 @@
 //   commit.after-commit         after the api path's transaction committed, before any file is written → the rows are durable, the pending rows owe the files; `recoverRepo` replays them
 //   materialize.before-write    inside the materializer, before a file is written → the pending row stays; the next replay writes it
 //   materialize.after-write     inside the materializer, after the file was written, before its row is deleted → the next replay finds the bytes and clears the row
+//   git.commit                  (Phase 6a, spec/store §5.12) inside the git history provider's checkpoint worker, after the blobs, the tree and the commit object are written and before `update-ref` moves the branch → the branch tip is unchanged, the objects dangle; the next run resumes from the tip's `omgbase-seq` trailer and writes the SAME commit (deterministic bytes), closing the gap
 //
 // Counting is per site and per process: `OMGBASE_FAULT=feed.append:2` throws on
 // the second feed row this process appends. `resetFaults()` restarts the counts
@@ -25,7 +26,7 @@
 
 export const FAULT_ENV = "OMGBASE_FAULT";
 
-export const FAULT_SITES = ["recorder.capture", "feed.append", "commit.after-commit", "materialize.before-write", "materialize.after-write"] as const;
+export const FAULT_SITES = ["recorder.capture", "feed.append", "commit.after-commit", "materialize.before-write", "materialize.after-write", "git.commit"] as const;
 export type FaultSite = (typeof FAULT_SITES)[number];
 
 /** The error an armed site throws on its nth pass. `message` is pinned: `injected fault at <site> (pass <n>)`. */

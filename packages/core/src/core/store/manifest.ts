@@ -2,9 +2,9 @@ import type { Database } from "better-sqlite3";
 import { sha256 } from "../hash.js";
 import { effectiveSettingsOf } from "./settings.js";
 import { capabilitiesOf } from "../capabilities/registry.js";
-import { CapabilityUnavailable, CaptureFailed, captureFailedMessage, type CapabilityName } from "../capabilities/errors.js";
+import { CapabilityUnavailable, CaptureFailed, captureFailedMessage, historyProviderNotAttachedMessage, HISTORY_PROVIDER_UNAVAILABLE_ALERT, type CapabilityName } from "../capabilities/errors.js";
 import { faultPoint } from "../fault.js";
-import type { CommitRecord, HistoryPurgeOutcome, HistoryRecorder } from "../capabilities/types.js";
+import type { CommitRecord, HistoryProvider, HistoryProviderConfig, HistoryPurgeOutcome, HistoryReader, HistoryRecorder } from "../capabilities/types.js";
 import { clearAlert, raiseAlert } from "./alerts.js";
 import { HISTORY_DDL } from "./schema.js";
 import { appendFeedEntry, appendFeedRow } from "./feed.js";
@@ -139,6 +139,96 @@ export function coverageFrom(row: ManifestRow | null): string | null {
   return row && row.coverage.length > 0 ? row.coverage[0]!.from : null;
 }
 
+// ---- the history provider (spec/store §5.12, modular-core Phase 6a) --------------------------
+//
+// A repository's history is kept by ONE provider: the native recorder (the
+// history bundle's tables — the row's `config` is `{}`) or an alternative the
+// composition layer attached (`Capabilities.providers`, by name — the git
+// provider of `@omgbase/git-adapter`, `config.provider = "git"`). The two are
+// exclusive per repository: `history enable --provider <other>` on an enabled
+// row is refused; switching is `history disable` then `enable --provider`.
+
+/** The native provider's name — what a row without `config.provider` reads. */
+export const NATIVE_PROVIDER = "native";
+
+/** The history provider a manifest row names (`config.provider`; absent → native). */
+export function historyProviderOf(row: ManifestRow | null): string {
+  const p = row?.config.provider;
+  return typeof p === "string" && p !== "" ? p : NATIVE_PROVIDER;
+}
+
+/** The attached provider named `name`, or null when the composition attached none of that name. */
+export function attachedProvider(db: Database, name: string): HistoryProvider | null {
+  return capabilitiesOf(db).providers[name] ?? null;
+}
+
+/**
+ * The provider a repository's row names, or the refusal: `capability_unavailable
+ * { history, unavailable, provider, reason }` when the composition never
+ * attached it or it cannot run here (`available()` not ok — then the
+ * `history_provider_unavailable` alert is raised at `now`; a later checkpoint
+ * clears it). Reads fail with it; writes continue (§5.12).
+ */
+export function requireProvider(db: Database, repoId: string, name: string, now: string = new Date().toISOString()): HistoryProvider {
+  const p = attachedProvider(db, name);
+  if (!p) throw CapabilityUnavailable.historyProviderUnavailable(name, historyProviderNotAttachedMessage(name));
+  const a = p.available();
+  if (!a.ok) {
+    raiseProviderUnavailable(db, repoId, name, a.reason, now);
+    throw CapabilityUnavailable.historyProviderUnavailable(name, a.reason);
+  }
+  return p;
+}
+
+/** Raise the `history_provider_unavailable` alert (spec/store §5.8, §5.12): `error`, detail `{ provider, reason }`. */
+export function raiseProviderUnavailable(db: Database, repoId: string, provider: string, reason: string, now: string): void {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'alerts'").get()) return;
+  raiseAlert(db, repoId, { code: HISTORY_PROVIDER_UNAVAILABLE_ALERT, severity: "error", message: CapabilityUnavailable.historyProviderUnavailable(provider, reason).message, detail: { provider, reason } }, now);
+}
+
+/** A checkpoint that ran ends the condition: the active `history_provider_unavailable` alert is cleared. */
+export function clearProviderUnavailable(db: Database, repoId: string, now: string): void {
+  clearAlert(db, repoId, HISTORY_PROVIDER_UNAVAILABLE_ALERT, now);
+}
+
+/** The row's `config` as a provider config (`provider` filled in). */
+export function providerConfigOf(row: ManifestRow): HistoryProviderConfig {
+  return { ...row.config, provider: historyProviderOf(row) };
+}
+
+/**
+ * The reader a repository's history is read through (spec/surface §3; Phase
+ * 6a): the native recorder when the row names no provider and the bundle's
+ * tables exist (what was captured is readable whatever the row's state —
+ * `historyReader`), the attached provider's reader when it names one (its
+ * storage is readable after a `disable` too; `history purge` removes it). Null
+ * when nothing was ever captured natively; throws `capability_unavailable {
+ * history, unavailable }` when the named provider is not attached or cannot
+ * run (never for native — a missing module is the caller's `unavailable`).
+ */
+export function historyReaderFor(db: Database, repoId: string): HistoryReader | null {
+  const row = readCapability(db, repoId, "history");
+  const provider = historyProviderOf(row);
+  if (provider === NATIVE_PROVIDER) return historyReader(db);
+  return requireProvider(db, repoId, provider).reader(repoId, providerConfigOf(row!));
+}
+
+/** `historyReaderFor` by a document (the `_revisions` relation, `readDocumentAtRevision`): the reader of the document's repository, null for an unknown document. */
+export function historyReaderForDoc(db: Database, docId: string): HistoryReader | null {
+  const row = db.prepare("SELECT repo_id FROM docs WHERE doc_id = ?").get(docId) as { repo_id: string } | undefined;
+  return row ? historyReaderFor(db, row.repo_id) : null;
+}
+
+/** `historyReaderFor` that never throws: null when the provider cannot run (the `revisions` query root lists what exists and is never an error). */
+export function historyReaderIfAvailable(db: Database, repoId: string): HistoryReader | null {
+  try {
+    return historyReaderFor(db, repoId);
+  } catch (e) {
+    if (e instanceof CapabilityUnavailable) return null;
+    throw e;
+  }
+}
+
 interface WriteInput {
   capability: CapabilityName;
   state: ManifestState;
@@ -248,9 +338,13 @@ export function claimMintedAt(db: Database, id: string): string | null {
  * the caller is `docs_read { at }` / `docs_read_at`.
  */
 export function historyReadRefusal(db: Database, repoId: string, rev: string, opts: { docId?: string; readFix?: boolean } = {}): never {
-  if (!capabilitiesOf(db).history) throw CapabilityUnavailable.historyUnavailable();
-  if (historyReader(db)?.hasRevision(rev)) throw new TargetMissingRevision(rev, opts.docId ?? null);
   const row = readCapability(db, repoId, "history");
+  // Phase 6a: a repository kept by an attached provider decides a token of its
+  // own form (a git sha) in its reader; here the token is one the provider did
+  // not hold — a head token (`r_`), decided by the claim and the coverage below.
+  const provider = historyProviderOf(row);
+  if (provider === NATIVE_PROVIDER && !capabilitiesOf(db).history) throw CapabilityUnavailable.historyUnavailable();
+  if (historyReaderFor(db, repoId)?.hasRevision(rev)) throw new TargetMissingRevision(rev, opts.docId ?? null);
   const enabled = row !== null && row.state === "enabled";
   const mintedAt = claimMintedAt(db, rev);
   if (mintedAt === null) {
@@ -276,10 +370,10 @@ export class TargetMissingRevision extends Error {
   }
 }
 
-/** Is any repository's history row `enabled` (the opener's rule for executing the bundle's DDL: one database holds every repository)? */
+/** Is any repository's history row `enabled` under the NATIVE provider (the opener's rule for executing the bundle's DDL: one database holds every repository; a `provider: git` row needs no table — Phase 6a)? */
 export function anyHistoryEnabled(db: Database): boolean {
   if (!manifestTableExists(db)) return false;
-  return !!db.prepare("SELECT 1 FROM capabilities WHERE capability = 'history' AND state = 'enabled' LIMIT 1").get();
+  return !!db.prepare("SELECT 1 FROM capabilities WHERE capability = 'history' AND state = 'enabled' AND json_extract(config, '$.provider') IS NULL LIMIT 1").get();
 }
 
 /**
@@ -294,7 +388,9 @@ export function captureFor(db: Database, repoId: string | null): HistoryRecorder
   if (!history) return null;
   if (repoId === null) return historyBundlePresent(db) ? history : null;
   const row = readCapability(db, repoId, "history");
-  if (!row || row.state !== "enabled") return null;
+  // Phase 6a: a repository kept by an attached provider is captured by the
+  // provider's own worker, never inside the commit — no recorder here.
+  if (!row || row.state !== "enabled" || historyProviderOf(row) !== NATIVE_PROVIDER) return null;
   return history;
 }
 
@@ -336,6 +432,8 @@ export interface HistoryLifecycleResult {
   changed: boolean;
   /** `enable`: the baseline commit's id and the revisions it wrote (null when nothing changed). */
   baseline: { commit: string; revisions: number } | null;
+  /** `enable --provider git` (Phase 6a): the branch tip after the baseline commit. */
+  tip?: string | null;
 }
 
 /**
@@ -354,26 +452,80 @@ export interface HistoryLifecycleResult {
  * history, unavailable }`: nothing can capture here). The caller holds the
  * writer lock and no transaction (the baseline is one of its own).
  */
-export function enableHistory(db: Database, repoId: string, opts: { now?: string; writerRequires?: boolean } = {}): HistoryLifecycleResult {
-  const history = capabilitiesOf(db).history;
-  if (!history) throw CapabilityUnavailable.historyUnavailable();
+export function enableHistory(db: Database, repoId: string, opts: { now?: string; writerRequires?: boolean; provider?: string; providerOptions?: Record<string, unknown> } = {}): HistoryLifecycleResult {
+  const requested = opts.provider ?? NATIVE_PROVIDER;
   const now = opts.now ?? new Date().toISOString();
   const existing = readCapability(db, repoId, "history");
-  if (existing && existing.state === "enabled") return { row: existing, changed: false, baseline: null };
+  if (existing && existing.state === "enabled") {
+    // Phase 6a (spec/store §5.12): one provider per repository — switching is `disable` then `enable --provider`.
+    const current = historyProviderOf(existing);
+    if (current !== requested) throw new HistoryProviderConflict(current, requested);
+    return { row: existing, changed: false, baseline: null };
+  }
+  if (requested !== NATIVE_PROVIDER) return enableProviderHistory(db, repoId, requested, existing, now, opts);
+  const history = capabilitiesOf(db).history;
+  if (!history) throw CapabilityUnavailable.historyUnavailable();
   return db.transaction((): HistoryLifecycleResult => {
     applyHistoryBundle(db);
-    const commit = appendFeedRow(db, { repoId, ts: now, origin: "import", reason: HISTORY_ENABLED_REASON });
-    const live = db.prepare("SELECT doc_id, path, head, file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL AND head IS NOT NULL ORDER BY rowid").all(repoId) as { doc_id: string; path: string; head: string; file_hash: Buffer }[];
-    for (const d of live) appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId: d.doc_id, path: d.path, head: d.head, hash: d.file_hash, kind: "changed" });
-    const record: CommitRecord = { commitId: commit.commitId, repoId, epoch: commit.epoch, seq: commit.seq, ts: now, origin: "import", actor: null, reason: HISTORY_ENABLED_REASON, batchId: commit.batchId, ops: null };
+    const { commit, record } = appendBaselineRow(db, repoId, now);
     const { revisions } = history.baseline(record);
     const coverage = [...(existing?.coverage ?? []), { from: now, to: null }];
     writeRow(db, repoId, {
-      capability: "history", state: "enabled", interfaceV: existing?.interface_v ?? HISTORY_INTERFACE_V, dataV: existing?.data_v ?? HISTORY_DATA_V, config: existing?.config ?? {},
+      // A re-enable under the native provider leaves a previous provider's config behind: the row is native again (`{}`).
+      capability: "history", state: "enabled", interfaceV: existing?.interface_v ?? HISTORY_INTERFACE_V, dataV: existing?.data_v ?? HISTORY_DATA_V, config: historyProviderOf(existing) === NATIVE_PROVIDER ? (existing?.config ?? {}) : {},
       coverage, writerRequires: opts.writerRequires ?? true, now,
     });
     return { row: readCapability(db, repoId, "history")!, changed: true, baseline: { commit: commit.commitId, revisions } };
   })();
+}
+
+/** §5.9 step (2): the baseline feed row — `origin = 'import'`, `reason = 'history enabled'`, one `changed` entry per live document under its existing head — and its `CommitRecord`. */
+function appendBaselineRow(db: Database, repoId: string, now: string): { commit: ReturnType<typeof appendFeedRow>; record: CommitRecord } {
+  const commit = appendFeedRow(db, { repoId, ts: now, origin: "import", reason: HISTORY_ENABLED_REASON });
+  const live = db.prepare("SELECT doc_id, path, head, file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL AND head IS NOT NULL ORDER BY rowid").all(repoId) as { doc_id: string; path: string; head: string; file_hash: Buffer }[];
+  for (const d of live) appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId: d.doc_id, path: d.path, head: d.head, hash: d.file_hash, kind: "changed" });
+  const record: CommitRecord = { commitId: commit.commitId, repoId, epoch: commit.epoch, seq: commit.seq, ts: now, origin: "import", actor: null, reason: HISTORY_ENABLED_REASON, batchId: commit.batchId, ops: null };
+  return { commit, record };
+}
+
+/**
+ * `history enable --provider <name>` (spec/store §5.12, Phase 6a): the attached
+ * provider — `capability_unavailable { history, unavailable, provider }` when
+ * none is attached or it cannot run — initialises its storage and writes its
+ * BASELINE (the full current tree) under the baseline feed row the core
+ * appends exactly as for native (§5.9 step 2: `import`, `history enabled`, one
+ * `changed` entry per live document), inside one transaction with the manifest
+ * row: `state = 'enabled'`, `config` = the provider's (`{ provider: "git",
+ * git_dir, branch, cadence, ids_ref, remote }`), `coverage += { from: now, to:
+ * null }`, `writer_requires` per the flag. The native bundle's DDL is NOT
+ * executed: a provider repository writes no history table.
+ */
+function enableProviderHistory(db: Database, repoId: string, name: string, existing: ManifestRow | null, now: string, opts: { writerRequires?: boolean; providerOptions?: Record<string, unknown> }): HistoryLifecycleResult {
+  const provider = requireProvider(db, repoId, name, now);
+  return db.transaction((): HistoryLifecycleResult => {
+    const { commit, record } = appendBaselineRow(db, repoId, now);
+    const { config, baseline } = provider.enable(repoId, record, opts.providerOptions ?? {});
+    const coverage = [...(existing?.coverage ?? []), { from: now, to: null }];
+    writeRow(db, repoId, {
+      capability: "history", state: "enabled", interfaceV: existing?.interface_v ?? HISTORY_INTERFACE_V, dataV: existing?.data_v ?? HISTORY_DATA_V, config,
+      coverage, writerRequires: opts.writerRequires ?? true, now,
+    });
+    clearProviderUnavailable(db, repoId, now);
+    return { row: readCapability(db, repoId, "history")!, changed: true, baseline: { commit: commit.commitId, revisions: baseline.revisions }, tip: baseline.tip };
+  })();
+}
+
+/** `history enable --provider <b>` on a repository enabled under provider `<a>` (spec/store §5.12): refused — `history disable` first. The CLI renders it as a usage error. */
+export class HistoryProviderConflict extends Error {
+  constructor(readonly current: string, readonly requested: string) {
+    super(historyProviderConflictMessage(current, requested));
+    this.name = "HistoryProviderConflict";
+  }
+}
+
+/** Byte for byte in both engines. */
+export function historyProviderConflictMessage(current: string, requested: string): string {
+  return `history is already enabled with the ${current} provider — run omg history disable first, then omg history enable${requested === NATIVE_PROVIDER ? "" : ` --provider ${requested}`}`;
 }
 
 /** The feed row's `reason` on the baseline commit, byte for byte in both engines. */
@@ -417,6 +569,8 @@ export interface HistoryPurgeResult {
   coverage: CoverageInterval[];
   /** Whether the bundle's tables were dropped: no repository enabled and every history table empty after the purge. */
   tables_dropped: boolean;
+  /** Phase 6a: on a repository kept by an attached provider, what the purge removed — the provider's storage and its cursor (spec/store §5.12). */
+  provider?: { name: string; removed: boolean; path: string };
 }
 
 /**
@@ -438,13 +592,24 @@ export interface HistoryPurgeResult {
  * 0). The caller holds the writer lock and no transaction.
  */
 export function purgeHistory(db: Database, repoId: string, opts: { before?: string | null; now?: string } = {}): HistoryPurgeResult {
-  const history = capabilitiesOf(db).history;
-  if (!history) throw CapabilityUnavailable.historyUnavailable();
   const before = opts.before ?? null;
   const row = readCapability(db, repoId, "history");
   const coverage = row?.coverage ?? [];
+  const zero: HistoryPurgeOutcome["purged"] = { commits: 0, revisions: 0, blobs: 0, tree_nodes: 0, dispositions: 0, block_changes: 0, edge_transitions: 0, archives: 0 };
+  // Phase 6a (spec/store §5.12): a provider repository's purge is the provider's — its
+  // storage and its cursor leave, whole (`--before` has no meaning: a git history is
+  // one line of commits; the flag is refused by the CLI). The manifest row keeps its
+  // state, config and coverage, as for native.
+  const name = historyProviderOf(row);
+  if (name !== NATIVE_PROVIDER) {
+    const provider = requireProvider(db, repoId, name, opts.now);
+    const outcome = db.transaction(() => provider.purge(repoId, providerConfigOf(row!)))();
+    return { purged: zero, claims_released: 0, coverage, tables_dropped: false, provider: { name, ...outcome } };
+  }
+  const history = capabilitiesOf(db).history;
+  if (!history) throw CapabilityUnavailable.historyUnavailable();
   if (!historyBundlePresent(db)) {
-    return { purged: { commits: 0, revisions: 0, blobs: 0, tree_nodes: 0, dispositions: 0, block_changes: 0, edge_transitions: 0, archives: 0 }, claims_released: 0, coverage, tables_dropped: false };
+    return { purged: zero, claims_released: 0, coverage, tables_dropped: false };
   }
   return db.transaction((): HistoryPurgeResult => {
     const { purged, claims_released, tables_dropped } = history.purge(repoId, before, { dropIfEmpty: !anyHistoryEnabled(db), protectHeads: row?.state === "enabled" });
@@ -635,7 +800,9 @@ export const WRITER_REFUSED_ALERT = "writer_refused";
 export function requireWriter(db: Database, repoId: string, now: string = new Date().toISOString()): void {
   const row = readCapability(db, repoId, "history");
   const required = row !== null && row.state === "enabled" && row.writer_requires;
-  const present = capabilitiesOf(db).history !== null;
+  // Phase 6a: the module the row's PROVIDER needs — the recorder for native, the attached provider otherwise.
+  const provider = historyProviderOf(row);
+  const present = provider === NATIVE_PROVIDER ? capabilitiesOf(db).history !== null : attachedProvider(db, provider) !== null;
   if (required && !present) {
     raiseAlert(db, repoId, { code: WRITER_REFUSED_ALERT, severity: "error", message: WRITER_REFUSED_MESSAGE, detail: { capability: "history" } }, now);
     throw CapabilityUnavailable.historyWriterRequired();
@@ -684,10 +851,29 @@ function alertPath(path: string): string {
  * this database (no bundle) — the reads of a repository whose capture is off
  * but whose rows exist go through (what was captured stays readable).
  */
-export function requireHistoryReader(db: Database): HistoryRecorder {
+export function requireHistoryReader(db: Database, repoId?: string): HistoryReader {
+  // Phase 6a: a repository kept by an attached provider reads through it (or its refusal).
+  if (repoId !== undefined) {
+    const row = readCapability(db, repoId, "history");
+    if (historyProviderOf(row) !== NATIVE_PROVIDER) return historyReaderFor(db, repoId)!;
+  }
   const history = capabilitiesOf(db).history;
   if (!history) throw CapabilityUnavailable.historyUnavailable();
   if (!historyBundlePresent(db)) throw CapabilityUnavailable.historyDisabled();
+  return history;
+}
+
+/**
+ * `docs_history`'s reader (resolution 11; Phase 6a): never `disabled` — the
+ * native module lists every head unretained on a database without the bundle;
+ * a build without the module refuses (`unavailable`); a provider repository
+ * reads through its provider (or its refusal).
+ */
+export function docsHistoryReader(db: Database, repoId: string): HistoryReader {
+  const row = readCapability(db, repoId, "history");
+  if (historyProviderOf(row) !== NATIVE_PROVIDER) return historyReaderFor(db, repoId)!;
+  const history = capabilitiesOf(db).history;
+  if (!history) throw CapabilityUnavailable.historyUnavailable();
   return history;
 }
 

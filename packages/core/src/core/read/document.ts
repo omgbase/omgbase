@@ -3,7 +3,7 @@ import type { Store } from "../store/store.js";
 import { findDoc, findDocByRef, loadDocBlocks, type BlockNode } from "./reader.js";
 import { docPropertiesGrouped, type PropertySource } from "../store/properties.js";
 import { referencePath } from "../paths.js";
-import { historyReader } from "../store/manifest.js";
+import { historyReaderForDoc } from "../store/manifest.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
 // document's full file bytes in a single call, so an agent can "read the guide
@@ -288,5 +288,6 @@ export interface DocsReadAtResult {
  * recorder directly.
  */
 export function readDocumentAtRevision(store: Store, docId: string, revId: string): DocsReadAtResult | null {
-  return historyReader(store.db)?.readAtRevision(docId, revId) ?? null;
+  // Phase 6a: the reader of the document's repository — the recorder, or the attached provider its manifest names.
+  return historyReaderForDoc(store.db, docId)?.readAtRevision(docId, revId) ?? null;
 }

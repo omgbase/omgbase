@@ -24,7 +24,7 @@ import { referencePath, storagePath } from "../core/paths.js";
 import { FilterInvalid } from "../core/filter-invalid.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
 import { semanticOf } from "../core/capabilities/registry.js";
-import { historyReader, semanticSwitchedOff } from "../core/store/manifest.js";
+import { historyReaderForDoc, historyReaderIfAvailable, semanticSwitchedOff } from "../core/store/manifest.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
 import type { SemanticScorer, SemanticVec } from "../core/capabilities/types.js";
 import { dateFunction, dateMethod } from "./dates.js";
@@ -164,14 +164,23 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // this repo, ordered for a stable (path, id) default; the revisions scan is
   // its own statement above, in the same (path, id) keyset order) -------------
   const scan = (t: Kind): Row[] => {
-    if (t === "revisions") return tagAll((historyReader(db)?.revisionRows(repoId) ?? []) as unknown as Row[], t);
+    if (t === "revisions") return tagAll((historyReaderIfAvailable(db, repoId)?.revisionRows(repoId) ?? []) as unknown as Row[], t);
     const g = guards(t, repoId);
     return tagAll(all(`SELECT ${COLS[t]} FROM ${FROM[t]} WHERE ${g.sql} ORDER BY ${ORDER[t]}`, ...g.params), t);
   };
   // A document's revisions (the `revisions` relation of a docs row, §1.2, 4.7):
-  // oldest first, as `docs_history` lists them.
+  // oldest first, as `docs_history` lists them. Phase 6a: through the reader of
+  // the document's repository — the recorder or an attached provider — and
+  // never an error (a provider that cannot run lists nothing).
+  const historyReaderForDocIfAvailable = (d: Parameters<typeof historyReaderForDoc>[0], id: string): ReturnType<typeof historyReaderForDoc> => {
+    try {
+      return historyReaderForDoc(d, id);
+    } catch {
+      return null;
+    }
+  };
   const docRevisions = (docId: unknown): Row[] =>
-    tagAll((historyReader(db)?.docRevisionRows(String(docId)) ?? []) as unknown as Row[], "revisions");
+    tagAll((historyReaderForDocIfAvailable(db, String(docId))?.docRevisionRows(String(docId)) ?? []) as unknown as Row[], "revisions");
 
   // A root scan is handed out LAZILY: an array (a `Proxy` over one — `Array.isArray`,
   // iteration, indexing, `length`, rendering all see a plain array of tagged

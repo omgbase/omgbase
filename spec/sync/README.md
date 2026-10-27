@@ -198,6 +198,14 @@ filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
    cleared when none is left. The repaired paths are reported as
    `repaired` (bytewise path order). A sweep without an active alert skips
    the step entirely: the check is a pass over the repository's bytes.
+6. **Provider checkpoint** (4.5; `spec/store` §5.12): when the repository's
+   history is kept by an attached provider (`capabilities.history.config.
+   provider` = `git`) and its row is `enabled`, run the provider's checkpoint
+   worker once — the feed rows this sweep and every write since the last run
+   appended become commits. Best effort: a provider that is not attached or
+   cannot run (`git` not on PATH) raises `history_provider_unavailable` and
+   is skipped; the sweep itself never fails for it and the rows wait for the
+   next run. A native repository has no step 6.
 
 Result: the batch result plus `{ scanned, candidates, changed:
 ingested or deleted or conflicted or failed or repaired non-empty, materialized, repaired }`; a sweep with nothing to do
@@ -369,6 +377,18 @@ client** (in-process or over MCP) with no reconciliation logic of its own.
   speaks paths, not ids — so a moved document is a write at the new path and
   a removal of the old one, and runs the procedure at most once per
   `sync_out` call (a second expiry is the caller's retry).
+- **The `$git` cursor row (4.5, store 17.5 Phase 6a; `spec/store` §5.12).**
+  The git history provider's checkpoint worker is a consumer of this feed
+  like any other: its cursor is one reserved row of `sync_state` per
+  repository, `(repo_id, '$git', '')` — a sentinel source id like the
+  semantic watermark's `$semantic`, never a minted `src_` id — with
+  `revision` the branch tip's sha and `cursor` the JSON `{ epoch, seq }` it
+  covers. The row is a CACHE of the tip's `omgbase-seq` trailer: the worker
+  resumes from the trailer, writes the row after every commit, and a crash
+  between the two leaves the row behind the tip, which the next run reads
+  past; `history purge` deletes it. An `expired_cursor` is its rescan — one
+  snapshot commit at the head (§5.12), the procedure above applied by a
+  consumer that keeps the current tree rather than a copy.
 - **The sync base.** A client of the feed keeps its own base — the `(epoch,
   seq)` it last applied and the hashes it last saw; the server promises
   nothing beyond the feed's retention floor. Optional history supplies no
@@ -542,7 +562,10 @@ invariants are the core's alone (`spec/store` §9.6); (4) the runner reports
 how many cases it compared this way; (5) `SYNC_SPEC_UPDATE` is refused under
 the override — the fixtures are the full composition's; (6) the runner prints
 one ledger line `[sync spec] composition=<name>: compared=<n> mapped=<n>
-skipped=<n>` (4.3) that `pnpm conformance` collects. The reference:
+skipped=<n>` (4.3) that `pnpm conformance` collects; (7) the fifth
+composition `git` (4.5, `spec/store` §9.6) has no native module and
+compares exactly as `core` — no sync fixture drives the git provider (the
+sweep's step 6 is a no-op on a native repository). The reference:
 `packages/core/corpus/sync/spec.test.ts` (`coreModeCheckpointExpect`); the
 coordinator cases of `@omgbase/sync`'s runner read the feed, never a history
 table, and need no mapping.
@@ -654,6 +677,13 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-26, sync 4.5 (store 17.5 Phase 6a of `docs/modular-core/` — the
+  git history provider): the freshness sweep's **step 6** runs the attached
+  provider's checkpoint worker (§4.3); the **`$git` cursor row** of
+  `sync_state` (§6) — a sentinel source id beside `$semantic`, the tip sha and
+  `{ epoch, seq }`, a cache of the branch tip's trailer. A procedure added, no
+  stored row's meaning changed: a minor. The checkpoint runner's ledger (§8)
+  gains the fifth composition `git`, compared like `core` (no native module).
 - 2026-10-26, sync 4.4 (store 17.4 Phase 5a-ii of `docs/modular-core/`):
   **the sweep repairs legacy bytes.** The freshness sweep gains step 5
   (§4.3) and its result `repaired`: while the repository's `legacy_bytes`

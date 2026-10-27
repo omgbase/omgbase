@@ -31,10 +31,22 @@ export interface StoreOptions {
    * with the semantic module absent (the Phase 2 gate).
    */
   capabilities?: CapabilitiesFactory;
+  /**
+   * The engine's own directory — `<workspace>/.omgbase` — where an attached
+   * history provider keeps its storage (Phase 6a: the git provider's bare
+   * repository at `<omgbaseDir>/git`, spec/store §5.12). Defaults to the
+   * database file's directory; a `:memory:` store has none unless given one
+   * (the fixture runners give each case a temporary directory).
+   */
+  omgbaseDir?: string;
 }
 
 export class Store {
   readonly db: Database.Database;
+  /** The database path as opened (`:memory:` for an in-memory store). */
+  readonly path: string;
+  /** The engine's directory (`StoreOptions.omgbaseDir`), null for a memory store without one. */
+  readonly omgbaseDir: string | null;
   /** The capabilities bound to this store's connection (`capabilitiesOf(store.db)` is the same object). */
   readonly capabilities: Capabilities;
   // The in-use oracle this store registered with `mintId` (spec/store §2.1):
@@ -43,6 +55,8 @@ export class Store {
 
   constructor(opts: StoreOptions) {
     if (opts.path !== ":memory:") mkdirSync(dirname(opts.path), { recursive: true });
+    this.path = opts.path;
+    this.omgbaseDir = opts.omgbaseDir ?? (opts.path === ":memory:" ? null : dirname(opts.path));
     this.db = new Database(opts.path);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
@@ -1023,6 +1037,7 @@ CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key
 
   close(): void {
     this.unregisterOracle();
+    for (const p of Object.values(this.capabilities.providers)) p.close?.();
     this.db.close();
   }
 }

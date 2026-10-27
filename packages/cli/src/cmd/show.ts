@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { resolveRef, nodesGet, docsRead, docLinks, historyReader, docPropertiesMerged } from "@omgbase/core";
+import { resolveRef, nodesGet, docsRead, docLinks, historyReaderIfAvailable, docPropertiesMerged } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -40,8 +40,9 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
   if (!node) throw new EngineErrorLike("block_missing", `no block ${ref}`);
-  // `--include history` on a store with nothing captured (Phase 4a): the card simply carries no history.
-  const history = include.includes("history") ? historyReader(ws.store.db)?.blocksHistory(resolved.blockId!, { limit: 5 }) ?? [] : undefined;
+  // `--include history` on a store with nothing captured (Phase 4a): the card simply carries no history; on a
+  // git-provider repository (Phase 6a) there is no block lineage to show — the same empty list.
+  const history = include.includes("history") ? blockHistoryOrNone(ws.store.db, repo.repoId, resolved.blockId!) : undefined;
   return { payload: { ...node, ...(history ? { history } : {}) }, render: () => renderBlockCard(cli, node, history) };
 }
 
@@ -124,6 +125,15 @@ function renderBlockCard(cli: Cli, node: import("@omgbase/core").GetNode, histor
 
 function fmt(v: unknown): string {
   return typeof v === "string" ? v : JSON.stringify(v);
+}
+
+/** A block's last five changes through the repository's reader, or `[]` when the reader has none or does not record block lineage. */
+function blockHistoryOrNone(db: Parameters<typeof historyReaderIfAvailable>[0], repoId: string, blockId: string): ReturnType<NonNullable<ReturnType<typeof historyReaderIfAvailable>>["blocksHistory"]> {
+  try {
+    return historyReaderIfAvailable(db, repoId)?.blocksHistory(blockId, { limit: 5 }) ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export const cmdShow: Command = { name: "show", summary: "Metadata card for a node", run: (cli, a) => runShow(cli, a) };

@@ -51,7 +51,7 @@ describe("the semantic gate at the surface", () => {
     expect(r.isError).toBe(false);
     expect((r.body as unknown as unknown[]).length).toBe(1);
     const v = await call("version");
-    expect(v.body.capabilities).toEqual({ history: { state: "enabled", coverage_from: expect.any(String), writer_requires: true }, semantic: { state: "disabled", model: null } });
+    expect(v.body.capabilities).toEqual({ history: { state: "enabled", provider: "native", coverage_from: expect.any(String), writer_requires: true, completeness: "every" }, semantic: { state: "disabled", model: null } });
     expect(Object.keys(v.body).slice(-3)).toEqual(["profile", "capabilities", "epoch"]);
     expect(v.body.epoch).toMatch(/^ep_/);
   });
@@ -60,7 +60,7 @@ describe("the semantic gate at the surface", () => {
     const call = await serve({ ctx: { embedQuery: async () => ({ model: "m", vec: new Float32Array([1, 0]) }), embedProvider: "omgbase-embedder" } });
     writeWorkspaceSettings(store!, { embedding: { provider: "omgbase-embedder" } });
     const v = await call("version");
-    expect(v.body.capabilities).toEqual({ history: { state: "enabled", coverage_from: expect.any(String), writer_requires: true }, semantic: { state: "enabled", model: null } });
+    expect(v.body.capabilities).toEqual({ history: { state: "enabled", provider: "native", coverage_from: expect.any(String), writer_requires: true, completeness: "every" }, semantic: { state: "enabled", model: null } });
     // Loaded but nothing embedded under the model: the 3.0 "cannot rank" provider_unavailable (spec/surface §4).
     const q = await call("query", { query: SEMANTIC_QUERY });
     expect(q.body.error).toBe("provider_unavailable");
@@ -81,7 +81,7 @@ describe("the semantic gate at the surface", () => {
     expect(r.body.error).toBe("capability_unavailable");
     expect((r.body.data as { state: string }).state).toBe("unavailable");
     const v = await call("version");
-    expect(v.body.capabilities).toEqual({ history: { state: "enabled", coverage_from: expect.any(String), writer_requires: true }, semantic: { state: "unavailable", model: null } });
+    expect(v.body.capabilities).toEqual({ history: { state: "enabled", provider: "native", coverage_from: expect.any(String), writer_requires: true, completeness: "every" }, semantic: { state: "unavailable", model: null } });
   });
 
   it("core-only composition: capability_unavailable { disabled } from query, graph and the resolve leg; reads and FTS unchanged; version says disabled", async () => {
@@ -101,7 +101,7 @@ describe("the semantic gate at the surface", () => {
     expect((await call("blocks_search", { q: "paragraph" })).isError).toBe(false);
     const v = await call("version");
     // Phase 4a: the core-only composition has no recorder either — `unavailable`; the repository it created runs disabled.
-    expect(v.body.capabilities).toEqual({ history: { state: "unavailable", coverage_from: null, writer_requires: false }, semantic: { state: "disabled", model: null } });
+    expect(v.body.capabilities).toEqual({ history: { state: "unavailable", provider: "native", coverage_from: null, writer_requires: false, completeness: "every" }, semantic: { state: "disabled", model: null } });
   });
 
   it("core-only composition without an embedQuery: blocks_resolve stays FTS-only (nothing to fuse)", async () => {

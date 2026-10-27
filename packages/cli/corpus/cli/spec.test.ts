@@ -10,7 +10,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { compositionHasHistory, compositionHasSemantic, envComposition } from "@omgbase/core";
+import { compositionHasGitProvider, compositionHasHistory, compositionHasSemantic, envComposition } from "@omgbase/core";
 import {
   BIN, CASES_DIR, Workspaces, assignExpects, describeChange, diffExpect, expectsOf, isSequence, runCase, validateFixtureFile,
   type CaseInput, type FixtureCase, type FixtureFile,
@@ -48,6 +48,7 @@ afterAll(() => ws.cleanup());
 const COMPOSITION = envComposition();
 const HAS_HISTORY = compositionHasHistory(COMPOSITION);
 const HAS_SEMANTIC = compositionHasSemantic(COMPOSITION);
+const HAS_GIT = compositionHasGitProvider(COMPOSITION);
 if (UPDATE && COMPOSITION !== "full") throw new Error(`CLI_SPEC_UPDATE under OMGBASE_CAPABILITIES=${COMPOSITION} would record that composition's answers; run it on the full one`);
 const ledger = { compared: [] as string[], skipped: [] as string[] };
 
@@ -58,6 +59,8 @@ const HISTORY_FLAGS = new Set(["--history", "--at"]);
 const SEMANTIC_VERBS = new Set(["embed", "find"]);
 /** Words of the history module's wire: its tables in a size report, the recorder's disposition summary, its capability state and the doctor's capture check. */
 const HISTORY_TEXT = /\b(commits|revisions|dispositions|block_changes|tree_nodes|blobs|edge_transitions|archives)\b|"history":\{"state":"enabled|history\s+enabled|"coverage_from":"(\d|<string>)|"writer_requires":true|capture complete| — \d+ (inserted|edited|deleted|moved|resurrected|same|split|merged)|history unavailable|writer_refused|capability_unavailable|revision/;
+/** Words that bind a GIT case to the native module too (spec/cli §8, 5.5): the provider conflict, `checkpoint` refused on a native repository, a native provider in a size report. */
+const NATIVE_TEXT = /with the native provider|history is native|"provider":"native"/;
 /** Words of the semantic module's wire: the embed queue, the vector tables, its capability state, the provider. */
 const SEMANTIC_TEXT = /\bqueued\b|"embedQueue":[1-9]|\bdoc_embeddings\b|\bembeddings\b|"semantic":\{"state":"enabled|embedding|provider_unavailable|capability_unavailable|semantic\(/;
 
@@ -69,8 +72,22 @@ function caseText(c: FixtureCase): { argv: string[]; text: string } {
 }
 
 /** Why the case is skipped under this composition, or null when it must pass as recorded. */
+/** A GIT case (spec/cli §8, 5.5): a step names `--provider git` or `history checkpoint`. */
+function isGitCase(argv: string[]): boolean {
+  return argv.includes("checkpoint") || argv.some((a, i) => a === "--provider" && argv[i + 1] === "git");
+}
+
 function skipReason(c: FixtureCase): string | null {
   const { argv, text } = caseText(c);
+  // spec/cli §8 "The five compositions" (5.5, Phase 6a): a git case runs where the provider is attached (`full`, `git`);
+  // on `git` — no native module — it is skipped only when it also needs the native provider (NATIVE_TEXT), not for the
+  // history wire its own outputs carry.
+  if (isGitCase(argv)) {
+    if (!HAS_GIT) return "needs the git history provider";
+    if (!HAS_HISTORY && NATIVE_TEXT.test(text)) return "needs the history module";
+    if (!HAS_SEMANTIC && (argv.some((a) => SEMANTIC_VERBS.has(a)) || SEMANTIC_TEXT.test(text))) return "needs the semantic module";
+    return null;
+  }
   if (!HAS_HISTORY && (argv.some((a) => HISTORY_VERBS.has(a) || HISTORY_FLAGS.has(a)) || HISTORY_TEXT.test(text))) return "needs the history module";
   if (!HAS_SEMANTIC && (argv.some((a) => SEMANTIC_VERBS.has(a)) || SEMANTIC_TEXT.test(text))) return "needs the semantic module";
   return null;

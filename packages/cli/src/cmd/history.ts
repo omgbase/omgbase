@@ -3,10 +3,11 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   evaluateRetention, retentionPolicy, exportHistory, attachArchive, detachArchive, listArchives, humanBytes, withWriterLock,
-  enableHistory, disableHistory, purgeHistory, openCoverageFrom,
+  enableHistory, disableHistory, purgeHistory, openCoverageFrom, historyProviderOf, readCapability, requireProvider, providerConfigOf, NATIVE_PROVIDER, HistoryProviderConflict,
   RetentionPolicyError, NotASegment, StaleSegment, ARCHIVE_DIR,
-  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace, type HistoryLifecycleResult, type HistoryPurgeResult,
+  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace, type HistoryLifecycleResult, type HistoryPurgeResult, type HistoryCheckpointResult,
 } from "@omgbase/core";
+import { parseCadence, GIT_PROVIDER } from "@omgbase/git-adapter";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -25,17 +26,19 @@ import { columns } from "../render.js";
 // `version.capabilities.history`, the `revisions.archived` attribute,
 // `capability_unavailable` and `revision_archived`.
 
-const SUBCOMMANDS = ["enable", "disable", "purge", "plan", "export", "attach", "detach", "list"] as const;
+const SUBCOMMANDS = ["enable", "disable", "purge", "checkpoint", "plan", "export", "attach", "detach", "list"] as const;
+const PROVIDERS = [NATIVE_PROVIDER, GIT_PROVIDER] as const;
 type Sub = (typeof SUBCOMMANDS)[number];
 
 function renderCard(cli: Cli): number {
   return renderHelp(cli, {
     name: "history",
-    summary: "History capture (enable/disable/purge per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
+    summary: "History capture (enable/disable/purge per repository; native or git provider) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
     usage: [
-      "history enable [--best-effort]",
+      "history enable [--best-effort] [--provider native|git] [--branch <b>] [--cadence every|<ms>]",
       "history disable",
       "history purge [--before <ts>]",
+      "history checkpoint",
       "history plan [--before <ts>] [--policy <json|@file>]",
       "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
       "history attach <file|dir>",
@@ -46,7 +49,11 @@ function renderCard(cli: Cli): number {
       ["enable", "turn capture on for the repository: one baseline commit (origin import) records every live document's current head, a coverage interval opens, every later write is captured; idempotent"],
       ["disable", "turn capture off: the coverage interval closes, later writes record no history (the feed still does); what was captured stays readable; idempotent"],
       ["--best-effort", "(enable) do not require capture: a writer without the history module may still write (default: such a writer is refused — writer_requires)"],
-      ["purge", "delete the repository's captured history — every commit, or with --before those before an instant (a live head's revision stays while capture is on); the recorder's id holds are released; the history tables are dropped when no repository is enabled and nothing is left"],
+      ["--provider <p>", "(enable) who keeps the history: native (the store's own tables, captured in every commit — the default) or git (a bare repository at .omgbase/git, committed from the rows by the checkpoint worker); one provider per repository — switch with disable, then enable --provider"],
+      ["--branch <b>", "(enable --provider git) the branch the commits go on (default omgbase)"],
+      ["--cadence <c>", "(enable --provider git) every: one commit per feed row (default); <ms>: the rows pending when the worker runs fold into one commit"],
+      ["checkpoint", "(git provider) run the checkpoint worker once: the feed rows since the branch tip become commits; prints { committed, from_seq, to_seq, tip, rescanned }"],
+      ["purge", "delete the repository's captured history — every commit, or with --before those before an instant (a live head's revision stays while capture is on); the recorder's id holds are released; the history tables are dropped when no repository is enabled and nothing is left; on a git-provider repository the bare repository and the worker's cursor are removed"],
       ["plan", "per document: revisions kept / to archive and the bytes only they reach; the policy in effect"],
       ["export", "write ONE new segment file (default dest .omgbase/archives/) holding the archived revisions' bodies; --prune then squashes the store and records the segment"],
       ["attach <path>", "record a segment file (or every segment of a directory that belongs to this repo) so reads at its revisions work again"],
@@ -237,13 +244,17 @@ function interval(i: { from: string; to: string | null }): string {
  */
 function renderLifecycle(cli: Cli, verb: "enable" | "disable", r: HistoryLifecycleResult): number {
   const row = r.row;
+  const provider = historyProviderOf(row);
   if (cli.flags.mode !== "human") {
-    return emitMachine(cli, { state: row.state, coverage: row.coverage, writer_requires: row.writer_requires, changed: r.changed, ...(r.baseline ? { baseline: r.baseline } : {}) });
+    // The git provider's enable (spec/cli §6, 5.5) adds `provider` and the branch `tip` of its baseline commit.
+    return emitMachine(cli, { state: row.state, coverage: row.coverage, writer_requires: row.writer_requires, changed: r.changed, ...(provider !== NATIVE_PROVIDER ? { provider } : {}), ...(r.baseline ? { baseline: r.baseline } : {}), ...(r.tip !== undefined ? { tip: r.tip } : {}) });
   }
   const { io, style } = cli;
   if (verb === "enable") {
     const since = openCoverageFrom(row);
-    io.err(style.dim(`  history ${r.changed ? "enabled" : "already enabled"}${since ? ` since ${since}` : ""}${r.baseline ? ` (baseline ${r.baseline.commit}: ${plural(r.baseline.revisions, "revision")})` : ""}`));
+    const via = provider === NATIVE_PROVIDER ? "" : ` via ${provider}`;
+    const baseline = r.baseline ? (provider === NATIVE_PROVIDER ? ` (baseline ${r.baseline.commit}: ${plural(r.baseline.revisions, "revision")})` : ` (baseline ${r.baseline.commit}: ${plural(r.baseline.revisions, "document")}${r.tip ? `, tip ${r.tip}` : ""})`) : "";
+    io.err(style.dim(`  history ${r.changed ? "enabled" : "already enabled"}${since ? ` since ${since}` : ""}${via}${baseline}`));
   } else {
     io.err(style.dim(r.changed || row.coverage.length > 0 ? `  history ${r.changed ? "disabled" : "already disabled"} (captured ${row.coverage.map(interval).join(", ")})` : "  history already disabled"));
   }
@@ -261,8 +272,13 @@ function renderLifecycle(cli: Cli, verb: "enable" | "disable", r: HistoryLifecyc
  * capture was on; a purged token reads `pruned`).
  */
 function renderPurge(cli: Cli, r: HistoryPurgeResult): number {
-  if (cli.flags.mode !== "human") return emitMachine(cli, { purged: r.purged, claims_released: r.claims_released, coverage: r.coverage, tables_dropped: r.tables_dropped });
+  if (cli.flags.mode !== "human") return emitMachine(cli, { purged: r.purged, claims_released: r.claims_released, coverage: r.coverage, tables_dropped: r.tables_dropped, ...(r.provider ? { provider: r.provider } : {}) });
   const { io, style } = cli;
+  // The git provider (spec/cli §6, 5.5): the bare repository and the worker's cursor leave; `  purged the git history (<path> removed)` / `  nothing to purge (<path> is already gone)`.
+  if (r.provider) {
+    io.err(style.dim(r.provider.removed ? `  purged the ${r.provider.name} history (${r.provider.path} removed, cursor cleared)` : `  nothing to purge (${r.provider.path} is already gone)`));
+    return EXIT_OK;
+  }
   const p = r.purged;
   const total = Object.values(p).reduce((n, v) => n + v, 0) + r.claims_released;
   if (total === 0 && !r.tables_dropped) {
@@ -279,17 +295,62 @@ function runPurge(cli: Cli, args: string[]): number {
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const before = parseBefore(values.before);
+  // A git history is one line of commits: `--before` has no meaning there (spec/cli §6, 5.5).
+  if (before !== undefined && historyProviderOf(readCapability(ws.store.db, repo.repoId, "history")) !== NATIVE_PROVIDER) throw new CliUsageError("--before has no meaning for the git provider: history purge removes the whole bare repository");
   const result = withWriterLock(ws.omgbaseDir, () => purgeHistory(ws.store.db, repo.repoId, { ...(before !== undefined ? { before } : {}) }));
   return renderPurge(cli, result);
 }
 
+/**
+ * `history checkpoint` (spec/cli §6, 5.5; spec/store §5.12): the git provider's
+ * worker, once, under the writer lock; `--json` the receipt `{ committed,
+ * from_seq, to_seq, tip, rescanned }`, human `  checkpointed <n> commit(s)
+ * (seq <from>..<to>), tip <sha>` / `  nothing to checkpoint (tip <sha>)` /
+ * `  rescanned: 1 commit at seq <head>, tip <sha>`. On a native repository it
+ * is a usage error: the recorder captures in every commit.
+ */
+function runCheckpoint(cli: Cli, args: string[]): number {
+  parseArgs({ args, allowPositionals: false, options: {} });
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+  const row = readCapability(ws.store.db, repo.repoId, "history");
+  const provider = historyProviderOf(row);
+  if (provider === NATIVE_PROVIDER) throw new CliUsageError("history checkpoint is the git provider's: this repository's history is native (captured in every commit)", `run '${cli.prog} history enable --provider git' after '${cli.prog} history disable' to switch`);
+  if (!row || row.state !== "enabled") throw new CliUsageError(`history is disabled for this repository — enable it with '${cli.prog} history enable --provider ${provider}'`);
+  const result: HistoryCheckpointResult = withWriterLock(ws.omgbaseDir, () => requireProvider(ws.store.db, repo.repoId, provider).checkpoint(repo.repoId, providerConfigOf(row)));
+  if (cli.flags.mode !== "human") return emitMachine(cli, result);
+  const { io, style } = cli;
+  if (result.rescanned) io.err(style.dim(`  rescanned: 1 commit at seq ${result.to_seq}, tip ${result.tip}`));
+  else if (result.committed === 0) io.err(style.dim(`  nothing to checkpoint (tip ${result.tip ?? "none"})`));
+  else io.err(style.dim(`  checkpointed ${plural(result.committed, "commit")} (seq ${result.from_seq}..${result.to_seq}), tip ${result.tip}`));
+  return EXIT_OK;
+}
+
 function runEnable(cli: Cli, args: string[]): number {
-  const { values } = parseArgs({ args, allowPositionals: false, options: { "best-effort": { type: "boolean" } } });
+  const { values } = parseArgs({ args, allowPositionals: false, options: { "best-effort": { type: "boolean" }, provider: { type: "string" }, branch: { type: "string" }, cadence: { type: "string" } } });
+  const provider = values.provider ?? NATIVE_PROVIDER;
+  if (!(PROVIDERS as readonly string[]).includes(provider)) throw new CliUsageError(`--provider must be one of ${PROVIDERS.join("|")} (got ${JSON.stringify(provider)})`);
+  if (provider === NATIVE_PROVIDER && (values.branch !== undefined || values.cadence !== undefined)) throw new CliUsageError("--branch and --cadence go with --provider git");
+  const providerOptions: Record<string, unknown> = {};
+  if (values.branch !== undefined) providerOptions.branch = values.branch;
+  if (values.cadence !== undefined) {
+    try {
+      providerOptions.cadence = parseCadence(values.cadence);
+    } catch (e) {
+      throw new CliUsageError((e as Error).message);
+    }
+  }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   // A write (the baseline commit): under the workspace writer lock like every other.
-  const result = withWriterLock(ws.omgbaseDir, () => enableHistory(ws.store.db, repo.repoId, { writerRequires: !values["best-effort"] }));
-  return renderLifecycle(cli, "enable", result);
+  try {
+    const result = withWriterLock(ws.omgbaseDir, () => enableHistory(ws.store.db, repo.repoId, { writerRequires: !values["best-effort"], ...(provider !== NATIVE_PROVIDER ? { provider, providerOptions } : {}) }));
+    return renderLifecycle(cli, "enable", result);
+  } catch (e) {
+    // spec/store §5.12: one provider per repository — the switch is `disable` then `enable --provider`.
+    if (e instanceof HistoryProviderConflict) throw new CliUsageError(e.message);
+    throw e;
+  }
 }
 
 function runDisable(cli: Cli, args: string[]): number {
@@ -310,6 +371,7 @@ function runHistory(cli: Cli, args: string[]): number {
     case "enable": return runEnable(cli, rest);
     case "disable": return runDisable(cli, rest);
     case "purge": return runPurge(cli, rest);
+    case "checkpoint": return runCheckpoint(cli, rest);
     case "plan": return runPlan(cli, rest);
     case "export": return runExport(cli, rest);
     case "attach": return runAttach(cli, rest);
@@ -318,4 +380,4 @@ function runHistory(cli: Cli, args: string[]): number {
   }
 }
 
-export const cmdHistory: Command = { name: "history", summary: "Capture: enable/disable/purge per repository; retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };
+export const cmdHistory: Command = { name: "history", summary: "Capture: enable/disable/purge per repository (native or git provider), checkpoint; retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };

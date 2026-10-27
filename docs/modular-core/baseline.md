@@ -1189,6 +1189,28 @@ vs 5.04 MB and `history` 3.33 vs 3.29 MB on a corpus 0.01 MB larger. Import
 blocks + 43 documents 218–221 s on this machine (TS ≈ 270 s for 4,009) —
 the embedder's time, not the engine's.
 
+### The git history provider (Phase 6a, 2026-10-26; TS CLI at store 17.5)
+
+The third composition row of `scripts/baseline/real-corpus.mjs`: `init --no-embedder; source add --no-history;
+history enable --provider git; history checkpoint`, then `git gc` and `git count-objects -v` on the bare repository
+(`size` + `size-pack`) printed beside the database — so the comparison with native history is honest: the bytes the git
+provider keeps are not in the database. This repository's `docs/` again (44 Markdown files, 0.96 MB, 4,204 blocks; run
+`real-corpus-ts-2026-10-27T00-28-09`):
+
+| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync | git repo MB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| history on, embedder off | 44 | 4204 | 0.96 | 9.83 | 10.3× | 5.28 (53.7 %) | 0.37 | 0.01 | 3.44 (35.0 %) | 0.58 (5.9 %) | 0.15 | — |
+| history off, embedder off | 44 | 4204 | 0.96 | 6.43 | 6.7× | 5.27 (82.0 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.58 (9.0 %) | 0.14 | — |
+| git history, embedder off | 44 | 4204 | 0.96 | 6.38 | 6.7× | 5.28 (82.7 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.61 (9.6 %) | 0.15 | 0.35 (1 commit) |
+
+The import under the git provider is one baseline commit of 44 blobs: **0.35 MB of packed objects** beside a 6.38 MB
+database (database + git 6.73 MB, 7.0× the Markdown) against **3.44 MB** of native history rows for the same import —
+git's zlib-packed blobs against the recorder's Merkle tree, revision rows, dispositions and block changes (which also buy
+block lineage, `blocks_history` and `docs_diff`, none of which the git provider has). The database itself is the
+history-off database (the git row writes no history table). The enable + checkpoint took 1.9 s (44 `hash-object` spawns
+and one commit); the import itself 2.4 s as before. Growth per edit is one commit object + one blob per touched document
++ the tree objects on the path; the synthetic workload's per-edit comparison with native history is a 6b item.
+
 ### Qualification of two local 16.x workspaces (2026-10-26, `scripts/qualify/migrate-copy.mjs`)
 
 Two real workspaces at store 16.0.3 were qualified from COPIES (database + WAL + the files; the originals were read and

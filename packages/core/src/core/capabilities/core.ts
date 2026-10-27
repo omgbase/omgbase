@@ -26,5 +26,6 @@ export function coreCapabilities(store: Store): Capabilities {
     history: null,
     semantic: null,
     claims: new IdClaims(store),
+    providers: {},
   };
 }

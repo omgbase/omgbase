@@ -10,7 +10,11 @@
 // and prints one machine-readable line at the end — `pnpm conformance`
 // (`scripts/conformance.mjs`) collects them into the suite × composition matrix.
 // The fixtures are never regenerated from a non-full run (`refuseUpdate`).
-import { COMPOSITIONS, compositionHasHistory, compositionHasSemantic, envComposition, type Composition } from "../src/core/capabilities/default.js";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { COMPOSITIONS, compositionHasGitProvider, compositionHasHistory, compositionHasSemantic, envComposition, type Composition } from "../src/core/capabilities/default.js";
+import { registerHistoryProvider, type HistoryProviderFactory } from "../src/core/capabilities/providers.js";
+import type { Store } from "../src/core/store/store.js";
 
 export { COMPOSITIONS, type Composition };
 
@@ -20,6 +24,31 @@ export const COMPOSITION: Composition = envComposition();
 export const HAS_HISTORY = compositionHasHistory(COMPOSITION);
 /** Does the composition carry the semantic module (`full`, `semantic`)? */
 export const HAS_SEMANTIC = compositionHasSemantic(COMPOSITION);
+/** Does the composition attach the git history provider (`full`, `git` — modular-core Phase 6a; spec/store §9.6)? */
+export const HAS_GIT = compositionHasGitProvider(COMPOSITION);
+
+// The git history provider (Phase 6a): the runners are the composition layer of
+// this process, so they REGISTER `@omgbase/git-adapter`'s factory before any
+// store opens — exactly as the CLI's `installSpecSeams` does — with the fixture
+// identity `omgbase <omgbase@fixture>` (spec/store §9.4 "The git provider"), so
+// the commit shas the fixtures pin follow from the inputs. The package is loaded
+// from its SOURCE through vitest (`vitest.config.ts` aliases `@omgbase/core` to
+// this package's source so both share one module graph); `tsc` sees a computed
+// specifier and resolves nothing — the core's own build never names the package
+// (`dependency-direction.test.ts` pins that).
+const GIT_ADAPTER_SRC = new URL("../../git-adapter/src/index.ts", import.meta.url);
+interface GitAdapterModule { gitHistoryProvider(opts: { identity: { name: string; email: string } }): HistoryProviderFactory; FIXTURE_IDENTITY: { name: string; email: string } }
+/** The git adapter's fixture `GitRepo` handle for a store's provider (the `git_log`/`git_tree` steps read it) — structural, so the core's build names no git-adapter type. */
+export interface FixtureGitProvider { gitRepo(config: Record<string, unknown>): { text(args: string[]): string; exists(): boolean } }
+let gitAdapter: GitAdapterModule | null = null;
+if (HAS_GIT && existsSync(fileURLToPath(GIT_ADAPTER_SRC))) {
+  gitAdapter = (await import(GIT_ADAPTER_SRC.href)) as GitAdapterModule;
+  registerHistoryProvider("git", gitAdapter.gitHistoryProvider({ identity: gitAdapter.FIXTURE_IDENTITY }));
+}
+/** The git provider attached to `store` (the fixture steps that read the bare repository), or null. */
+export function fixtureGitProvider(store: Store): FixtureGitProvider | null {
+  return (store.capabilities.providers.git as unknown as FixtureGitProvider | undefined) ?? null;
+}
 /** Is this the full composition — the only one a fixture may be regenerated from? */
 export const FULL = COMPOSITION === "full";
 

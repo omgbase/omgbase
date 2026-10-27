@@ -38,7 +38,7 @@ import { CapabilityUnavailable, SEMANTIC_DISABLED_FIX } from "../../src/core/cap
 import { buildServer, type ServerContext } from "../../src/mcp/server.js";
 import { SemanticProviderMissing, disableSemantic, enableSemantic, semanticProviderOf, type CoverageInterval, type SemanticLifecycleResult } from "../../src/core/store/manifest.js";
 import { deepEqualTol } from "../reconcile/fixture.js";
-import { FIXTURE_REPO_SLUG, TS_RE, createFixtureRepo, isHistoryStep, isLifecycleStep, runExecStep, runGcStep, runHistoryStep, runLifecycleStep, toOutcome, validateSteps, type ExtraStepValidator, type HistoryContext, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
+import { FIXTURE_REPO_SLUG, TS_RE, createFixtureRepo, isHistoryStep, isLifecycleStep, needsGitProvider, runExecStep, runGcStep, runHistoryStep, runLifecycleStep, toOutcome, validateSteps, type ExtraStepValidator, type HistoryContext, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
 
 export { deepEqualTol, FIXTURE_REPO_SLUG };
 
@@ -112,8 +112,15 @@ export interface ReadsCase {
   notes?: string;
   /** give the default repo a working tree (a temp dir seeded from the observe steps) so mutating tools can run */
   workspace?: boolean;
+  /** README §6 (6.4, Phase 6a): the case's composition — `{ history: false }` creates the repository with capture off (as spec/store §9.4's), the state a `history_enable { provider: "git" }` needs on the full composition */
+  capabilities?: { history: boolean };
   steps: Step[];
   expect: { steps: StepOutcome[] };
+}
+
+/** Does the case drive the git history provider (README §7.3: run on `full` and `git`, compared as recorded; skipped elsewhere)? */
+export function isGitCase(c: { steps: Step[] }): boolean {
+  return needsGitProvider({ steps: c.steps as StoreStep[] });
 }
 
 export interface CursorCase {
@@ -205,7 +212,7 @@ export function carriesCorpus(kind: CaseKind): boolean {
 
 export const CASE_KEYS: Record<CaseKind, readonly string[]> = {
   query: ["name", "notes", "query", "limit", "cursor", "bare", "expect"],
-  reads: ["name", "notes", "workspace", "steps", "expect"],
+  reads: ["name", "notes", "workspace", "capabilities", "steps", "expect"],
   examples: ["name", "notes", "workspace", "steps", "expect"],
   cursor: ["name", "notes", "parts", "cursor", "arity", "expect"],
   interop: ["name", "notes", "ts", "server_args", "writes", "reads", "expect"],
@@ -443,7 +450,7 @@ export function compositionInteropExpect(expect: { writes: ReadOutcome[]; reads:
 }
 
 /** The history capability's `version`/`sync_status` answer on the core-only composition (Phase 4a): no module, so `unavailable`; a repository it created has no coverage and requires nothing. */
-export const CORE_HISTORY_STATE = { state: "unavailable", coverage_from: null, writer_requires: false };
+export const CORE_HISTORY_STATE = { state: "unavailable", provider: "native", coverage_from: null, writer_requires: false, completeness: "every" };
 
 /** Does the query text reach the `revisions` root or the `_revisions` relation (whose rows are the recorder's)? */
 export function touchesRevisions(query: string): boolean {
@@ -605,13 +612,16 @@ export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
  */
 export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, string>): Promise<ReadsEvaluation> {
   return withFixtureMinterAsync(async () => {
-    const store = new Store({ path: ":memory:" });
     const dir = c.workspace ? mkdtempSync(join(tmpdir(), "omgbase-surface-spec-")) : null;
+    // Phase 6a: a case that drives the git provider needs a workspace directory for its bare repository — the working
+    // tree's `.omgbase` when there is one (the shape of a real workspace), else a directory of its own.
+    const gitRoot = isGitCase(c) ? (dir ?? mkdtempSync(join(tmpdir(), "omgbase-surface-spec-git-"))) : null;
+    const store = new Store({ path: ":memory:", ...(gitRoot ? { omgbaseDir: join(gitRoot, ".omgbase") } : {}) });
     const history: { ctx: HistoryContext | null } = { ctx: null };
     let client: Client | null = null;
     let server: ReturnType<typeof buildServer> | null = null;
     try {
-      const repoId = createFixtureRepo(store, FIXTURE_REPO_SLUG, dir);
+      const repoId = createFixtureRepo(store, FIXTURE_REPO_SLUG, dir, c.capabilities ? { history: c.capabilities.history } : {});
       if (corpus) {
         // An examples suite (README §6, 4.3): the alchemy corpus observed as one
         // batch in bytewise path order at CORPUS_TS (so `d_0` is index.md, as in
@@ -698,6 +708,7 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
       try { await server?.close(); } catch { /* transport already down */ }
       store.close();
       if (dir) rmSync(dir, { recursive: true, force: true });
+      if (gitRoot && gitRoot !== dir) rmSync(gitRoot, { recursive: true, force: true });
       if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
     }
   });
@@ -885,6 +896,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (c.bare !== undefined && typeof c.bare !== "boolean") problems.push(`${at}: \`bare\` must be a boolean`);
     } else if (kind === "reads" || kind === "examples") {
       if (c.workspace !== undefined && typeof c.workspace !== "boolean") problems.push(`${at}: \`workspace\` must be a boolean`);
+      if (c.capabilities !== undefined && (!isRecord(c.capabilities) || Object.keys(c.capabilities).some((k) => k !== "history") || typeof c.capabilities.history !== "boolean")) problems.push(`${at}: \`capabilities\` is exactly { history: boolean } (README §6, 6.4)`);
       stepCount = validateSteps(at, c.steps, problems, { read: validateRead, recover: validateRecover, embed_enable: validateEmbedEnable, embed_disable: validateEmbedDisable });
     } else {
       const has = ["parts", "cursor"].filter((k) => c[k] !== undefined);

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// `pnpm conformance` — the four-composition conformance matrix (modular-core
-// Phase 5, the plan's §6 gate: "four-profile conformance"). Runs every fixture
-// suite of the TypeScript reference under each of the plan's compositions —
-// `OMGBASE_CAPABILITIES=core | history | semantic | full` — SEQUENTIALLY (the
+// `pnpm conformance` — the five-composition conformance matrix (modular-core
+// Phase 5, the plan's §6 gate: "four-profile conformance"; Phase 6a added the
+// fifth, `git`). Runs every fixture suite of the TypeScript reference under
+// each composition — `OMGBASE_CAPABILITIES=core | history | semantic | full |
+// git` — SEQUENTIALLY (the
 // CLI and interop runners spawn the built binaries and must not race a build),
 // collects each runner's ledger line
 //
@@ -14,7 +15,7 @@
 // `afterAll`). Nothing is regenerated: every runner refuses `*_SPEC_UPDATE`
 // under a reduced composition.
 //
-//   pnpm conformance                              # all eight suites, four compositions
+//   pnpm conformance                              # all eight suites, five compositions
 //   pnpm conformance --suites store,surface       # a subset
 //   pnpm conformance --compositions core,full
 //   pnpm conformance --json <file>                # the matrix as JSON too
@@ -50,7 +51,7 @@ export const SUITES = {
   cli: { pkg: "omgbase", file: "corpus/cli/spec.test.ts" },
   interop: { pkg: "@omgbase/core", file: "corpus/surface/interop.test.ts" },
 };
-export const COMPOSITIONS = ["core", "history", "semantic", "full"];
+export const COMPOSITIONS = ["core", "history", "semantic", "full", "git"];
 /** The Rust twin's runners: the crate and the integration test that prints the same ledger line. */
 export const RUST_SUITES = {
   store: ["omgbase-store", "spec"], mutate: ["omgbase-mutate", "spec"], surface: ["omgbase-surface", "spec"], graph: ["omgbase-graph", "spec"],

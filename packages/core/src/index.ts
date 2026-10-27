@@ -76,7 +76,7 @@ export { reposStatus, syncStatus, reposList, type RepoStatus, type SyncStatus, t
 
 // Read surface consumed by CLI read commands (11 §5.2–5.5).
 export { docsOutline, type OutlineResult, type OutlineOptions } from "./core/read/outline.js";
-export { docsRead, reconstructContent, type DocsReadResult, type DocsReadOptions } from "./core/read/document.js";
+export { docsRead, reconstructContent, readDocumentAtRevision, type DocsReadResult, type DocsReadOptions, type DocsReadAtResult } from "./core/read/document.js";
 export { nodesGet, nodesGetMany, type GetNode, type Resolution } from "./core/read/nodes.js";
 export {
   findDoc, findDocByRef, loadDocBlocks, blockRaw, docsList, docsTree, normalizeTreePrefix, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT,
@@ -122,7 +122,8 @@ export { embeddingSettings, type EmbeddingSettings } from "./semantic/provider.j
 export { createExternalProvider, type ExternalProvider } from "./semantic/external.js";
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";
 export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./semantic/vector.js";
-export { capabilityStates, historyState, semanticState, semanticConfigured, type CapabilityStates, type SemanticHostReport } from "./sync/capability-state.js";
+export { capabilityStates, historyState, semanticState, semanticConfigured, historyCompleteness, type CapabilityStates, type SemanticHostReport, type HistoryCompleteness } from "./sync/capability-state.js";
+export { runProviderCheckpoint } from "./sync/freshness.js";
 // The capability manifest and the alert channel (spec/store §3.1 `capabilities` / `alerts`, 17.0 — modular-core Phase 3e-ii).
 export {
   readCapability, readCapabilities, coverageFrom, openCoverageFrom, ensureManifest, refreshSemanticManifest, refreshSemanticManifests, requireWriter, writerFor, configHash, canonicalConfigJson,
@@ -132,6 +133,9 @@ export {
   capture, CAPTURE_FAILED_ALERT, raiseCaptureFailed, clearCaptureFailed,
   // Phase 4b: the read-state table, `history purge`, `embed enable|disable`.
   inCoverage, claimMintedAt, historyReadRefusal, TargetMissingRevision, purgeHistory, enableSemantic, disableSemantic, semanticSwitchedOff, semanticProviderOf,
+  // Phase 6a: the alternative history provider seam (spec/store §5.12).
+  NATIVE_PROVIDER, historyProviderOf, attachedProvider, requireProvider, raiseProviderUnavailable, clearProviderUnavailable, providerConfigOf, historyReaderFor, historyReaderForDoc, historyReaderIfAvailable, docsHistoryReader,
+  HistoryProviderConflict, historyProviderConflictMessage,
   SemanticProviderMissing, SEMANTIC_PROVIDER_MISSING_MESSAGE,
   type ManifestRow, type ManifestState, type CoverageInterval, type HistoryLifecycleResult, type HistoryPurgeResult, type SemanticLifecycleResult,
 } from "./core/store/manifest.js";
@@ -143,7 +147,7 @@ export {
 // Legacy bytes (spec/store §3.4 step 17 (16), §5.11; spec/sync §4.3 step 5 — store 17.4, modular-core Phase 5a-ii).
 export { LEGACY_BYTES_ALERT, LEGACY_BYTES_SAMPLE, legacyBytesMessage, unreproducibleDocs, legacyBytesSuspected, refreshLegacyBytesAlert, legacyBytesActive, type UnreproducibleDoc } from "./core/store/legacy-bytes.js";
 export { repairLegacyBytes, type LegacyRepairOutcome } from "./sync/legacy-bytes.js";
-export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, RevisionNotFound, type NodeChange, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
+export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, RevisionNotFound, listHistoryDocs, unretainedHeadVersion, type NodeChange, type DocDiffUnified, type DiffEntry, type DocVersion, type DocVersions, type DocHistoryResult, type DocRow as HistoryDocRow } from "./graph/history.js";
 // The change feed (spec/store §3.1 `feed`, 17.0 — the core's; spec/surface §3 `changes_since`).
 export {
   changesSince, feedStatus, repoEpoch, pruneFeed, feedPolicy, repoFeedPolicy, ExpiredCursor,
@@ -275,9 +279,13 @@ export { FAULT_ENV, FAULT_SITES, InjectedFault, armedFault, faultPoint, resetFau
 // The capability seams (modular-core Phase 1, docs/modular-core/README.md §5–§6): the interfaces the core calls,
 // the default implementations the composition layer names (`StoreOptions.capabilities`), and the registry.
 export {
-  defaultCapabilities, coreCapabilities, historyCapabilities, semanticCapabilities, envCapabilities, envComposition, compositionCapabilities, compositionHasHistory, compositionHasSemantic, CAPABILITIES_ENV, COMPOSITIONS, type Composition, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, IdClaims,
+  defaultCapabilities, coreCapabilities, historyCapabilities, semanticCapabilities, gitCapabilities, envCapabilities, envComposition, compositionCapabilities, compositionHasHistory, compositionHasSemantic, compositionHasGitProvider, CAPABILITIES_ENV, COMPOSITIONS, type Composition, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, IdClaims,
+  // Phase 6a: the alternative history providers' registry (the composition layer registers `@omgbase/git-adapter`'s factory before opening a store).
+  registerHistoryProvider, unregisterHistoryProvider, registeredHistoryProviders, attachedProviders, type HistoryProviderFactory,
   CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_DISABLED_MESSAGE,
+  historyProviderUnavailableMessage, historyUnsupportedMessage, historyProviderNotAttachedMessage, HISTORY_PROVIDER_UNAVAILABLE_ALERT,
   CaptureFailed, captureFailedMessage,
-  type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type SemanticProvider, type SemanticScorer, type SemanticFreshness, type SemanticDrainOptions, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
-  type CapabilityName, type CapabilityState, type RevisionQueryRow,
+  type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type HistoryReader, type HistoryProvider, type HistoryProviderConfig, type HistoryProviderAvailability, type HistoryCheckpointResult, type CommitRecord,
+  type SemanticProvider, type SemanticScorer, type SemanticFreshness, type SemanticDrainOptions, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
+  type CapabilityName, type CapabilityState, type HistoryReadState, type RevisionQueryRow,
 } from "./core/capabilities/index.js";

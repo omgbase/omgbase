@@ -13,10 +13,10 @@ import { fileURLToPath } from "node:url";
 import { ALL_DDL, DDL, HISTORY_DDL, SCHEMA_VERSION, SEMANTIC_DDL } from "../../src/core/store/schema.js";
 import { ARCHIVE_DDL } from "../../src/core/store/archive.js";
 import {
-  coreModeProjection, deepEqualTol, runEdgeTransitionsCase, runMigrationCase, runObserveCase, runSchemaCase, runsUnderCore, suiteKind, validateFixtureFile,
+  coreModeProjection, deepEqualTol, needsGitProvider, runEdgeTransitionsCase, runMigrationCase, runObserveCase, runSchemaCase, runsUnderCore, suiteKind, validateFixtureFile,
 } from "./fixture.js";
 import type { EdgeTransitionsCase, FixtureCase, FixtureFile, MigrationCase, MigrationExpect, ObserveCase, Projection, SchemaCase, SchemaFingerprint } from "./fixture.js";
-import { FULL, HAS_HISTORY, HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
+import { FULL, HAS_GIT, HAS_HISTORY, HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
 
 // packages/core/corpus/store → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/store/", import.meta.url));
@@ -182,6 +182,25 @@ function runCase(suite: string, c: FixtureCase, file: string): void {
   const id = `${suite}::${c.name}`;
   let expected: unknown = c.expect;
   let mapped: string | false = false;
+  // README §9.6 (Phase 6a): a case that drives the git provider runs on the compositions that attach it (`full`, `git`),
+  // compared AS RECORDED — its repository is born disabled and no native row is written, so its projection is the same on both.
+  if (kind === "observe" && needsGitProvider(c as ObserveCase)) {
+    if (!HAS_GIT) {
+      ledger.skip(id, "needs the git history provider");
+      return;
+    }
+    // A git case whose repository is born under the native recorder (no `capabilities: { history: false }`) — the provider conflict — needs that module too.
+    if (!HAS_HISTORY && (c as ObserveCase).capabilities?.history !== false) {
+      ledger.skip(id, "needs the history module");
+      return;
+    }
+    ledger.record(id);
+    const evaluated = evaluate(suite, c);
+    expect(evaluated.problems).toEqual([]);
+    const diff = deepEqualTol(evaluated.expect, expected, EPS);
+    if (diff !== null) expect(sortKeys(evaluated.expect), diff).toEqual(sortKeys(expected));
+    return;
+  }
   if (!HAS_HISTORY && (kind === "migration" || kind === "edges" || file.startsWith("history/") || (kind === "observe" && !runsUnderCore(c as ObserveCase)))) {
     ledger.skip(id, "needs the history module");
     return;

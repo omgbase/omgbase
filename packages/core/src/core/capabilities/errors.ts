@@ -20,7 +20,7 @@ export type CapabilityName = "history" | "semantic";
 export type CapabilityState = "enabled" | "disabled" | "unavailable";
 
 /** The history states a read can raise (phase-1-contracts §2.1; spec/surface §2.1's decision table — Phase 4b added `outside_coverage` and `pruned`). */
-export type HistoryReadState = "disabled" | "unavailable" | "outside_coverage" | "pruned";
+export type HistoryReadState = "disabled" | "unavailable" | "outside_coverage" | "pruned" | "unsupported";
 
 /** The pinned messages, byte for byte what the Rust twin spells. */
 export const SEMANTIC_DISABLED_MESSAGE =
@@ -108,6 +108,28 @@ export class CapabilityUnavailable extends Error {
     return new CapabilityUnavailable("history", "disabled", HISTORY_DISABLED_MESSAGE, rev !== undefined ? { rev } : {});
   }
 
+  /**
+   * The git history provider cannot run here — `git` is not on PATH, or the
+   * composition never attached the provider a repository's manifest names
+   * (spec/store §5.12, Phase 6a): `{ history, unavailable, provider, reason }`,
+   * retriable. Reads fail with it; WRITES CONTINUE — the worker simply cannot
+   * run, which is the asynchronous-capture tradeoff.
+   */
+  static historyProviderUnavailable(provider: string, reason: string): CapabilityUnavailable {
+    return new CapabilityUnavailable("history", "unavailable", historyProviderUnavailableMessage(provider, reason), { provider, reason });
+  }
+
+  /**
+   * The repository's history provider does not record what the tool asks for
+   * (spec/surface §3 `unsupported`, Phase 6a): the git provider keeps whole
+   * documents, so `blocks_history` (a block's biography) and `docs_diff`
+   * (block-grain) have nothing to answer from; `{ history, unsupported,
+   * provider, fix }`, not retriable — `fix` names the tool that does work.
+   */
+  static historyUnsupported(provider: string, tool: string, fix: string): CapabilityUnavailable {
+    return new CapabilityUnavailable("history", "unsupported", historyUnsupportedMessage(provider, tool, fix), { provider, fix });
+  }
+
   /** The semantic module is not part of this store's composition. */
   static semanticDisabled(): CapabilityUnavailable {
     return new CapabilityUnavailable("semantic", "disabled", SEMANTIC_DISABLED_MESSAGE, { fix: SEMANTIC_DISABLED_FIX });
@@ -147,6 +169,20 @@ export function historyOutsideCoverageMessage(rev: string, coverageFrom: string)
 export function historyPrunedMessage(rev: string): string {
   return `revision ${JSON.stringify(rev)} was captured but its history has been purged`;
 }
+/** spec/store §5.12 (Phase 6a), byte for byte in both engines: the provider a repository's manifest names cannot run here. */
+export function historyProviderUnavailableMessage(provider: string, reason: string): string {
+  return `the ${provider} history provider is unavailable: ${reason} — history reads of this repository fail until it is; writes continue and are checkpointed by the next run`;
+}
+/** spec/store §5.12 (Phase 6a): the composition never attached the provider the manifest names (a build without `@omgbase/git-adapter`). */
+export function historyProviderNotAttachedMessage(provider: string): string {
+  return `this build attaches no ${JSON.stringify(provider)} history provider`;
+}
+/** spec/surface §3 `unsupported` (Phase 6a), byte for byte in both engines. */
+export function historyUnsupportedMessage(provider: string, tool: string, fix: string): string {
+  return `${tool} is not available on a repository whose history is kept by the ${provider} provider (it records whole documents, not block lineage) — use ${fix}`;
+}
+/** The alert a repository whose provider cannot run raises (spec/store §5.8, §5.12). */
+export const HISTORY_PROVIDER_UNAVAILABLE_ALERT = "history_provider_unavailable";
 /** spec/store §5.10 (Phase 4b): the semantic row switched off by `omg embed disable` with a provider still configured. */
 export const SEMANTIC_SWITCHED_OFF_MESSAGE =
   "semantic search is disabled for this repository — enable it with `omg embed enable` (the embedding provider stays configured)";

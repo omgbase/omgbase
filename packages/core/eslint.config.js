@@ -52,8 +52,17 @@ const allowlisted = importAllowlist.entries.map((e) => `src/${e.from}`);
 const concreteHistoryModules = ["src/graph/history.ts", "src/core/store/archive.ts", "src/core/store/retention.ts", "src/core/store/delta.ts", "src/core/store/history-writers.ts", "src/core/store/history-gc.ts"];
 const testFiles = ["src/**/*.test.ts", "src/**/*.test.helpers.ts"];
 
+// The git history provider (modular-core Phase 6a) is a package of its own that
+// depends on the core; the core reaches it only through the provider registry
+// (`src/core/capabilities/providers.ts`) — never by name.
+const gitAdapterBoundary = { name: "@omgbase/git-adapter", message: "the core imports nothing from @omgbase/git-adapter: the composition layer registers the provider (src/core/capabilities/providers.ts, Phase 6a)." };
+
 export default [
   ...baseConfig(import.meta.dirname, { files: ["src/**/*.ts", "corpus/**/*.ts"] }),
+  {
+    files: ["src/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { paths: [...bannedSerializers, gitAdapterBoundary] }] },
+  },
   {
     // Production code only — test files legitimately compose modules to build
     // integration fixtures. `core/capabilities/` is the one place under core/

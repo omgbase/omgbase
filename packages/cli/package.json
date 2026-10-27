@@ -1,7 +1,7 @@
 {
   "name": "omgbase",
   "version": "0.29.0",
-  "description": "Open Markdown Graph Base — CLI",
+  "description": "Open Markdown Graph Base \u2014 CLI",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -54,6 +54,7 @@
   "dependencies": {
     "@omgbase/core": "workspace:^",
     "@omgbase/fs-adapter": "workspace:^",
+    "@omgbase/git-adapter": "workspace:^",
     "@omgbase/sync": "workspace:^",
     "yaml": "^2.9.0"
   },

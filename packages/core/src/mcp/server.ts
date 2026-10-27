@@ -5,7 +5,7 @@ import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, type DocsReadAtResult } from "../core/read/document.js";
 import { semanticOf } from "../core/capabilities/registry.js";
-import { historyReader, historyReadRefusal, requireHistoryReader, semanticSwitchedOff } from "../core/store/manifest.js";
+import { docsHistoryReader, historyReaderFor, historyReadRefusal, requireHistoryReader, semanticSwitchedOff } from "../core/store/manifest.js";
 import { reconstructContent } from "../core/read/document.js";
 import { RevisionNotFound } from "../graph/history.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
@@ -425,8 +425,10 @@ export function buildServer(ctx: ServerContext): McpServer {
   // { history, unavailable }` (no module, retriable) or `{ history, disabled }`
   // (nothing captured). A repository whose capture is off but whose rows exist
   // reads what it captured (spec/store §5.9 "disable").
-  function historyTools(): ReturnType<typeof requireHistoryReader> {
-    return requireHistoryReader(store.db);
+  // Phase 6a: a repository kept by an attached provider (the git history provider)
+  // reads through it — or its refusal (`{ history, unavailable, provider }`).
+  function historyTools(repoId: string): ReturnType<typeof requireHistoryReader> {
+    return requireHistoryReader(store.db, repoId);
   }
   // A revision the recorder does not hold, asked of `docs_diff`/`docs_diff_unified`:
   // the spec/surface §2.1 decision table (Phase 4b — `disabled` / `outside_coverage`
@@ -452,7 +454,10 @@ export function buildServer(ctx: ServerContext): McpServer {
   // current document — or `target_missing` for an unclaimed token on an
   // enabled repository.
   function docsReadAt(repoId: string, docId: string, rev: string): DocsReadAtResult {
-    const reader = historyReader(store.db);
+    // Phase 6a: the repository's reader — a provider's reader decides a token of
+    // its own form (a git sha) itself and returns null for a head token it
+    // does not hold, which the decision table below settles by the claim.
+    const reader = historyReaderFor(store.db, repoId);
     const captured = reader?.readAtRevision(docId, rev) ?? null;
     if (captured) return captured;
     const doc = store.db.prepare("SELECT path, head, deleted_at FROM docs WHERE doc_id = ?").get(docId) as { path: string; head: string | null; deleted_at: string | null } | undefined;
@@ -1630,7 +1635,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(historyTools().blocksHistory(args._id, args.limit !== undefined ? { limit: args.limit } : {}));
+        // Not repo-scoped (block ids are global): the history is the owning document's repository's; an unknown block reads the default repository's (its reader answers nothing for it, as before).
+        const owner = store.db.prepare("SELECT d.repo_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?").get(args._id) as { repo_id: string } | undefined;
+        return ok(historyTools(owner?.repo_id ?? repoScope(undefined).repoId).blocksHistory(args._id, args.limit !== undefined ? { limit: args.limit } : {}));
       } catch (e) {
         return fail(e);
       }
@@ -1651,7 +1658,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // misleading-empty trap. locateDoc throws doc_missing when the ref
         // names no document.
         const docId = locateDoc(repoId, "docs_diff", registry.get("docs_diff")!.shape, args);
-        return ok(unlessDisabled(repoId, docId, () => historyTools().diffBlocks(docId, args.from_rev, args.to_rev)));
+        return ok(unlessDisabled(repoId, docId, () => historyTools(repoId).diffBlocks(docId, args.from_rev, args.to_rev)));
       } catch (e) {
         return fail(e);
       }
@@ -1669,7 +1676,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId } = repoScope(args.repo);
         const docId = locateDoc(repoId, "docs_diff_unified", registry.get("docs_diff_unified")!.shape, args);
-        return ok(unlessDisabled(repoId, docId, () => historyTools().docDiffUnified(docId, {
+        return ok(unlessDisabled(repoId, docId, () => historyTools(repoId).docDiffUnified(docId, {
           ...(args.from_rev !== undefined ? { fromRev: args.from_rev } : {}),
           ...(args.to_rev !== undefined ? { toRev: args.to_rev } : {}),
           label: JSON.stringify(args._id ?? args._path),
@@ -1730,9 +1737,9 @@ export function buildServer(ctx: ServerContext): McpServer {
         }
         // Resolution 11 (Phase 4b): `docs_history` is never `disabled` — a repository
         // nothing was captured in lists every head unretained; only a build
-        // without the module refuses (`unavailable`).
-        const module = store.capabilities.history;
-        if (!module) throw CapabilityUnavailable.historyUnavailable();
+        // without the module refuses (`unavailable`). Phase 6a: a provider
+        // repository lists through its provider.
+        const module = docsHistoryReader(store.db, repoId);
         return ok(module.docsHistory(repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
           ...(doc ? { doc } : {}),

@@ -1924,7 +1924,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "usage: unknown history subcommand 'prune' (enable|disable|purge|plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
+        "stderr": "usage: unknown history subcommand 'prune' (enable|disable|purge|checkpoint|plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
       }
     },
     {
@@ -2119,7 +2119,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
           }
         }
       ]
@@ -2230,7 +2230,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
           }
         }
       ]
@@ -2294,7 +2294,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
           }
         },
         {
@@ -2587,6 +2587,405 @@
           }
         }
       ]
+    },
+    {
+      "name": "history-git-enable-checkpoint-purge",
+      "notes": "§6 `history enable --provider git` (cli 5.5, store 17.5 Phase 6a) on a repository born disabled (`source add --no-history`): the baseline feed row (c_2) and one git commit of the two documents, `--json` carrying `provider: \"git\"`, the baseline's commit and document count and the branch `tip` (a sha the fixture pins: the committer is `omgbase <omgbase@fixture>` under the seams, the dates the spec clock). `history checkpoint` right after has nothing to do (the pre-verb freshness sweep ran the worker already). A `meta` write (c_3) is captured by nobody at write time; `history checkpoint --stale --json` (the sweep skipped) commits it: `committed 1, from_seq 3, to_seq 3`. `doctor` reads `capture complete  provider git: 0 heads not yet checkpointed`; `version --json` by shape; a second `history enable --provider git` is a no-op (`already enabled … via git`), a plain `history enable` the provider conflict (usage); `history purge --before` has no meaning for git (usage); `history purge --json` removes the bare repository and the cursor (`provider: { name, removed, path }`), the native counts all 0; a checkpoint afterwards rescans.",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"enabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":null}],\"writer_requires\":true,\"changed\":true,\"provider\":\"git\",\"baseline\":{\"commit\":\"c_2\",\"revisions\":2},\"tip\":\"b5ef3a6f7bd35caf21372d3a71784e5911e70537\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  nothing to checkpoint (tip b5ef3a6f7bd35caf21372d3a71784e5911e70537)\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/b.md",
+            "--set",
+            "layer=draft",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_1\n",
+            "stderr": "  ok patched /b.md\n    set _frontmatter.layer = \"draft\" in /b.md\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":1,\"from_seq\":4,\"to_seq\":4,\"tip\":\"b9a8dda90c1ec413be197e51371e77e3b4a78ee8\",\"rescanned\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=4 leaves=4\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"provider git: 0 heads not yet checkpointed\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+          }
+        },
+        {
+          "argv": [
+            "version",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history already enabled since 2026-09-27T00:00:00.000Z via git\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history is already enabled with the git provider — run omg history disable first, then omg history enable\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge",
+            "--before",
+            "2026-09-27T00:00:00.000Z"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: --before has no meaning for the git provider: history purge removes the whole bare repository\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"purged\":{\"commits\":0,\"revisions\":0,\"blobs\":0,\"tree_nodes\":0,\"dispositions\":0,\"block_changes\":0,\"edge_transitions\":0,\"archives\":0},\"claims_released\":0,\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":null}],\"tables_dropped\":false,\"provider\":{\"name\":\"git\",\"removed\":true,\"path\":\"<workspace>/.omgbase/git\"}}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":1,\"from_seq\":4,\"to_seq\":4,\"tip\":\"97deadf58d33a16aa183aeae317e1eb647c91199\",\"rescanned\":true}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-git-debounce-cadence",
+      "notes": "§6 `history enable --provider git --cadence 500 --best-effort --branch notes`: `writer_requires` 0, the branch `notes`; two writes (`--stale`: no sweep, so the worker does not run before them) then one `history checkpoint --stale --json` fold into one commit (`committed 1, from_seq 4, to_seq 5`). The config is `history-git-doctor-size`'s to show.",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git",
+            "--cadence",
+            "500",
+            "--best-effort",
+            "--branch",
+            "notes"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history enabled since 2026-09-27T00:00:00.000Z via git (baseline c_2: 2 documents, tip b5ef3a6f7bd35caf21372d3a71784e5911e70537)\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/b.md",
+            "--set",
+            "layer=draft",
+            "--actor",
+            "human:spec",
+            "--stale"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "d_1\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/a.md",
+            "--set",
+            "layer=draft",
+            "--actor",
+            "human:spec",
+            "--stale"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "d_0\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":1,\"from_seq\":4,\"to_seq\":5,\"tip\":\"0236ed14385a2d1e01b9e920ed39d4962ee59ead\",\"rescanned\":false}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-git-doctor-size",
+      "notes": "§6 `doctor --size` on a git-provider repository: the history line `history  enabled since <ts> (git)` (by shape, §8) and `--json`'s `capabilities[0].config` — the provider's whole config (`git_dir`, `branch`, `cadence: { debounce_ms: 500 }`, the reserved `ids_ref`, `remote: null`), `coverage_from` the enable's instant. Skipped on the `git` composition (the size table names the vector tables).",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git",
+            "--cadence",
+            "500",
+            "--best-effort",
+            "--branch",
+            "notes"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--size"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  category                        bytes   share  rows\n  content                     <bytes>  <share>    13\n    blocks                    <bytes>  <share>     4\n    properties                <bytes>  <share>     3\n    nodes                     <bytes>  <share>     2\n  identity                    <bytes>  <share>    14\n    id_claims                 <bytes>  <share>    14\n    resurrection_pool         <bytes>  <share>     0\n  recovery                    <bytes>  <share>     0\n    pending_materializations  <bytes>  <share>     0\n  history                     <bytes>  <share>     0\n  search                      <bytes>  <share>     6\n    blocks_fts                <bytes>  <share>     4\n    nodes_fts                 <bytes>  <share>     2\n    doc_embeddings            <bytes>  <share>     0\n  sync                        <bytes>  <share>    94\n    sqlite_schema             <bytes>  <share>    76\n    feed                      <bytes>  <share>     3\n    repos                     <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  archived     0 revisions in 0 segments, <bytes> on disk\n  id claims    14 ids claimed\n  feed         epoch ep_0, 3 entries, seq 1..3\n  history      enabled since 2026-09-27T00:00:00.000Z (git)\n  semantic     disabled\n  advice: nothing to reclaim\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--size",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":13,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":4,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":3,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"}]},{\"name\":\"identity\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":14,\"tables\":[{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":14,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"recovery\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"tables\":[{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"tables\":[]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":6,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":4,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":94,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":76,\"indexes\":\"<number>\"},{\"name\":\"feed\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":3,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"alerts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"capabilities\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"feed_entries\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":4,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":14,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":3,\"entries\":3,\"retain_days\":10,\"retain_entries\":10000,\"max_entries\":100000},\"capabilities\":[{\"capability\":\"history\",\"state\":\"enabled\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"config\":{\"branch\":\"notes\",\"cadence\":{\"debounce_ms\":500},\"git_dir\":\".omgbase/git\",\"ids_ref\":\"refs/omgbase/ids\",\"provider\":\"git\",\"remote\":null}},{\"capability\":\"semantic\",\"state\":\"disabled\",\"coverage_from\":null,\"config\":{}}],\"advice\":[\"nothing to reclaim\"]}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-git-refused-when-native-enabled",
+      "notes": "§6 (store 17.5 §5.12): one provider per repository — on the alchemy repository, whose capture is native from its birth, `history enable --provider git` is a usage error naming the switch (`history disable` first).",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "enable",
+        "--provider",
+        "git"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: history is already enabled with the native provider — run omg history disable first, then omg history enable --provider git\n"
+      }
+    },
+    {
+      "name": "history-checkpoint-on-native",
+      "notes": "§6: `history checkpoint` is the git provider's verb; on a native repository it is a usage error with the switch as hint.",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "checkpoint"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: history checkpoint is the git provider's: this repository's history is native (captured in every commit)\n  hint: run 'omg history enable --provider git' after 'omg history disable' to switch\n"
+      }
+    },
+    {
+      "name": "history-enable-bad-provider",
+      "notes": "§6: `--provider` is `native` or `git` — a usage error (after the workspace opens, as for every verb).",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "enable",
+        "--provider",
+        "svn"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --provider must be one of native|git (got \"svn\")\n"
+      }
+    },
+    {
+      "name": "history-enable-bad-cadence",
+      "notes": "§6: `--cadence` is `every` or a positive number of milliseconds; `--branch`/`--cadence` without `--provider git` are refused too (`history-enable-cadence-without-git`).",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "enable",
+        "--provider",
+        "git",
+        "--cadence",
+        "soon"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --cadence must be \"every\" or a positive number of milliseconds (got \"soon\")\n"
+      }
+    },
+    {
+      "name": "history-enable-cadence-without-git",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "enable",
+        "--cadence",
+        "every"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --branch and --cadence go with --provider git\n"
+      }
     }
   ]
 }

@@ -2241,8 +2241,10 @@
             "capabilities": {
               "history": {
                 "state": "<string>",
+                "provider": "<string>",
                 "coverage_from": "<string>",
-                "writer_requires": "<boolean>"
+                "writer_requires": "<boolean>",
+                "completeness": "<string>"
               },
               "semantic": {
                 "state": "<string>",

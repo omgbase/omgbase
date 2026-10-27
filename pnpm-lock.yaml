@@ -368,6 +368,9 @@ importers:
       '@omgbase/fs-adapter':
         specifier: workspace:^
         version: link:../fs-adapter
+      '@omgbase/git-adapter':
+        specifier: workspace:^
+        version: link:../git-adapter
       '@omgbase/sync':
         specifier: workspace:^
         version: link:../sync
@@ -468,6 +471,12 @@ importers:
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
+
+  packages/git-adapter:
+    dependencies:
+      '@omgbase/core':
+        specifier: workspace:^
+        version: link:../core
 
   packages/oqx:
     devDependencies:

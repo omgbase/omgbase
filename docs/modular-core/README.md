@@ -583,21 +583,25 @@ touched), 5b runs it on copies of Brendan's workspaces.
 
   The conformance matrix of the reference (`pnpm conformance`, Rust pairings
   skipped — compared / mapped / skipped per cell; see each spec's runner
-  section for what "mapped" means there):
+  section for what "mapped" means there), as of Phase 6a (the fifth column
+  `git` — `OMGBASE_CAPABILITIES=git`, the git history provider attached and no
+  native recorder — and the `git` fixtures of 6a; `spec/store` §9.6):
 
-  | suite | core | history | semantic | full |
-  | --- | --- | --- | --- | --- |
-  | store | 0/66/61 | 119/8/0 | 1/65/61 | 127/0/0 |
-  | mutate | 0/284/0 | 284/0/0 | 0/284/0 | 284/0/0 |
-  | surface | 511/11/46 | 565/2/1 | 512/11/45 | 568/0/0 |
-  | graph | 146/0/0 | 146/0/0 | 146/0/0 | 146/0/0 |
-  | sync | 61/19/0 | 80/0/0 | 61/19/0 | 80/0/0 |
-  | search | 32/15/36 | 32/15/36 | 83/0/0 | 83/0/0 |
-  | cli | 380/0/183 | 508/0/55 | 413/0/150 | 563/0/0 |
-  | interop (ts→ts; 87 Rust pairings skipped) | 14/15/87 | 28/1/87 | 15/14/87 | 29/0/87 |
+  | suite | core | history | semantic | full | git |
+  | --- | --- | --- | --- | --- | --- |
+  | store | 0/66/69 | 119/9/7 | 1/65/69 | 135/0/0 | 6/66/63 |
+  | mutate | 0/284/0 | 284/0/0 | 0/284/0 | 284/0/0 | 0/284/0 |
+  | surface | 511/11/47 | 565/2/2 | 512/11/46 | 569/0/0 | 512/11/46 |
+  | graph | 146/0/0 | 146/0/0 | 146/0/0 | 146/0/0 | 146/0/0 |
+  | sync | 61/22/0 | 83/0/0 | 61/22/0 | 83/0/0 | 61/22/0 |
+  | search | 32/15/36 | 32/15/36 | 83/0/0 | 83/0/0 | 32/15/36 |
+  | cli | 380/0/191 | 510/0/61 | 413/0/158 | 571/0/0 | 383/0/188 |
+  | interop (ts→ts; 87 Rust pairings skipped) | 14/15/87 | 28/1/87 | 15/14/87 | 29/0/87 | 14/15/87 |
 
-  32 cells green (`conformance: 32 cells green`, 2026-10-26, ≈ 20 minutes
-  wall-clock — the CLI suite is 4–5 of them per composition).
+  40 cells green (`conformance: 40 cells green` over two runs after the
+  fixture fixes, 2026-10-26, ≈ 35 minutes wall-clock — the CLI suite is 2–4.5
+  of them per composition). The Phase 5a matrix (32 cells, before the `git`
+  fixtures and the `version` keys of 6.4) is in the git history of this file.
 
 - **5a-ii (this slice; TypeScript reference + spec, `spec/store` 17.4,
   `spec/sync` 4.4, `spec/cli` 5.4).** What the first 5b run — the script on
@@ -656,14 +660,70 @@ touched), 5b runs it on copies of Brendan's workspaces.
   migration repairs the legacy documents — and run `OMGBASE_FAULT` drives
   against a copy under each engine.
 
+## 6b. Phase 6 — one alternative history strategy (6a: the Git-backed provider, TypeScript reference + spec)
+
+**6a (this slice; TypeScript reference + spec, `spec/store` 17.5 §5.12, `spec/surface` 6.4, `spec/cli` 5.5, `spec/sync`
+4.5; the design decided by Brendan 2026-10-26, followed exactly).** A repository's history may be kept by a **bare Git
+repository at `<workspace>/.omgbase/git`** instead of the recorder's tables. (1) **The seam, as landed**: `HistoryReader` —
+the read half of `HistoryRecorder` (`readAtRevision`, `docsHistory`, `docRevisionRows`, `revisionRows`, `hasRevision`,
+`uncapturedHeads`, the diffs, `blocksHistory`, `dispositionCounts`) — extracted; `HistoryRecorder extends HistoryReader`
+and keeps capture, `frontmatterAtRevision`, the lifecycle and maintenance; a new `HistoryProvider` seam (`name`,
+`available`, `reader`, `enable`, `purge`, `checkpoint`) with a process-wide **registry** (`registerHistoryProvider`) the
+composition layer fills before a store opens — the CLI's `installSpecSeams`, the MCP host, the fixture runners;
+`Capabilities.providers` carries what was registered (`full` and the new `git` composition attach it; `core`, `history`,
+`semantic` attach none). The core reaches a repository's history through `historyReaderFor(db, repoId)`, which picks by
+the manifest row's `config.provider` (`native` when absent); `captureFor` is null on a provider row (its commits write
+the feed alone); `anyHistoryEnabled` counts native rows only; `requireWriter` checks the module the row's provider needs.
+The core imports nothing from the provider's package — `dependency-direction.test.ts` and the eslint rule pin it. (2)
+**The manifest config**: `{ provider: "git", git_dir: ".omgbase/git", branch: "omgbase", cadence: "every" | {
+debounce_ms }, ids_ref: "refs/omgbase/ids", remote: null }`; one provider per repository (`HistoryProviderConflict`, a
+usage error in the CLI; the switch is `disable` then `enable --provider`). (3) **The worker** (`@omgbase/git-adapter`,
+private): resume from the branch tip's `omgbase-seq` trailer (the `$git` row of `sync_state` is its cache), page
+`changes_since`, stage each row's documents from the ROWS (`reconstruct` → `hash-object -w --stdin`; a move = remove +
+add; a delete leaves the tree; a document superseded within the pending span is written by the later row), tree from the
+parent's tree through a temporary index (`read-tree`, `update-index --index-info`, `write-tree`), `commit-tree` with the
+trailers `omgbase-seq`/`-ts`/`-commit`/`-origin`/`-actor`/`-plan`/`-rescan`/`-doc: <doc_id> <path> <head|->`, the
+`git.commit` fault site, `update-ref` by compare-and-swap. Cadence `every` (one commit per row) and `{ debounce_ms }`
+(fold what is pending; no timer in 6a). `history enable --provider git` writes the baseline snapshot under the same
+`import`/`history enabled` feed row native uses; an expired cursor, a tipless or foreign-epoch branch is a rescan. The
+freshness sweep runs the worker (step 6) before every CLI verb; `omg history checkpoint` runs it explicitly. (4) **The
+reader**: versions are the commits whose trailers name the document (`git log --grep`), under the native shape — `_rev`
+the trailer's head token, `_commit` the git sha, `_hash` the blob's sha256, `_ts` the trailer's instant; `docs_read { at:
+<sha> | <head> }` the blob through `cat-file --batch`; the diffs over blobs; the `revisions` root the same rows; the head
+unretained until a commit names it; a sha is decided by the reader (`pruned` when git lacks the object, `outside_coverage`
+by `omgbase-ts`, `target_missing` when the commit names no version of the document), a head token the commits lack by the
+core's claim table; `blocks_history`/`docs_diff` are the new state **`unsupported`** (no block lineage); `unavailable`
+when `git` is not on PATH or the provider is not attached — the `history_provider_unavailable` alert, reads fail, WRITES
+CONTINUE. `version.capabilities.history` = `{ state, provider, coverage_from, writer_requires, completeness }` for both
+providers (native: `native`/`every`). (5) **Determinism recipe** (the fixtures pin shas): every spawn with `GIT_DIR`,
+`GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_ATTR_NOSYSTEM=1`, no `HOME`, `LC_ALL=C`, `TZ=UTC`; committer
+`omgbase <omgbase@fixture>` under the conformance seams (`omgbase@localhost` in production), author name = the row's
+actor, both dates the row's `ts` as `@<seconds> +0000`; the message rendered and parsed by the engine, never by `git
+interpret-trailers`; `OMGBASE_GIT_BIN` names the executable. (6) **Fixtures**: the fifth composition
+`OMGBASE_CAPABILITIES=git`; `spec/store/cases/history/git.json` (7 scripts: enable-write-checkpoint, delete, the crash gap
+closed by replay through the `git_fault` device, the debounce fold, purge then rescan, disable then re-enable on top, the
+provider conflict — `git_checkpoint`/`git_log`/`git_tree`/`git_fault` steps, `history_enable { provider, branch, cadence
+}`); `reads::git-history` (the baseline, the unretained head, the five states and `unsupported`, a `docs_move`, disable,
+purge, re-enable); the seven CLI cases; every `version`/`sync_status` fixture moved by the two keys (reads 6 cases,
+examples, interop 5 cases, cli 26 cases). The conformance matrix below gained its `git` column. (7) **Measured**
+(`baseline.md` §3): on this repository's `docs/` the git provider keeps the import as 0.35 MB of packed objects beside a
+6.38 MB database against 3.44 MB of native history rows. **The Rust twin** (a separate task) mirrors: the seam split, the
+registry and `providers`, the `git` composition, the worker spawning `git` with the same argv and environment (the
+message text, the raw dates, the identity), the reader's shapes and decision rows, `unsupported`, the verbs, the five
+compositions in its runners; the fixtures of this slice are its contract. **6b inherits**: the `remote` half of the
+config (push on checkpoint / periodic, fetch periodic / webhook — credentials still outside omgbase), the
+`refs/omgbase/ids` id-map ref (identities recoverable from a clone), a timer for the debounce cadence, one `git log` per
+`revisionRows` call instead of one per document, the synthetic-workload per-edit comparison, and the MCP host's
+mutation hook running the worker.
+
 **Phase 5 closed on 2026-10-26.** The four compositions run every suite in both engines (`pnpm conformance`, 32/32
 cells, interop live in every pairing); `OMGBASE_FAULT` injects at five sites with the acceptance outcomes pinned;
 `scripts/qualify/migrate-copy.mjs` qualified copies of three real workspaces (853, 116 and 1,405 documents —
 `baseline.md` §3): migration clean, the one legacy-trivia workspace repaired by the sweep, the Rust binary opening each
 result with byte-identical reads, the previous binary refusing it, history off removing 37–48 %. Two production
 servers were then upgraded through the engine alone (`docs/modular-core/migration-runbook.md`) and report store 17.4
-with history enabled from their first commit. Phase 6 — one alternative strategy through the documented contract — is
-the remaining phase.
+with history enabled from their first commit. Phase 6 — one alternative strategy through the documented contract — opened with 6a (§6b above): the git-backed
+history provider in the TypeScript reference, its Rust twin and 6b remaining.
 
 ## 7. Index
 
@@ -679,8 +739,8 @@ the remaining phase.
   --edits 50`), the recorded runs `docs/modular-core/baseline/
   rust-2026-10-25T03-29-38.{json,md}` and `ts-2026-10-25T03-29-46.{json,md}`;
   the real-corpus harness is `scripts/baseline/real-corpus.mjs` (`--source
-  <dir> [--embedder <cmd>]`, four compositions, numbers only — `baseline.md`
-  §3).
+  <dir> [--embedder <cmd>]`, four compositions plus the git-provider row
+  (Phase 6a), numbers only — `baseline.md` §3).
 - The plan note, in Brendan's notes: `/projects/omgbase/modular-core-plan.md`
   (§3 names the mechanisms of §3 here; §6 the phases and gates; §10 the
   decisions to pin).

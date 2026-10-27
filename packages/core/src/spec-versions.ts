@@ -14,14 +14,14 @@ export const SPEC_VERSIONS = {
   oqx: LANGUAGE_VERSION,
   format: "0.2",
   reconcile: "2.3",
-  store: "17.4",
+  store: "17.5",
   properties: "1.2",
   graph: "3.0",
   search: "3.0",
   mutate: "4.1",
-  sync: "4.4",
-  surface: "6.3",
-  cli: "5.4",
+  sync: "4.5",
+  surface: "6.4",
+  cli: "5.5",
 } as const;
 
 export type SpecName = keyof typeof SPEC_VERSIONS;

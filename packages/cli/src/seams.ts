@@ -1,4 +1,5 @@
-import { pinClock, sequentialMinter, setIdMinter, setWriterLockDefaults } from "@omgbase/core";
+import { pinClock, registerHistoryProvider, sequentialMinter, setIdMinter, setWriterLockDefaults } from "@omgbase/core";
+import { DEFAULT_IDENTITY, FIXTURE_IDENTITY, gitHistoryProvider } from "@omgbase/git-adapter";
 import { CliUsageError } from "./output.js";
 
 // The two conformance seams of spec/surface §7.1 (and spec/cli §2.6), read
@@ -74,6 +75,12 @@ export function installSpecSeams(env: NodeJS.ProcessEnv = process.env): SpecSeam
     setWriterLockDefaults({ timeoutMs: ms });
     seams.writerLockTimeoutMs = ms;
   }
+  // The git history provider (modular-core Phase 6a; spec/store §5.12): the
+  // composition layer attaches it here, before any store opens — this binary
+  // is the host. Under either conformance seam its commits carry the fixture
+  // identity `omgbase <omgbase@fixture>` (spec/store §9.4), so the shas the
+  // fixtures pin follow from the inputs alone.
+  registerHistoryProvider("git", gitHistoryProvider({ identity: seams.minter || seams.clock !== null ? FIXTURE_IDENTITY : DEFAULT_IDENTITY }));
   installed = seams;
   return seams;
 }

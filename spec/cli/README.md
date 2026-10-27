@@ -1103,6 +1103,56 @@ by shape): `history::history-detach-attach`, `history-attach-dir`,
 `history-server-rejected`; the card `invoke::help-card-history`,
 `help-card-history-bare`, `help-card-history-word`.
 
+**`enable --provider git [--branch <b>] [--cadence every|<ms>]`** (cli
+5.5, store 17.5 Phase 6a — `spec/store` §5.12) turns capture on through the
+**git history provider**: the baseline feed row as for native, `git init
+--bare` at `<workspace>/.omgbase/git` (the user's `.git/info/exclude` gains
+`.omgbase/` when the workspace is a git repository), one baseline commit of
+the full tree, the manifest row with the provider's config (`branch` default
+`omgbase`; `cadence` `every` — one commit per feed row — or a number of
+milliseconds — the rows pending when the worker runs fold into one commit),
+`writer_requires` 1 unless `--best-effort`. Stderr `  history enabled since
+<ts> via git (baseline <commit>: <n> document(s), tip <sha>)`; already
+enabled under git: `  history already enabled since <ts> via git`. `--json`
+gains `provider: "git"` and `tip` (the branch tip after the baseline). One
+provider per repository: on a repository enabled under the other provider
+the enable is `usage: history is already enabled with the <current> provider
+— run omg history disable first, then omg history enable [--provider
+<requested>]`. `--provider` is `native` or `git` (`usage: --provider must be
+one of native|git (got "<x>")`; the flags are checked after the workspace
+opens, as every verb's); `--branch`/`--cadence` without `--provider
+git` are `usage: --branch and --cadence go with --provider git`; a bad
+cadence `usage: --cadence must be "every" or a positive number of
+milliseconds (got "<x>")`. The committer identity is `omgbase
+<omgbase@localhost>` (the author's name the write's actor) — **under the
+conformance seams `omgbase <omgbase@fixture>`**, so the shas the fixtures
+print are pinned. **`checkpoint`** runs the provider's worker once (under the
+writer lock) and prints `--json` `{ committed, from_seq, to_seq, tip,
+rescanned }`, human `  checkpointed <n> commit(s) (seq <from>..<to>), tip
+<sha>` / `  nothing to checkpoint (tip <sha>)` / `  rescanned: 1 commit at
+seq <head>, tip <sha>`; the pre-verb freshness sweep already ran the worker
+(`spec/sync` §4.3 step 6), so a plain `checkpoint` after a write finds
+nothing — `--stale` skips the sweep and shows the receipt. On a native
+repository it is `usage: history checkpoint is the git provider's: this
+repository's history is native (captured in every commit)`; on a disabled
+one `usage: history is disabled for this repository — enable it with 'omg
+history enable --provider git'`. **`purge`** on a git repository removes the
+bare repository and the worker's cursor: stderr `  purged the git history
+(<path> removed, cursor cleared)` / `  nothing to purge (<path> is already
+gone)`; `--json` the receipt with every native count 0 and `provider: {
+name: "git", removed, path }`; `--before` is `usage: --before has no meaning
+for the git provider: history purge removes the whole bare repository`.
+`doctor`'s `capture complete` reads `provider git: <n> heads not yet
+checkpointed` (`provider git: unavailable (<reason>)` when git cannot run);
+`doctor --size`'s history line `enabled since <ts> (git)` and its `--json`
+`capabilities[0].config` the provider's whole config. Exact bytes:
+`history::history-git-enable-checkpoint-purge` (an `empty` workspace with
+two files, `source add --no-history`, the whole round), `history-git-
+doctor-size` (the size line and the `--json` config), `history-git-
+debounce-cadence`, `history-git-refused-when-native-enabled`,
+`history-checkpoint-on-native`, `history-enable-bad-provider`,
+`history-enable-bad-cadence`, `history-enable-cadence-without-git`.
+
 ### `init`
 
 `init [<dir>] [--yes] [--embedder <cmd|url> | --no-embedder]` — creates
@@ -1729,6 +1779,21 @@ skipped=<n>` that `pnpm conformance` collects (the reference: `core` 381 /
 is refused under a reduced composition. The Rust runner mirrors the
 classifier word for word for the composition its binary runs with.
 
+**The fifth composition, `git` (5.5, modular-core Phase 6a; `spec/store`
+§9.6).** `OMGBASE_CAPABILITIES=git` attaches the git history provider and no
+native module, so every history rule above applies to it unchanged, plus
+one: a **git case** — a step whose argv names `--provider git` or `history
+checkpoint` — runs where the provider is attached (`full`, `git`) and is
+skipped (`needs the git history provider`) on `core`, `history` and
+`semantic`; on `git` it is skipped only when it also needs the native module
+(its text matches `with the native provider`, `history is native` or
+`"provider":"native"`), never for the history wire its own outputs carry;
+the semantic rule applies to it unchanged (a `doctor --size` names the vector
+tables, so `history-git-doctor-size` is skipped on `git`).
+The alchemy template under `git` is born disabled (no native rows), which is
+why the git cases run on an `empty` workspace with `source add --no-history`
+— the same state on both compositions.
+
 **The workspace.** A case runs in a fresh directory `<tmp>` (the harness's
 scratch path, canonicalized — macOS's temp dir is a symlink):
 
@@ -2143,6 +2208,14 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-26, cli 5.5 (store 17.5 Phase 6a, surface 6.4, sync 4.5): **the
+  git history provider** — `history enable --provider git [--branch]
+  [--cadence]`, `history checkpoint`, `history purge` on a git repository,
+  `doctor`'s provider-aware capture check and size line, the provider conflict
+  as a usage error, the fifth composition's runner rule (§8). Verbs and flags
+  added: a minor. Fixtures: the seven `history::history-git-*` /
+  `history-checkpoint-on-native` / `history-enable-bad-*` cases; every
+  `version --json` shape moved with surface 6.4's two keys.
 - 2026-10-26, cli 5.4 (store 17.4 Phase 5a-ii, sync 4.4): **`doctor`'s
   `bytes reproducible`; `sync`'s `repaired`.** `doctor` gains its sixth
   check (§6) — the store's fidelity check re-derived in full for the

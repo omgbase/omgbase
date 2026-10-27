@@ -35,7 +35,7 @@ async function runHist(cli: Cli, args: string[]): Promise<number> {
     const resolved = resolveRef(ws.store, repo.repoId, ref);
     if (!resolved || resolved.kind !== "block") throw new EngineErrorLike("block_missing", `hist needs a block id; got ${ref}`);
     // Through the recorder seam (Phase 4a): `capability_unavailable { history, unavailable | disabled }` when the build has no module or nothing was ever captured.
-    changes = requireHistoryReader(ws.store.db).blocksHistory(resolved.blockId!, values.n ? { limit: Number(values.n) } : {});
+    changes = requireHistoryReader(ws.store.db, repo.repoId).blocksHistory(resolved.blockId!, values.n ? { limit: Number(values.n) } : {});
   }
 
   // A change carries no id of its own, so `--ids` is the `--json` document.

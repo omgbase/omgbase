@@ -110,7 +110,7 @@ describe("the semantic row follows the settings until the Phase 4 verbs", () => 
 
   it("version.capabilities is the table's rendering: enabled/enabled with a provider, semantic disabled without one; coverage_from, writer_requires and model ride along (Phase 4a)", () => {
     const repoId = ensureRepo(store, "fixture", null);
-    const history = { state: "enabled", coverage_from: T0, writer_requires: true };
+    const history = { state: "enabled", provider: "native", coverage_from: T0, writer_requires: true, completeness: "every" };
     expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "disabled", model: null } });
     writeWorkspaceSettings(store, { embedding: { provider: "omgbase-embedder", model: "gte-base" } });
     expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "enabled", model: "gte-base" } });
@@ -118,7 +118,7 @@ describe("the semantic row follows the settings until the Phase 4 verbs", () => 
     writeWorkspaceSettings(store, { embedding: {} });
     expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "disabled", model: null } });
     // Without a repository there is no row: the workspace layer's setting answers, as Phase 2 did.
-    expect(capabilityStates(store, null)).toEqual({ history: { state: "enabled", coverage_from: null, writer_requires: false }, semantic: { state: "disabled", model: null } });
+    expect(capabilityStates(store, null)).toEqual({ history: { state: "enabled", provider: "native", coverage_from: null, writer_requires: false, completeness: "every" }, semantic: { state: "disabled", model: null } });
   });
 });
 
@@ -132,7 +132,7 @@ describe("writer_requires (resolution 17)", () => {
 
   it("refuses a writer without the history module on a repository that requires capture, and raises writer_refused", () => {
     // The core-only composition (Phase 4a). A repository IT creates starts disabled; this one was enabled by a full build.
-    const bare = new Store({ path: ":memory:", capabilities: (s) => ({ history: null, semantic: null, claims: new IdClaims(s) }) });
+    const bare = new Store({ path: ":memory:", capabilities: (s) => ({ history: null, semantic: null, claims: new IdClaims(s), providers: {} }) });
     try {
       const repoId = ensureRepo(bare, "fixture", null);
       expect(readCapability(bare.db, repoId, "history")!.state).toBe("disabled");
@@ -153,7 +153,7 @@ describe("writer_requires (resolution 17)", () => {
       expect(cu.data()).toEqual({ capability: "history", state: "unavailable" });
       expect(listActiveAlerts(bare.db, repoId)).toEqual([{ code: WRITER_REFUSED_ALERT, severity: "error", message: WRITER_REFUSED_MESSAGE, since: T1, detail: { capability: "history" } }]);
       // The same store writing through an engine that carries the recorder passes and clears the alert.
-      const withRecorder = { history: new HistoryRecorderImpl(bare), semantic: null, claims: bare.capabilities.claims };
+      const withRecorder = { history: new HistoryRecorderImpl(bare), semantic: null, claims: bare.capabilities.claims, providers: {} };
       (bare as { capabilities: unknown }).capabilities = withRecorder;
       bindCapabilities(bare.db, withRecorder);
       expect(() => requireWriter(bare.db, repoId, T2)).not.toThrow();
@@ -164,7 +164,7 @@ describe("writer_requires (resolution 17)", () => {
   });
 
   it("a repository whose manifest does not require capture, or whose capture is off, lets a recorder-less writer through", () => {
-    const bare = new Store({ path: ":memory:", capabilities: (s) => ({ history: null, semantic: null, claims: new IdClaims(s) }) });
+    const bare = new Store({ path: ":memory:", capabilities: (s) => ({ history: null, semantic: null, claims: new IdClaims(s), providers: {} }) });
     try {
       const repoId = ensureRepo(bare, "fixture", null);
       // Created by a core-only build: `disabled`, no coverage, writer_requires 0 (spec/store §3.1) — and it writes.

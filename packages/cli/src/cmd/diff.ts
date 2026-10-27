@@ -46,7 +46,7 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     // Through the recorder seam (Phase 4a): `capability_unavailable { history, unavailable | disabled }` when the build has no module or nothing was ever captured;
     // a revision the recorder does not hold answers by the spec/surface §2.1 decision table (Phase 4b).
     try {
-      result = requireHistoryReader(ws.store.db).docDiffUnified(info.docId, {
+      result = requireHistoryReader(ws.store.db, repo.repoId).docDiffUnified(info.docId, {
         ...(values.from ? { fromRev: values.from } : {}),
         ...(values.to ? { toRev: values.to } : {}),
         label: ref,
@@ -62,7 +62,10 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     // Block-grain over the same resolved revision pair.
     let entries: DiffEntry[];
     if (cli.flags.server) entries = await remoteCall<DiffEntry[]>(cli, "docs_diff", { ...docLocator(ref), from_rev: result.from, to_rev: result.to });
-    else entries = requireHistoryReader(cli.workspace().store.db).diffBlocks(result._id, result.from, result.to);
+    else {
+      const ws = cli.workspace();
+      entries = requireHistoryReader(ws.store.db, cli.repo(ws).repoId).diffBlocks(result._id, result.from, result.to);
+    }
     if (cli.flags.mode !== "human") return emitMachine(cli, entries, { items: entries, ids: entries.map((e) => e._id) });
     if (entries.length === 0) {
       io.err(style.dim("  no changes"));

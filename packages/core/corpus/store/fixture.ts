@@ -36,9 +36,11 @@ import {
   type ResolvedList,
 } from "../../src/core/store/delta.js";
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
-import { disableHistory, enableHistory, historyBundlePresent, historyReader, purgeHistory, readCapability, type CoverageInterval } from "../../src/core/store/manifest.js";
+import { disableHistory, enableHistory, historyBundlePresent, historyReader, HistoryProviderConflict, purgeHistory, readCapability, requireProvider, type CoverageInterval } from "../../src/core/store/manifest.js";
 import { bindCapabilities } from "../../src/core/capabilities/registry.js";
-import { HAS_HISTORY } from "../composition.js";
+import { HAS_HISTORY, fixtureGitProvider } from "../composition.js";
+import { FAULT_ENV, resetFaults } from "../../src/core/fault.js";
+import { historyProviderOf, providerConfigOf, NATIVE_PROVIDER } from "../../src/core/store/manifest.js";
 import type { Capabilities, HistoryRecorder } from "../../src/core/capabilities/types.js";
 import { CONFIG_KEYS, toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 
@@ -126,8 +128,16 @@ export type Step =
   | { history_attach: { segment: string } }
   /** README §9.4 (15.0): detach a segment by id → `{ detached }` */
   | { history_detach: { segment: string } }
-  /** README §9.4 (Phase 4a; §5.9): `history enable` at `ts` (`writer_requires` default true) → `{ history: { state, coverage, writer_requires, changed, baseline? } }` */
-  | { history_enable: { ts: string; writer_requires?: boolean } }
+  /** README §9.4 (Phase 4a; §5.9): `history enable` at `ts` (`writer_requires` default true) → `{ history: { state, coverage, writer_requires, changed, baseline? } }`; Phase 6a (§5.12): `provider: "git"` with `branch?`/`cadence?` runs `history enable --provider git` → the outcome gains `provider` and the baseline's `tip` */
+  | { history_enable: { ts: string; writer_requires?: boolean; provider?: string; branch?: string; cadence?: "every" | { debounce_ms: number } } }
+  /** README §9.4 (Phase 6a; §5.12): the git provider's checkpoint worker, once, at `ts` → `{ checkpoint: { committed, from_seq, to_seq, tip, rescanned } }`, or `{ checkpoint: { error } }` when it threw (the `git_fault` device) */
+  | { git_checkpoint: { ts: string } }
+  /** README §9.4 (Phase 6a): the bare repository's log as text — `git log --reverse --format=%H%n%s%n%(trailers) <branch>` → `{ git_log: "<text>" }` (`""` without a repository) */
+  | { git_log: Record<string, never> }
+  /** README §9.4 (Phase 6a): the branch tip's tree as text — `git ls-tree -r <branch>` → `{ git_tree: "<text>" }` */
+  | { git_tree: Record<string, never> }
+  /** README §9.4 (Phase 6a; §9.7 `git.commit`): arm (`fail: true`) or disarm the `git.commit` fault site for the process → `{ fault: boolean }` */
+  | { git_fault: { fail: boolean } }
   /** README §9.4 (Phase 4a; §5.9): `history disable` at `ts` → `{ history: { state, coverage, writer_requires, changed } }` */
   | { history_disable: { ts: string } }
   /** README §9.4 (Phase 4b; §7.6): `history purge [--before]` at `ts` → `{ purge: { purged: { <table>: n }, claims_released, coverage, tables_dropped } }` */
@@ -187,13 +197,18 @@ export type ReadAtOutcome =
   | { error: "target_missing" };
 /** README §9.4 (Phase 4a): a `history_enable`/`history_disable` step's outcome — the manifest row's capture state after the verb. */
 export interface LifecycleOutcome {
-  history: { state: "enabled" | "disabled"; coverage: CoverageInterval[]; writer_requires: boolean; changed: boolean; baseline?: { commit: string; revisions: number } };
+  history: { state: "enabled" | "disabled"; coverage: CoverageInterval[]; writer_requires: boolean; changed: boolean; provider?: string; baseline?: { commit: string; revisions: number }; tip?: string | null } | { error: string };
+}
+/** README §9.4 (Phase 6a): a `git_checkpoint` step's outcome — the worker's receipt, or the error it threw. */
+export interface CheckpointOutcome {
+  checkpoint: { committed: number; from_seq: number; to_seq: number; tip: string | null; rescanned: boolean } | { error: string };
 }
 /** README §9.4 (Phase 4b): a `history_purge` step's outcome — the receipt (§7.6). */
 export interface PurgeOutcome {
-  purge: { purged: Record<string, number>; claims_released: number; coverage: CoverageInterval[]; tables_dropped: boolean };
+  /** Phase 6a: on a git-provider repository `provider: { name, removed }` — the bare repository's path is the run's and is not projected. */
+  purge: { purged: Record<string, number>; claims_released: number; coverage: CoverageInterval[]; tables_dropped: boolean; provider?: { name: string; removed: boolean } };
 }
-export type StepOutcome = (ObservedOutcome | GoneOutcome | FailedOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string } | LifecycleOutcome | PurgeOutcome | { fault: boolean };
+export type StepOutcome = (ObservedOutcome | GoneOutcome | FailedOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string } | LifecycleOutcome | PurgeOutcome | { fault: boolean } | CheckpointOutcome | { git_log: string } | { git_tree: string };
 
 /** README §9.4 (15.0): where a case's segments are written — a temporary directory, `<dest>` in every projected path. */
 export interface HistoryContext {
@@ -577,7 +592,9 @@ export function toOutcome(o: BatchOutcome): ObservedOutcome | GoneOutcome | Fail
 export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
   const config = toReconcileConfig(c.config);
   return withFixtureMinter(() => {
-    const store = new Store({ path: ":memory:" });
+    // Phase 6a: a case that drives the git provider needs a workspace directory for its bare repository (`<tmp>/.omgbase/git`).
+    const gitRoot = needsGitProvider(c) ? mkdtempSync(join(tmpdir(), "omgbase-store-spec-git-")) : null;
+    const store = new Store({ path: ":memory:", ...(gitRoot ? { omgbaseDir: join(gitRoot, ".omgbase") } : {}) });
     // The case's archive directory (README §9.4, 15.0): created on the first
     // retention step, removed with the store.
     const history: { ctx: HistoryContext | null } = { ctx: null };
@@ -593,6 +610,8 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
     } finally {
       store.close();
       if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
+      if (gitRoot) rmSync(gitRoot, { recursive: true, force: true });
+      disarmGitFault();
     }
   }, c.minter);
 }
@@ -647,22 +666,77 @@ function runSteps(store: Store, repoId: string, stepsIn: Step[], config: ReturnT
 
 // ---- the capture lifecycle steps (README §9.4, §5.9 — Phase 4a) ---------------------------
 
-export type LifecycleStep = Extract<Step, { history_enable: unknown } | { history_disable: unknown } | { history_purge: unknown } | { recorder_fault: unknown }>;
+export type LifecycleStep = Extract<Step, { history_enable: unknown } | { history_disable: unknown } | { history_purge: unknown } | { recorder_fault: unknown } | { git_checkpoint: unknown } | { git_log: unknown } | { git_tree: unknown } | { git_fault: unknown }>;
 
 export function isLifecycleStep(step: object): step is LifecycleStep {
-  return "history_enable" in step || "history_disable" in step || "history_purge" in step || "recorder_fault" in step;
+  return "history_enable" in step || "history_disable" in step || "history_purge" in step || "recorder_fault" in step || isGitStep(step);
+}
+
+/** README §9.4 (Phase 6a): a step of the git provider — the worker, the two projections, the fault device. */
+export function isGitStep(step: object): boolean {
+  return "git_checkpoint" in step || "git_log" in step || "git_tree" in step || "git_fault" in step;
+}
+
+/** Does the case drive the git history provider (README §9.6: run only on a composition that attaches it — `full`, `git`)? */
+export function needsGitProvider(c: { steps: Step[] }): boolean {
+  return c.steps.some((s) => isGitStep(s) || ("history_enable" in s && s.history_enable.provider !== undefined && s.history_enable.provider !== NATIVE_PROVIDER));
+}
+
+/** The `git_fault` device: `OMGBASE_FAULT=git.commit` for the process (spec/store §9.7), the pass counts restarted. */
+function armGitFault(fail: boolean): boolean {
+  if (fail) process.env[FAULT_ENV] = "git.commit";
+  else delete process.env[FAULT_ENV];
+  resetFaults();
+  return fail;
+}
+function disarmGitFault(): void {
+  if (process.env[FAULT_ENV] === "git.commit") {
+    delete process.env[FAULT_ENV];
+    resetFaults();
+  }
 }
 
 /** `history_enable` / `history_disable` through the production verbs, the fault device through the test seam; shared with every observation-script runner. */
-export function runLifecycleStep(store: Store, repoId: string, step: LifecycleStep): LifecycleOutcome | PurgeOutcome | { fault: boolean } {
+export function runLifecycleStep(store: Store, repoId: string, step: LifecycleStep): LifecycleOutcome | PurgeOutcome | { fault: boolean } | CheckpointOutcome | { git_log: string } | { git_tree: string } {
   if ("history_purge" in step) {
     const r = purgeHistory(store.db, repoId, { now: step.history_purge.ts, before: step.history_purge.before ?? null });
-    return { purge: { purged: r.purged, claims_released: r.claims_released, coverage: r.coverage, tables_dropped: r.tables_dropped } };
+    return { purge: { purged: r.purged, claims_released: r.claims_released, coverage: r.coverage, tables_dropped: r.tables_dropped, ...(r.provider ? { provider: { name: r.provider.name, removed: r.provider.removed } } : {}) } };
   }
   if ("history_enable" in step) {
-    const r = enableHistory(store.db, repoId, { now: step.history_enable.ts, ...(step.history_enable.writer_requires !== undefined ? { writerRequires: step.history_enable.writer_requires } : {}) });
-    return { history: { state: r.row.state, coverage: r.row.coverage, writer_requires: r.row.writer_requires, changed: r.changed, ...(r.baseline ? { baseline: r.baseline } : {}) } };
+    const e = step.history_enable;
+    const providerOptions: Record<string, unknown> = { ...(e.branch !== undefined ? { branch: e.branch } : {}), ...(e.cadence !== undefined ? { cadence: e.cadence } : {}) };
+    let r;
+    try {
+      r = enableHistory(store.db, repoId, { now: e.ts, ...(e.writer_requires !== undefined ? { writerRequires: e.writer_requires } : {}), ...(e.provider !== undefined && e.provider !== NATIVE_PROVIDER ? { provider: e.provider, providerOptions } : {}) });
+    } catch (err) {
+      // spec/store §5.12: one provider per repository — the refusal is recorded as its message.
+      if (err instanceof HistoryProviderConflict) return { history: { error: err.message } };
+      throw err;
+    }
+    const provider = historyProviderOf(r.row);
+    return { history: { state: r.row.state, coverage: r.row.coverage, writer_requires: r.row.writer_requires, changed: r.changed, ...(provider !== NATIVE_PROVIDER ? { provider } : {}), ...(r.baseline ? { baseline: r.baseline } : {}), ...(r.tip !== undefined ? { tip: r.tip } : {}) } };
   }
+  if ("git_checkpoint" in step) {
+    // Phase 6a (§5.12): the worker once; an `InjectedFault` (the `git_fault` device) is recorded as the error it is.
+    const row = readCapability(store.db, repoId, "history");
+    try {
+      if (!row || historyProviderOf(row) === NATIVE_PROVIDER) throw new Error("the repository's history is not the git provider's");
+      if (row.state !== "enabled") throw new Error("history is disabled for this repository");
+      const r = requireProvider(store.db, repoId, historyProviderOf(row), step.git_checkpoint.ts).checkpoint(repoId, providerConfigOf(row), { now: step.git_checkpoint.ts });
+      return { checkpoint: r };
+    } catch (e) {
+      return { checkpoint: { error: e instanceof Error ? e.message : String(e) } };
+    }
+  }
+  if ("git_log" in step || "git_tree" in step) {
+    const row = readCapability(store.db, repoId, "history");
+    const provider = fixtureGitProvider(store);
+    const branch = typeof row?.config.branch === "string" ? row.config.branch : "omgbase";
+    const git = row && provider ? provider.gitRepo(providerConfigOf(row)) : null;
+    if ("git_log" in step) return { git_log: git?.exists() ? git.text(["log", "--reverse", `--format=%H%n%s%n%(trailers)`, `refs/heads/${branch}`]) : "" };
+    return { git_tree: git?.exists() ? git.text(["ls-tree", "-r", `refs/heads/${branch}`]) : "" };
+  }
+  if ("git_fault" in step) return { fault: armGitFault(step.git_fault.fail) };
   if ("history_disable" in step) {
     const r = disableHistory(store.db, repoId, { now: step.history_disable.ts });
     return { history: { state: r.row.state, coverage: r.row.coverage, writer_requires: r.row.writer_requires, changed: r.changed } };
@@ -1019,8 +1093,11 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   // edges only while capture is on (H6). A core-only run checks C*, F* and A1 alone.
   const reader = historyReader(db);
   const manifest = readCapability(db, repoId, "history");
-  const coverage = manifest?.coverage ?? [];
-  const captureOn = manifest?.state === "enabled";
+  // Phase 6a (§5.12): a repository kept by an attached provider owes the NATIVE recorder nothing — its coverage
+  // intervals are the provider's; the native invariants below see no coverage and capture off for it.
+  const nativeRepo = historyProviderOf(manifest) === NATIVE_PROVIDER;
+  const coverage = nativeRepo ? (manifest?.coverage ?? []) : [];
+  const captureOn = nativeRepo && manifest?.state === "enabled";
   const inCoverage = (ts: string): boolean => coverage.some((i) => i.from <= ts && (i.to === null || ts < i.to));
   const neverOff = coverage.length === 1 && coverage[0]!.to === null && coverage[0]!.from <= FIXTURE_BIRTH;
 
@@ -1671,7 +1748,7 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
-  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", "history_enable", "history_disable", "history_purge", "recorder_fault", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
+  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", "history_enable", "history_disable", "history_purge", "recorder_fault", "git_checkpoint", "git_log", "git_tree", "git_fault", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -1699,11 +1776,28 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
       return;
     }
     if (keys[0] === "history_enable") {
-      if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts" && k !== "writer_requires")) problems.push(`${here}: history_enable takes \`ts\` and an optional \`writer_requires\``);
+      if (!isRecord(body) || Object.keys(body).some((k) => !["ts", "writer_requires", "provider", "branch", "cadence"].includes(k))) problems.push(`${here}: history_enable takes \`ts\`, an optional \`writer_requires\` and (Phase 6a) \`provider\`, \`branch\`, \`cadence\``);
       else {
         if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
         if (body.writer_requires !== undefined && typeof body.writer_requires !== "boolean") problems.push(`${here}: \`writer_requires\` must be a boolean`);
+        if (body.provider !== undefined && body.provider !== "git") problems.push(`${here}: \`provider\` is "git" (the native provider is the default)`);
+        if (body.branch !== undefined && (typeof body.branch !== "string" || body.branch === "")) problems.push(`${here}: \`branch\` must be a non-empty string`);
+        if (body.cadence !== undefined && body.cadence !== "every" && !(isRecord(body.cadence) && Number.isInteger(body.cadence.debounce_ms) && (body.cadence.debounce_ms as number) > 0)) problems.push(`${here}: \`cadence\` is "every" or { debounce_ms: <positive integer> }`);
+        if ((body.branch !== undefined || body.cadence !== undefined) && body.provider !== "git") problems.push(`${here}: \`branch\`/\`cadence\` go with provider "git"`);
       }
+      return;
+    }
+    if (keys[0] === "git_checkpoint") {
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: git_checkpoint takes only \`ts\``);
+      else if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+      return;
+    }
+    if (keys[0] === "git_log" || keys[0] === "git_tree") {
+      if (!isRecord(body) || Object.keys(body).length !== 0) problems.push(`${here}: ${keys[0]} takes {}`);
+      return;
+    }
+    if (keys[0] === "git_fault") {
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "fail") || typeof body.fail !== "boolean") problems.push(`${here}: git_fault takes only a boolean \`fail\``);
       return;
     }
     if (keys[0] === "history_disable") {

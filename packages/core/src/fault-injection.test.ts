@@ -16,7 +16,7 @@ import { FAULT_ENV, FAULT_SITES, InjectedFault, armedFault, faultPasses, resetFa
 
 // Fault injection outside the fixture runners (modular-core Phase 5a; the plan's
 // §8 acceptance matrix — recovery, optional history). `OMGBASE_FAULT=<site>[:<nth>]`
-// arms one of the five named sites (`core/fault.ts`; spec/store §9.7); a write is
+// arms one of the six named sites (`core/fault.ts`; spec/store §9.7 — `git.commit`, Phase 6a, is driven by `spec/store/cases/history/git.json` and the git adapter's tests); a write is
 // driven through each and the matrix outcome asserted: ROLLED BACK (nothing
 // minted, the request fails, a retry lands), RECOVERABLE (the rows are durable,
 // the file is owed, `recoverRepo` replays it and is then a no-op), ALERT RAISED
@@ -58,9 +58,9 @@ describe("the hook (OMGBASE_FAULT)", () => {
     expect(armedFault({})).toBeNull();
     expect(armedFault({ [FAULT_ENV]: "feed.append" })).toEqual({ site: "feed.append", nth: 1 });
     expect(armedFault({ [FAULT_ENV]: "materialize.after-write:3" })).toEqual({ site: "materialize.after-write", nth: 3 });
-    expect(() => armedFault({ [FAULT_ENV]: "recorder" })).toThrow(/unknown fault site "recorder"; the sites are recorder.capture, feed.append, commit.after-commit, materialize.before-write, materialize.after-write/);
+    expect(() => armedFault({ [FAULT_ENV]: "recorder" })).toThrow(/unknown fault site "recorder"; the sites are recorder.capture, feed.append, commit.after-commit, materialize.before-write, materialize.after-write, git.commit/);
     expect(() => armedFault({ [FAULT_ENV]: "feed.append:0" })).toThrow(/positive integer/);
-    expect(FAULT_SITES).toHaveLength(5);
+    expect(FAULT_SITES).toHaveLength(6);
   });
 
   it("the nth pass throws, the passes before it do not, and the message is pinned", () => {

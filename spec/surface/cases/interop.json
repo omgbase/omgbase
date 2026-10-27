@@ -3749,8 +3749,10 @@
             "capabilities": {
               "history": {
                 "state": "enabled",
+                "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
-                "writer_requires": true
+                "writer_requires": true,
+                "completeness": "every"
               },
               "semantic": {
                 "state": "disabled",
@@ -4313,8 +4315,10 @@
             "capabilities": {
               "history": {
                 "state": "enabled",
+                "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
-                "writer_requires": true
+                "writer_requires": true,
+                "completeness": "every"
               },
               "semantic": {
                 "state": "disabled",
@@ -9588,8 +9592,10 @@
             "capabilities": {
               "history": {
                 "state": "enabled",
+                "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
-                "writer_requires": true
+                "writer_requires": true,
+                "completeness": "every"
               },
               "semantic": {
                 "state": "disabled",
@@ -11329,8 +11335,10 @@
             "capabilities": {
               "history": {
                 "state": "enabled",
+                "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
-                "writer_requires": true
+                "writer_requires": true,
+                "completeness": "every"
               },
               "semantic": {
                 "state": "disabled",
@@ -14837,8 +14845,10 @@
             "capabilities": {
               "history": {
                 "state": "<string>",
+                "provider": "<string>",
                 "coverage_from": "<string>",
-                "writer_requires": "<boolean>"
+                "writer_requires": "<boolean>",
+                "completeness": "<string>"
               },
               "semantic": {
                 "state": "<string>",

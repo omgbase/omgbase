@@ -1,4 +1,7 @@
 import type { Store } from "../core/store/store.js";
+import { historyProviderOf, NATIVE_PROVIDER, providerConfigOf, readCapability, requireProvider } from "../core/store/manifest.js";
+import { CapabilityUnavailable } from "../core/capabilities/errors.js";
+import type { HistoryCheckpointResult } from "../core/capabilities/types.js";
 import { sha256 } from "../core/hash.js";
 import { processCheckpoint, type BatchResult } from "./checkpoint.js";
 import { nodeFs, type SyncFs } from "./fs-util.js";
@@ -186,6 +189,14 @@ export function freshnessSweep(
   // listed. Then the alert follows the remainder: cleared when none is left.
   const repaired = legacyBytesActive(store.db, repoId) ? repairLegacy(store, repoId, rootPath, fs, opts.ts ?? new Date().toISOString()) : [];
 
+  // Step 6 (Phase 6a; spec/store §5.12, spec/sync §4.3): a repository whose
+  // history is kept by an attached provider is checkpointed by the sweep — the
+  // provider's worker runs once over the feed rows this sweep (and every write
+  // since the last run) appended. Best effort: a provider that cannot run
+  // leaves its alert and the rows wait for the next run; the sweep itself
+  // never fails for it.
+  runProviderCheckpoint(store, repoId, opts.ts);
+
   return {
     ...result,
     scanned: snapshot.length,
@@ -194,6 +205,24 @@ export function freshnessSweep(
     materialized,
     repaired,
   };
+}
+
+/**
+ * spec/sync §4.3 step 6 (Phase 6a): run the attached provider's checkpoint for a
+ * repository whose manifest names one and is `enabled`; a provider that is not
+ * attached or cannot run is `capability_unavailable` (its alert raised by
+ * `requireProvider`) and swallowed here — writes continue, the next run catches up.
+ */
+export function runProviderCheckpoint(store: Store, repoId: string, now?: string): HistoryCheckpointResult | null {
+  const row = readCapability(store.db, repoId, "history");
+  if (!row || row.state !== "enabled" || historyProviderOf(row) === NATIVE_PROVIDER) return null;
+  try {
+    const provider = requireProvider(store.db, repoId, historyProviderOf(row), now);
+    return provider.checkpoint(repoId, providerConfigOf(row), now !== undefined ? { now } : {});
+  } catch (e) {
+    if (e instanceof CapabilityUnavailable) return null;
+    throw e;
+  }
 }
 
 /** spec/sync §4.3 step 5: the repair pass over the alert's documents; returns the repaired paths in path order. */

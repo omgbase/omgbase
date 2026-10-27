@@ -362,7 +362,7 @@ export interface DocHistoryResult {
   coverage: CoverageInterval[];
 }
 
-interface DocRow {
+export interface DocRow {
   doc_id: string;
   path: string;
   head: string | null;
@@ -370,32 +370,19 @@ interface DocRow {
 }
 
 /**
- * docHistory: the version history of matching documents, grouped by document.
- *
- * - `doc` (id OR path): list that single document's versions. Resolves via
- *   findDoc for non-deleted docs; falls back to a direct docs lookup (by id or
- *   repo+path) so `includeDeleted` can surface a tombstoned doc's history too.
- * - `pathGlob`: match docs.path with the SAME LIKE conversion as within()
- *   (compileWithin): escape %/_ then map `*`→SQL `%`. So `journal/*` and
- *   `journal/**` both become `journal/%`; `*` matches ACROSS `/` (there is no
- *   distinct single-segment wildcard in this dialect), consistent with within().
- * - By default only NON-deleted docs (deleted_at IS NULL). includeDeleted:
- *   true also returns tombstoned docs, whose past versions remain valuable for
- *   audit (a deleted journal file's history is intact).
- *
- * Docs are ordered by path (ascending). Versions within a doc are ordered by
- * seq ASCENDING (chronological — reads as a timeline). `limit` (default 50)
- * caps the number of DOCUMENTS returned (not revisions); `truncated` is set
- * when more matching docs existed.
+ * The documents `docs_history` lists (shared with an attached provider's reader
+ * — Phase 6a; the git provider lists the same page from its own history):
+ * `doc` (id OR path) resolves one document — through `findDoc` for a live one,
+ * falling back to a direct lookup so `includeDeleted` can surface a tombstoned
+ * document too; `pathGlob` matches `docs.path` with the same LIKE conversion as
+ * `within()` (`%`/`_` escaped, `*` → `%`, so `journal/*` and `journal/**` are
+ * one and `*` matches ACROSS `/`). Live documents only unless `includeDeleted`.
+ * Ordered by path; `limit` (default 50) caps the DOCUMENTS and `truncated` says
+ * more matched.
  */
-export function docHistory(
-  store: Store,
-  repoId: string,
-  opts: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number } = {},
-): DocHistoryResult {
+export function listHistoryDocs(store: Store, repoId: string, opts: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number } = {}): { page: DocRow[]; truncated: boolean } {
   const limit = opts.limit ?? 50;
   const includeDeleted = opts.includeDeleted ?? false;
-
   let docRows: DocRow[];
   if (opts.doc) {
     const row = resolveDocRow(store, repoId, opts.doc, includeDeleted);
@@ -421,9 +408,49 @@ export function docHistory(
   } else {
     throw new Error("docHistory requires one of { doc, pathGlob }");
   }
+  return { page: docRows.slice(0, limit), truncated: docRows.length > limit };
+}
 
-  const truncated = docRows.length > limit;
-  const page = docRows.slice(0, limit);
+/**
+ * Resolution 11 (Phase 4b): the current head as an UNRETAINED version — what
+ * the core knows when the history holds no version for it (minted while
+ * capture was off, purged, or — Phase 6a — not yet checkpointed by a provider's
+ * worker): the feed row that minted it (`_commit`/`_ts`/`_origin`/`_actor`;
+ * null, and the document's `updated_at`, once the feed pruned that row), the
+ * document's `file_hash`, `_is_current` true, `retained` false. Shared with an
+ * attached provider's reader.
+ */
+export function unretainedHeadVersion(store: Store, docId: string, head: string): DocVersion {
+  const feed = store.db.prepare(
+    `SELECT f.commit_id, f.ts, f.origin, f.actor FROM feed_entries e JOIN feed f ON f.repo_id = e.repo_id AND f.epoch = e.epoch AND f.seq = e.seq
+     WHERE e.head = ? ORDER BY e.rowid DESC LIMIT 1`,
+  ).get(head) as { commit_id: string; ts: string; origin: string; actor: string | null } | undefined;
+  const doc = store.db.prepare("SELECT file_hash, updated_at FROM docs WHERE doc_id = ?").get(docId) as { file_hash: Buffer; updated_at: string };
+  return {
+    _rev: head,
+    _seq: null,
+    _commit: feed?.commit_id ?? null,
+    _ts: feed?.ts ?? doc.updated_at,
+    _origin: feed?.origin ?? null,
+    _actor: feed?.actor ?? null,
+    _hash: doc.file_hash.toString("hex"),
+    _is_current: true,
+    _archived: false,
+    retained: false,
+  };
+}
+
+/**
+ * docHistory: the version history of matching documents, grouped by document
+ * (`listHistoryDocs` picks them). Versions within a doc are ordered by seq
+ * ASCENDING (chronological — reads as a timeline).
+ */
+export function docHistory(
+  store: Store,
+  repoId: string,
+  opts: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number } = {},
+): DocHistoryResult {
+  const { page, truncated } = listHistoryDocs(store, repoId, opts);
 
   // The captured versions — the recorder's rows, when the bundle exists (a
   // repository nothing was ever captured in has no history table; Phase 4b).
@@ -436,13 +463,6 @@ export function docHistory(
        WHERE r.doc_id = ? ORDER BY r.seq ASC`,
     )
     : null;
-  // An unretained head's commit, from the feed row that minted it (the core's
-  // record; null once the feed pruned it).
-  const headFeed = store.db.prepare(
-    `SELECT f.commit_id, f.ts, f.origin, f.actor FROM feed_entries e JOIN feed f ON f.repo_id = e.repo_id AND f.epoch = e.epoch AND f.seq = e.seq
-     WHERE e.head = ? ORDER BY e.rowid DESC LIMIT 1`,
-  );
-  const headRow = store.db.prepare("SELECT file_hash, updated_at FROM docs WHERE doc_id = ?");
 
   const docs: DocVersions[] = page.map((d) => {
     const rows = (revStmt?.all(d.doc_id) ?? []) as {
@@ -461,25 +481,8 @@ export function docHistory(
       retained: true,
     }));
     // Resolution 11 (Phase 4b): the current head is ALWAYS listed — unretained
-    // when the recorder has no row for it (minted while capture was off, or
-    // purged), with what the core knows: the feed row that minted it, the
-    // document's `file_hash` and `updated_at`.
-    if (d.head !== null && !rows.some((r) => r.rev === d.head)) {
-      const feed = headFeed.get(d.head) as { commit_id: string; ts: string; origin: string; actor: string | null } | undefined;
-      const doc = headRow.get(d.doc_id) as { file_hash: Buffer; updated_at: string };
-      versions.push({
-        _rev: d.head,
-        _seq: null,
-        _commit: feed?.commit_id ?? null,
-        _ts: feed?.ts ?? doc.updated_at,
-        _origin: feed?.origin ?? null,
-        _actor: feed?.actor ?? null,
-        _hash: doc.file_hash.toString("hex"),
-        _is_current: true,
-        _archived: false,
-        retained: false,
-      });
-    }
+    // when the recorder has no row for it (minted while capture was off, or purged).
+    if (d.head !== null && !rows.some((r) => r.rev === d.head)) versions.push(unretainedHeadVersion(store, d.doc_id, d.head));
     return { _id: d.doc_id, _path: referencePath(d.path), deleted: d.deleted_at !== null, currentRev: d.head, versions };
   });
 

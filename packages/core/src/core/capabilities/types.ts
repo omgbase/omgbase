@@ -119,7 +119,44 @@ export interface HistoryPurgeOutcome {
   tables_dropped: boolean;
 }
 
-export interface HistoryRecorder {
+/**
+ * The READ half of history (modular-core Phase 6a; spec/surface §3): what the
+ * surface's history tools, the `revisions` query root and `doctor` ask of
+ * whatever holds a repository's history. The native recorder implements it
+ * over its own tables (`HistoryRecorder extends HistoryReader`); an
+ * alternative provider — the git history provider of `@omgbase/git-adapter`,
+ * spec/store §5.12 — implements it over its own storage and attaches NO
+ * recorder (a `provider: git` repository is captured asynchronously by a
+ * checkpoint worker, never inside the commit transaction). The core reaches a
+ * repository's reader through `historyReaderFor(db, repoId)`
+ * (`core/store/manifest.ts`), which picks by the manifest row's `config.provider`.
+ */
+export interface HistoryReader {
+  /** `docs_read { at }` / `docs_read_at`: spec/store §6.2 reconstruct at a revision (segment-aware); null when the token names no retained version of the document. */
+  readAtRevision(docId: string, revId: string): DocsReadAtResult | null;
+  /** `blocks_history`: a block's biography from `block_changes` × `commits` × `dispositions`. A provider without block lineage throws `capability_unavailable { history, unsupported }`. */
+  blocksHistory(blockId: string, opts?: { limit?: number }): NodeChange[];
+  /** `docs_diff`: block-grain diff between two revisions (`unsupported` on a provider without block identities). */
+  diffBlocks(docId: string, fromRev: string, toRev: string): DiffEntry[];
+  /** `docs_diff_unified`'s text: the unified diff of two revisions' reconstructed bytes. */
+  diffUnified(docId: string, fromRev: string, toRev: string): string;
+  /** `docs_diff_unified` over a resolved document (defaults: previous → current). */
+  docDiffUnified(docId: string, opts?: { fromRev?: string; toRev?: string; label?: string }): DocDiffUnified;
+  /** `docs_history`: the versions per document — the current head always listed with `retained` (resolution 11, Phase 4b), the repository's coverage on the result. */
+  docsHistory(repoId: string, opts?: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number }): DocHistoryResult;
+  /** The disposition counts of a captured commit for a `changes_since` digest's summary — `null` when this history holds none for it. */
+  dispositionCounts(commitId: string): { kind: string; n: number }[] | null;
+  /** The `revisions` query root (spec/surface §1.1, 4.7): every retained version of the repository's documents as the binding's rows, by (`path`, `rev_id`). */
+  revisionRows(repoId: string): RevisionQueryRow[];
+  /** The `_revisions` relation of a document (spec/surface §1.2): its retained versions by `seq`. */
+  docRevisionRows(docId: string): RevisionQueryRow[];
+  /** Does this history hold a version under this token? (`docs_read { at }` tells a retained version from an unknown token by this.) */
+  hasRevision(revId: string): boolean;
+  /** `doctor`'s "capture complete" (spec/cli §6): the live documents whose head was minted at or after `since` and has no retained version. */
+  uncapturedHeads(repoId: string, since: string): number;
+}
+
+export interface HistoryRecorder extends HistoryReader {
   // ---- capture: the write half (spec/store §5.4 step 15; §5.6) ----
 
   /** Step 15 (17.0, 3d): the `commits` row of a feed row the core appended — the same `commit_id`, `epoch` and `seq` (`core/store/feed.ts` `appendFeedRow`); sets the recorder's hold on the commit's claim. */
@@ -138,32 +175,10 @@ export interface HistoryRecorder {
   // `priorRenderedHash` in 3c — the pending row carries `prior_hash` and the
   // materializer renders from the current rows.)
 
-  // ---- the surface's reads (spec/surface §3) ----
+  // ---- the surface's reads: `HistoryReader` (spec/surface §3) ----
 
-  /** `docs_read { at }` / `docs_read_at`: spec/store §6.2 reconstruct at a revision (segment-aware). */
-  readAtRevision(docId: string, revId: string): DocsReadAtResult | null;
-  /** A captured revision's frontmatter raw, resolved through the recorder's own delta chain (spec/store §6.2 "Resolving"); null when it has none or the row is unknown. Migration 17's backfill reads it once per live head (§3.4 step 17). */
+  /** A captured revision's frontmatter raw, resolved through the recorder's own delta chain (spec/store §6.2 "Resolving"); null when it has none or the row is unknown. Migration 17's backfill reads it once per live head (§3.4 step 17). The recorder's alone: a provider has no delta chain. */
   frontmatterAtRevision(revId: string): string | null;
-  /** `blocks_history`: a block's biography from `block_changes` × `commits` × `dispositions`. */
-  blocksHistory(blockId: string, opts?: { limit?: number }): NodeChange[];
-  /** `docs_diff`: block-grain diff between two revisions. */
-  diffBlocks(docId: string, fromRev: string, toRev: string): DiffEntry[];
-  /** `docs_diff_unified`'s text: the unified diff of two revisions' reconstructed bytes. */
-  diffUnified(docId: string, fromRev: string, toRev: string): string;
-  /** `docs_diff_unified` over a resolved document (defaults: previous → current). */
-  docDiffUnified(docId: string, opts?: { fromRev?: string; toRev?: string; label?: string }): DocDiffUnified;
-  /** `docs_history`: the `revisions` rows per document — the current head always listed with `retained` (resolution 11, Phase 4b), the repository's coverage on the result; answers on a database without the bundle too (every head unretained). */
-  docsHistory(repoId: string, opts?: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number }): DocHistoryResult;
-  /** The disposition counts of a captured commit (`kind → n`, `same` never persisted) for a `changes_since` digest's summary — `null` when the recorder has no `commits` row for it (the feed is the core's; `core/store/feed.ts`). */
-  dispositionCounts(commitId: string): { kind: string; n: number }[] | null;
-  /** The `revisions` query root (spec/surface §1.1, 4.7; Phase 4a): every captured revision of the repository's documents as the binding's rows, by (`path`, `rev_id`). */
-  revisionRows(repoId: string): RevisionQueryRow[];
-  /** The `_revisions` relation of a document (spec/surface §1.2): its captured revisions by `seq`. */
-  docRevisionRows(docId: string): RevisionQueryRow[];
-  /** Has the recorder a `revisions` row under this head token? (`docs_read { at }` on a disabled repository tells a captured revision from an uncaptured one by this; Phase 4a.) */
-  hasRevision(revId: string): boolean;
-  /** `doctor`'s "capture complete" (spec/cli §6): the live documents whose head was minted at or after `since` (within the open coverage interval) and has no `revisions` row. */
-  uncapturedHeads(repoId: string, since: string): number;
 
   // ---- the capture lifecycle (spec/store §5.9, Phase 4a) ----
 
@@ -323,19 +338,83 @@ export interface IdentityClaims {
 }
 
 /**
+ * The configuration an alternative history provider's manifest row carries
+ * (spec/store §3.1 `capabilities.config`, §5.12 — Phase 6a). The git provider's:
+ * `{ provider: "git", git_dir, branch, cadence, ids_ref, remote }` — `git_dir`
+ * relative to the workspace root, `cadence` `"every"` (one git commit per feed
+ * row) or `{ debounce_ms }` (the rows pending when the worker runs fold into one
+ * commit), `ids_ref` the RESERVED per-document id-map ref (nothing is written to
+ * it in 6a), `remote` null in 6a (6b wires it). A native row's config is `{}`:
+ * `provider` absent reads `"native"`.
+ */
+export interface HistoryProviderConfig {
+  provider: string;
+  [key: string]: unknown;
+}
+
+/** `history checkpoint`'s receipt (spec/store §5.12, spec/cli §6): the git commits written, the feed span they cover, the branch tip, whether the run was a rescan. */
+export interface HistoryCheckpointResult {
+  committed: number;
+  from_seq: number;
+  to_seq: number;
+  tip: string | null;
+  rescanned: boolean;
+}
+
+/** Can the provider run on this host? (`git` on PATH for the git provider.) */
+export type HistoryProviderAvailability = { ok: true; detail: string } | { ok: false; reason: string };
+
+/**
+ * An alternative history provider (modular-core Phase 6a — "one alternative
+ * strategy through the documented contract"): what the composition layer
+ * attaches for a history that is NOT the recorder's tables. The core knows it
+ * by name — the manifest row's `config.provider` — and reaches it through
+ * `Capabilities.providers`; it imports nothing of the implementation
+ * (`@omgbase/git-adapter`). A `provider: <name>` repository has no recorder
+ * (`captureFor` is null — its commits write the feed alone) and reads through
+ * `reader(repoId, config)`; capture is the provider's own asynchronous worker
+ * (`checkpoint`), run by `omg history checkpoint` and by the freshness sweep.
+ */
+export interface HistoryProvider {
+  /** The provider's name — the manifest row's `config.provider`. */
+  readonly name: string;
+  /** Is the provider usable here? Not ok → `capability_unavailable { history, unavailable }` on every read, the `history_provider_unavailable` alert; WRITES CONTINUE (the worker simply cannot run). */
+  available(): HistoryProviderAvailability;
+  /** The read half for a repository whose manifest names this provider, over the row's `config`. */
+  reader(repoId: string, config: HistoryProviderConfig): HistoryReader;
+  /**
+   * `history enable --provider <name>` (spec/store §5.12): initialise the
+   * provider's storage and write its BASELINE — the full current tree under the
+   * baseline feed row the core appended (`commit`) — returning the `config` the
+   * manifest row stores and the baseline's receipt. Runs inside the core's
+   * enable transaction (the manifest row is written after it returns).
+   */
+  enable(repoId: string, commit: CommitRecord, opts: Record<string, unknown>): { config: HistoryProviderConfig; baseline: { revisions: number; tip: string | null } };
+  /** `history purge` on a repository of this provider: delete its storage and its cursor (spec/store §7.6, §5.12). */
+  purge(repoId: string, config: HistoryProviderConfig): { removed: boolean; path: string };
+  /** The checkpoint worker, once: read the feed from the cursor and write the provider's commits (spec/store §5.12). */
+  checkpoint(repoId: string, config: HistoryProviderConfig, opts?: { now?: string }): HistoryCheckpointResult;
+  /** Release process resources (the store is closing). */
+  close?(): void;
+}
+
+/**
  * The capabilities a store runs with — the MODULES the composition carries.
  * `history`/`semantic` are `null` when the module is absent (D3's
  * `unavailable`). Since Phase 4a the recorder's presence says nothing about
  * CAPTURE: whether a commit on a repository is captured is the repository's
  * manifest row (`core/store/manifest.ts` `captureFor` — the recorder iff the
- * module is here AND the row is `enabled`), and a repository whose row is
- * `enabled` with `writer_requires` refuses a writer whose composition lacks
- * the module (`requireWriter`).
+ * module is here AND the row is `enabled` AND the row's provider is native), and a
+ * repository whose row is `enabled` with `writer_requires` refuses a writer
+ * whose composition lacks the module its provider needs (`requireWriter`).
+ * `providers` (Phase 6a) are the alternative history providers the composition
+ * layer attached, by name — `{}` when none.
  */
 export interface Capabilities {
   history: HistoryRecorder | null;
   semantic: SemanticProvider | null;
   claims: IdentityClaims;
+  providers: Record<string, HistoryProvider>;
 }
 
 /** How the composition layer names the implementations: a factory the `Store` calls on itself once its connection is open. */

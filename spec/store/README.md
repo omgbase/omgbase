@@ -265,7 +265,7 @@ The tables of `schema.sql` this spec fills:
 | `pending_materializations` | file the `api` path still owes the disk (14.0; self-contained since 17.0 — M4) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, **`head`** (17.0 — the document's head token whose bytes `write`/`rename` leave at `path`, always its CURRENT head (C8); `NULL` for `remove`; no foreign key — `rev_id → revisions` through 16.x), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), **`prior_hash`** (17.0 — the bytes the engine itself last wrote at `path`: the `file_hash` the commit validated the file against, captured at commit time, or inherited from the row it superseded; `NULL` when the engine never wrote there — a created document, a `remove`), `commit_id` (the `api` commit that recorded it; no foreign key since 17.0 — `commits` is the recorder's), **`created_at`** (17.0 — that commit's `ts`). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7); the replay reads only this row and the document's current rows. Empty at quiescence; the observe path never inserts; no cap — a row lives until its path is settled. |
 | `edges` | **open** link relation (17.0, M6) | `spec/graph` §3.3's table: `edge_id`, `repo_id`, `src_doc`, `src_block`, `src_field`, `predicate`, `dst_kind ∈ {document, block, external}` (`collection` struck with the `collections` table, D9), `dst_node`, `anchor`, `provenance`, `via_node`. **Open rows only**: closing an edge deletes its row; `from_commit`/`to_commit` and `idx_edges_temporal` are gone (through 16.x a closed edge stayed with `to_commit` set and every reader filtered on it), `idx_edges_src`/`idx_edges_dst` lose their `WHERE`. The interval record is the recorder's `edge_transitions`, below. Written by the reference during the commit transaction (§5.4 step 9c); pinned by `spec/graph`'s fixtures, not compared here. |
 | `edge_transitions` | edge interval (**the recorder's**, 17.0 — M6) | 16.x's `edges` row verbatim — `edge_id`, `repo_id`, `src_doc`, `src_block`, `src_field`, `predicate`, `dst_kind`, `dst_node`, `anchor`, `provenance`, `via_node`, `from_commit`, `to_commit` — written when the core opens an edge (`to_commit = NULL`) and closed (`to_commit` = the commit) when it deletes one (§5.4 step 15); `dst_node` follows the open edge's in-place rewrites (phantom adoption, a move's re-phantoming — `spec/graph` §3.5) so the record reads as 16.x's table did. Index `idx_edge_transitions_temporal (from_commit, to_commit)`. Pinned by `cases/history/edge-transitions.json` (§9.5). |
-| `capabilities` | (repository, capability) — the **capability manifest** (17.0, slice 3e-ii) | `repo_id`, `capability ∈ {history, semantic}`, `state ∈ {enabled, disabled}`, `interface_v` (the capability interface the writer implements: history 1, semantic 1), `data_v` (the bundle's own schema version: history 1 = 16.0's tables + `edge_transitions`, semantic 1), `config` (canonical JSON — keys sorted bytewise at every level — of the configuration the data was produced under: semantic `{ model?, dim? }` from the effective `embedding.*`, history `{}`), `config_hash` (= `sha256(config)`, the fingerprint; a change while `enabled` is a rebuild of the capability's data — semantic: a model switch, history: never), `coverage` (JSON `[{ "from": ts, "to": ts | null }, …]`: the intervals capture was on, the last open — `to: null` — iff `state = 'enabled'`), `writer_requires` (1: a writer without this module must refuse writes on the repository, §5.4 step 0 — resolution 17), `updated_at`. Rules: (1) a repository with no row for a capability is `disabled` with no coverage; (2) `coverage_from` — what `version` and `doctor --size` report — is the first interval's `from`, null when none; (3) the row is engine state, never derived from the settings on read. **Who writes it:** `ensure_repo` (§1 — both rows: `history` `enabled`, coverage from the repository's birth, `writer_requires = 1`; `semantic` `enabled` iff `embedding.provider` resolves for the repository, else `disabled` — resolution 1: stored vectors are never consulted), migration 17 (§3.4 step (13), the same for every existing repository with the history interval anchored on its first commit), the verbs `history enable|disable` (§5.9; 17.1) and `embed enable|disable` (§5.10; 17.2), and a settings write that CHANGES a repository's effective `embedding.provider` (17.2: it re-derives the `semantic` row — set → `enabled` with a new interval, unset → `disabled` with the interval closed; a write that leaves the provider as it was moves the row's `config` and hash alone and keeps its state, so `embed disable` is sticky — through 17.1 every settings write re-derived the row). `history purge` (§7.6) touches neither `state` nor `coverage`: coverage records when capture was ON, which is what tells a purged token (`pruned`) from one minted while capture was off (`outside_coverage`, `spec/surface` §2.1). A table, not settings keys: engine-written state that survives a settings rewrite, typed, projected row for row, read by `doctor` without resolving settings. |
+| `capabilities` | (repository, capability) — the **capability manifest** (17.0, slice 3e-ii) | `repo_id`, `capability ∈ {history, semantic}`, `state ∈ {enabled, disabled}`, `interface_v` (the capability interface the writer implements: history 1, semantic 1), `data_v` (the bundle's own schema version: history 1 = 16.0's tables + `edge_transitions`, semantic 1), `config` (canonical JSON — keys sorted bytewise at every level — of the configuration the data was produced under: semantic `{ model?, dim? }` from the effective `embedding.*`, history `{}` for the native recorder, or — 17.5, §5.12 — the git provider's `{ provider: "git", git_dir, branch, cadence, ids_ref, remote }`: `provider` absent reads `native`), `config_hash` (= `sha256(config)`, the fingerprint; a change while `enabled` is a rebuild of the capability's data — semantic: a model switch, history: never), `coverage` (JSON `[{ "from": ts, "to": ts | null }, …]`: the intervals capture was on, the last open — `to: null` — iff `state = 'enabled'`), `writer_requires` (1: a writer without this module must refuse writes on the repository, §5.4 step 0 — resolution 17), `updated_at`. Rules: (1) a repository with no row for a capability is `disabled` with no coverage; (2) `coverage_from` — what `version` and `doctor --size` report — is the first interval's `from`, null when none; (3) the row is engine state, never derived from the settings on read. **Who writes it:** `ensure_repo` (§1 — both rows: `history` `enabled`, coverage from the repository's birth, `writer_requires = 1`; `semantic` `enabled` iff `embedding.provider` resolves for the repository, else `disabled` — resolution 1: stored vectors are never consulted), migration 17 (§3.4 step (13), the same for every existing repository with the history interval anchored on its first commit), the verbs `history enable|disable` (§5.9; 17.1) and `embed enable|disable` (§5.10; 17.2), and a settings write that CHANGES a repository's effective `embedding.provider` (17.2: it re-derives the `semantic` row — set → `enabled` with a new interval, unset → `disabled` with the interval closed; a write that leaves the provider as it was moves the row's `config` and hash alone and keeps its state, so `embed disable` is sticky — through 17.1 every settings write re-derived the row). `history purge` (§7.6) touches neither `state` nor `coverage`: coverage records when capture was ON, which is what tells a purged token (`pruned`) from one minted while capture was off (`outside_coverage`, `spec/surface` §2.1). A table, not settings keys: engine-written state that survives a settings rewrite, typed, projected row for row, read by `doctor` without resolving settings. |
 | `alerts` | (repository, condition) — the **alert channel** (17.0, slice 3e-ii; §5.8) | `repo_id`, `code` (the condition), `severity ∈ {info, warning, error}`, `message` (one line for a human, both engines byte for byte), `since` (first raised; kept while the condition stands), `detail` (canonical JSON, `{}` when none), `cleared_at` (`NULL` = active). Raised by the engine when a condition needs a human and cleared when it ends; every MCP tool result carries the active alerts of the call's repository (`spec/surface` §4 "Alerts"), the CLI prints them to stderr (`spec/cli` §3.1), `doctor` lists them. |
 | `external_nodes`, `properties`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties` (17.0, D9: no `created_commit`/`deleted_commit` — a property row is live exactly while its document's rows are, since the commit deletes and rewrites them per document; the four indexes lose their partial predicates) is written by the reference during the same commit transaction; a runner does not compare it. `collections` and `inferred_edges` — created and never written through 16.x — are gone (D9). `sync_state` (17.0, D4) carries, beside the per-attachment rows, one reserved **status row** per repository — `(repo_id, '', '')` with `last_batch_ts`, `last_batch_id`, `last_batch_files` — written by every observed batch together with the pool sweep (`spec/sync` §4.1); the `checkpoints` table it replaces is gone. |
 
@@ -1364,6 +1364,177 @@ cleared when none is left. The sweep's result carries the repaired paths
 of `spec/sync` pin the three outcomes; the migration fixtures pin the
 check (§9.3).
 
+### 5.12 The git history provider (17.5, Phase 6a)
+
+A repository's history is kept by **one provider**: the native recorder —
+§5.4 step 15 into the history bundle's tables, the row's `config` `{}` — or
+the **git history provider**, the one alternative strategy the modular-core
+plan asks for, driven through the documented contract and attached by the
+composition layer (`@omgbase/git-adapter`; the core knows it by the name the
+manifest row's `config.provider` carries and reaches it through the provider
+registry — `HistoryProvider` in `core/capabilities/types.ts`; the core
+imports nothing of it). The two are exclusive per repository: a row
+`enabled` under one provider refuses `history enable --provider <other>`
+(`history is already enabled with the <current> provider — run omg history
+disable first, then omg history enable [--provider <requested>]`, byte for
+byte in both engines; the CLI renders it as a usage error); switching is
+`history disable` then `enable --provider`. A `provider: git` row attaches
+**no recorder** — `captureFor` is null, a commit writes the feed alone,
+`anyHistoryEnabled` (the opener's rule for the bundle's DDL) counts native
+rows only — and capture is the provider's own, asynchronous **checkpoint
+worker**.
+
+**Storage.** A **bare** Git repository at `<workspace>/.omgbase/git` (the
+`git_dir` of the config, relative to the workspace root — the parent of the
+engine's `.omgbase` directory; no working tree). The user's own repository, if
+the workspace is one, is never touched except for one line: `.omgbase/` is
+ensured in its `.git/info/exclude` (never `.gitignore`, a tracked file; a
+worktree's exclude is its common dir's). **Credentials never enter
+omgbase**: a URL carrying a user or a password is refused wherever one is
+accepted (`remote`, 6b); `git` resolves access through the host.
+
+**The manifest row.** `config = { provider: "git", git_dir: ".omgbase/git",
+branch: "omgbase", cadence: "every" | { debounce_ms: <n> }, ids_ref:
+"refs/omgbase/ids", remote: null }` (canonical JSON, §3.1): `branch` the
+ref the commits go on (`--branch`), `cadence` the worker's policy
+(`--cadence every|<ms>`), `ids_ref` the RESERVED per-document id-map ref
+(nothing is written to it in 6a — see "The identity record"), `remote` null
+in 6a (6b wires `{ name, branch, push: off | on-checkpoint | periodic,
+fetch: off | periodic | webhook }`). `coverage` and `writer_requires` as for
+native (`writer_requires` per the enable flag: a writer whose composition
+lacks the attached provider is refused on a repository that requires it).
+
+**`history enable --provider git`**, in one transaction: (1) the attached
+provider (`capability_unavailable { history, unavailable, provider: "git",
+reason }` when the composition attached none, or when `git` is not on PATH —
+then also the `history_provider_unavailable` alert, §5.8); (2) the baseline
+feed row exactly as §5.9 step (2) — `origin = 'import'`, `reason = 'history
+enabled'`, one `changed` entry per live document under its existing head;
+(3) `git init --bare --initial-branch <branch>` when the bare repository does
+not exist (an existing one — a re-enable after a `disable` — is kept and the
+baseline becomes its next commit), the exclude line; (4) the **baseline
+commit**: one snapshot of the full current tree (every live document's
+`reconstruct`, §6.1, at its storage path) with subject `history enabled` and
+the trailers below, `omgbase-rescan` included; (5) the row: `state =
+'enabled'`, the config, `coverage += { from: ts, to: null }`,
+`writer_requires` per the flag. The outcome carries the baseline's feed
+commit, the number of documents and the branch `tip`. No history table is
+created. `history disable` is §5.9's: the row closes, the bare repository
+STAYS and reads of what was committed keep working. `history purge` (§7.6)
+on a git row deletes the bare repository and the worker's cursor row
+(`provider: { name: "git", removed, path }` on the receipt; every native
+count 0, nothing dropped, coverage untouched); `--before` has no meaning
+(the CLI refuses it) — a git history is one line of commits.
+
+**The checkpoint worker** (`omg history checkpoint`; the freshness sweep's
+step 6, `spec/sync` §4.3; no timer in 6a). A consumer of the change feed:
+it reads `changes_since` from its cursor and turns feed rows into git commits
+**built from the database rows, never from the vault's files**:
+
+1. *Resume.* The branch tip's `omgbase-seq` trailer is the cursor (the
+   `$git` row of `sync_state`, `spec/sync` §6, is its cache, written after
+   every commit). A tip of the repository's epoch resumes after its seq; no
+   tip (purged, never baselined) or a tip of another epoch is a **rescan**
+   (below). A seq the tip already covers is skipped — the worker is
+   idempotent.
+2. *Page* `changes_since(cursor)` to the head; an `expired_cursor` is a
+   rescan.
+3. *Stage* each row's documents: `created`/`changed` → the document's current
+   bytes (`reconstruct`) as a blob (`git hash-object -w --stdin`) at its
+   path; `moved` → the old path removed and the new one added (git detects
+   the rename itself); `deleted` → the path removed. A document whose
+   current `file_hash` is NOT the entry's hash is **superseded within the
+   pending span** — a later pending row changed it again and the rows can
+   give only the current bytes — so its blob is written by that later row
+   and the earlier commit leaves its path as it was (its `omgbase-doc`
+   trailer still names it). Under `every` with a worker run after every
+   write this never happens; it is the asynchronous-capture tradeoff and the
+   reason `version` reports `completeness`.
+4. *Tree*: the previous commit's tree read into a temporary index (`git
+   read-tree`, `--empty` for a snapshot), the removes and adds applied (`git
+   update-index --index-info`: `0 <zeros>\t<path>` / `100644 blob
+   <sha>\t<path>`), `git write-tree`.
+5. *Commit*: `git commit-tree <tree> -p <parent> -F -` with the message
+   below; the author's NAME is the row's `actor` (the committer's when
+   none), the author's and committer's email the engine's identity
+   (`omgbase <omgbase@localhost>` in production; **`omgbase
+   <omgbase@fixture>` under the conformance seams**, §9.4), both dates the
+   row's `ts` as git's raw `@<unix seconds> +0000`. Every spawn runs with
+   `GIT_DIR` set and reads no user configuration (`GIT_CONFIG_NOSYSTEM=1`,
+   `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_ATTR_NOSYSTEM=1`, no `HOME`, `LC_ALL=C`,
+   `TZ=UTC`; `OMGBASE_GIT_BIN` names the executable, default `git`), so a
+   commit's bytes — and its sha — are a function of the inputs alone.
+6. **Fault site `git.commit`** (§9.7): here, after the objects and before the
+   ref moves.
+7. *Ref*: `git update-ref refs/heads/<branch> <new> <old>` — the old value is
+   the compare-and-swap (`0000…` for the first commit); then the cursor row.
+
+**Trailers.** The message is one subject line — the feed row's `reason`, or
+`<origin>: <n> document(s)`; a folded commit `checkpoint: <k> commits, <n>
+document(s)`; a rescan `rescan: <n> document(s)`; the baseline `history
+enabled` — a blank line, then, in this order: `omgbase-seq: <epoch>:<seq>`
+(a folded commit `<epoch>:<from>-<to>`), `omgbase-ts: <ts>` (the row's exact
+instant — git keeps seconds), one `omgbase-commit: <c_id>` per feed row
+folded, `omgbase-origin: <origin>`, `omgbase-actor: <actor>` (when present),
+`omgbase-plan: <plan_id>` (when present), `omgbase-rescan: <epoch>:<head>`
+(a snapshot), then one `omgbase-doc: <doc_id> <path> <head>` per touched
+document (the storage path; a deleted document's head `-`). Both engines
+render and parse this text themselves (never `git interpret-trailers`); a
+path may hold spaces (the id is the first token, the head the last). The
+trailers are the **identity record** of 6a (option 3): metadata and the
+per-document heads ride on every commit; the per-document id-map blobs under
+`.omgbase/ids/<doc_id>` on the separate ref `refs/omgbase/ids` are RESERVED —
+named in the config and here, written by nothing yet. Consequence, stated: a
+clone of the content branch recovers **content**, not identities, until that
+ref exists.
+
+**Cadence.** `"every"`: one commit per feed row — completeness `every`.
+`{ debounce_ms }`: the rows pending when the worker runs fold into one
+commit (the range trailer; the last row's `ts`, origin, actor, plan) —
+completeness `checkpoints`. 6a has no timer: the fold is of whatever is
+pending at `omg history checkpoint` or the sweep.
+
+**Rescan.** One commit of the full current tree at the feed head —
+`omgbase-seq: <epoch>:<head>`, `omgbase-rescan: <epoch>:<head>`, an
+`omgbase-doc` per live document — on an expired cursor, a tipless branch
+(after a purge the next checkpoint recreates the repository and rescans) or
+a tip of another epoch; the receipt says `rescanned: true`.
+
+**Reads** (`spec/surface` §3 "The git provider"): the provider's
+`HistoryReader` over the bare repository — a VERSION of a document is a
+commit whose trailers name it (`git log --grep` on the fixed string
+`omgbase-doc: <doc_id> `), rendered under the native shape with `_rev` the
+head token the trailer recorded, `_seq` its feed seq, `_commit` the **git
+sha**, `_ts` the `omgbase-ts` trailer, `_hash` the sha256 of the blob's
+bytes (never git's sha1); `docs_read { at: <sha> | <head token> }` the blob
+at that commit (`git cat-file --batch`), `_path` as of it; the diffs over
+two blobs; the `revisions` root the same rows. The current head is listed
+UNRETAINED (resolution 11) until a commit names it. No block lineage exists:
+`blocks_history` and `docs_diff` answer `capability_unavailable { history,
+unsupported, provider: "git", fix }`. A provider that cannot run (`git` not
+on PATH, the provider not attached) answers `{ history, unavailable,
+provider, reason }` on every read and raises the alert; **writes continue**
+— the worker simply cannot run — and the next checkpoint that runs clears it.
+
+**What the git provider does not provide**: block lineage (no
+`dispositions`, no `block_changes`, no `blocks_history`/`docs_diff`); the
+bytes of a document as of a row older than its head when a later row
+superseded it before the worker ran (checkpoint granularity); the recorder's
+retention, archive segments and `history export|attach|detach|list` (a git
+history is managed with git); synchronous capture (the write and its commit
+are two transactions — the trailers and the resume rule close the gap). The
+invariants of §8 that speak of the native tables (H1–H6, I4, I7) owe nothing
+on a git-provider repository: its coverage intervals are the provider's.
+
+**Composition and fixtures.** `OMGBASE_CAPABILITIES=git` (§9.6) runs the
+engine with the git provider attached and no native recorder; the `full`
+composition attaches it beside the recorder (production: the `omgbase`
+binary registers it before any store opens). `cases/history/git.json` pins
+the worker and its commits as text (§9.4 — the `git_log`/`git_tree` steps),
+the fault and its replay, the fold, the purge-then-rescan, the re-enable and
+the conflict; `spec/surface` `reads::git-history` the reads; `spec/cli`
+the verbs.
+
 ## 6. Reads this spec pins
 
 ### 6.1 Reconstruct (current bytes)
@@ -2366,7 +2537,28 @@ unchanged.
   verb; `baseline` on an `enable` that changed something); `history_purge {
   ts, before? }` (17.2, §7.6) runs `history purge [--before]` at `ts` → `{
   purge: { purged: { <table>: n }, claims_released, coverage, tables_dropped
-  } }` (the receipt); `recorder_fault
+  } }` (the receipt); `history_enable { ts, provider:
+  "git", branch?, cadence? }` (17.5, §5.12) runs `history enable --provider
+  git` → the outcome gains `provider: "git"`, `baseline: { commit,
+  revisions: <documents> }` and the branch `tip`; a refused enable (one
+  provider per repository) is `{ history: { error: <the pinned message> } }`;
+  **the git steps** (17.5): `git_checkpoint { ts }` runs the worker once →
+  `{ checkpoint: { committed, from_seq, to_seq, tip, rescanned } }` or `{
+  checkpoint: { error } }` (the fault device's message, or `history is
+  disabled for this repository`); `git_log {}` → `{ git_log: <the text of
+  `git log --reverse --format=%H%n%s%n%(trailers) refs/heads/<branch>`> }`
+  (`""` without a repository); `git_tree {}` → `{ git_tree: <the text of
+  `git ls-tree -r refs/heads/<branch>`> }`; `git_fault { fail }` arms or
+  disarms the `git.commit` site (§9.7) → `{ fault }`. A case with any of
+  them, or a `history_enable` naming a provider, runs on the compositions
+  that attach the git provider (`full`, `git`; §9.6) and is compared as
+  recorded; its repository must be born disabled (`capabilities: { history:
+  false }`) so the enable is not a conflict on `full`; the runner gives it a
+  workspace directory (`<tmp>/.omgbase/git` is the bare repository) and runs
+  the provider with the identity `omgbase <omgbase@fixture>`, so under the
+  fixture clock every sha a projection shows is pinned. A `history_purge` on
+  a git row projects `provider: { name, removed }` (the path is the run's).
+  `recorder_fault
   { fail }` is the runner's **fault device** (§5.4 step 15, resolution 18):
   `fail: true` makes every capture call of the store's recorder throw until
   `fail: false` → `{ fault: boolean }` — the next `observe` then records a
@@ -2569,6 +2761,24 @@ a `semantic` search, and compares the text-only scripts with the four
 semantic projections emptied (`spec/search` §7); the `spec/cli` runner skips
 the cases whose inputs or recorded outputs carry an observable of the module.
 
+**The fifth composition, `git` (17.5, Phase 6a; §5.12).** `OMGBASE_CAPABILITIES=git`
+runs the engine with the git history provider attached and NO native
+recorder and NO semantic module (`full` attaches the provider beside the
+recorder; `core`, `history` and `semantic` attach none). Every rule above
+for a composition without the history module applies to it unchanged — the
+native module is what "history" means there — plus one: a case that drives
+the git provider (a `history_enable` naming it, a `git_*` step; a surface
+case with those steps; a CLI case whose argv names `--provider git` or
+`history checkpoint`) runs on `full` and `git` and is compared AS RECORDED
+(its repository is born disabled and no native row is written, so its
+projection is one on both), and is skipped — `needs the git history
+provider` — on `core`, `history` and `semantic`; a git case that also
+needs the native module — a store script whose repository is born under the
+recorder (`provider-conflict`), a CLI case whose text names the native
+provider (`checkpoint` on a native repository) — is skipped on `git` too, as
+is a CLI git case whose output carries the semantic module's wire. `pnpm conformance` prints the five
+columns.
+
 **Rust.** The Rust runners mirror the rules for the composition their binary
 is built or run with; the counts of each cell are part of the contract (the
 reference's matrix is in `docs/modular-core/README.md` §6a).
@@ -2581,7 +2791,7 @@ TEST-ONLY hook read from the environment on every pass through a named
 site: the `nth` pass (default 1, counted per site and per process) throws
 an `InjectedFault` (message `injected fault at <site> (pass <n>)`), every
 other pass is a no-op; an unknown site or a non-positive count is a
-configuration error. The sites, spelled identically by both engines:
+configuration error. The sites (six since 17.5), spelled identically by both engines:
 
 | site | where | the acceptance-matrix outcome (plan §8) |
 | --- | --- | --- |
@@ -2590,6 +2800,7 @@ configuration error. The sites, spelled identically by both engines:
 | `commit.after-commit` | the api path, after its transaction committed and before any file is written (`spec/mutate` §4) | the rows are durable, the pending rows owe the files (§5.7); `recoverRepo` replays them and is then a no-op |
 | `materialize.before-write` | inside the materializer (§5.7), before a file is written | the pending row stays, the disk is untouched; a replay from `materializePending` raises `materialization_failed` (§5.8) and keeps the row; the next passing replay writes the file and clears the alert |
 | `materialize.after-write` | inside the materializer, after the file was written and before its row is deleted | the file holds the new bytes while the row stays; the next replay finds them as recorded and clears the row without rewriting |
+| `git.commit` | (17.5, Phase 6a; §5.12) inside the git history provider's checkpoint worker, after the blobs, the tree and the commit object are written and before `update-ref` moves the branch | the branch tip is UNCHANGED and the objects dangle; the next run resumes from the tip's `omgbase-seq` trailer and writes the same commit byte for byte (the same sha), closing the gap between the database commit and the git commit; `cases/history/git.json` `crash-gap-closed-by-replay` pins it through the `git_fault` device |
 
 The reference pins each outcome in `packages/core/src/fault-injection.test.ts`
 (the arming, the counting, the pinned message, and a write driven through
@@ -3091,6 +3302,20 @@ brought to it).
   of H1/H3). The 16 → 17 step also rebuilds the FTS index once, and the
   tombstone finish step purges the index entries it holds before deleting
   the rows (the rule the 17.3 twin must correct to).
+- 2026-10-26, store 17.5 (Phase 6a of `docs/modular-core/` — the alternative
+  history strategy; decided by Brendan 2026-10-26): **the git history
+  provider** (§5.12) — a bare repository at `.omgbase/git`, commits built
+  from the rows by a checkpoint worker over the feed with replay trailers
+  (`omgbase-seq`/`-ts`/`-commit`/`-origin`/`-actor`/`-plan`/`-doc`,
+  `-rescan`), cadence `every` | `{ debounce_ms }`, the manifest config `{
+  provider: "git", git_dir, branch, cadence, ids_ref, remote: null }`, one
+  provider per repository, `history checkpoint`, the `git.commit` fault
+  site (§9.7), the fifth composition `git` (§9.6) and the `git_*` fixture
+  steps (§9.4); `cases/history/git.json`. The identity record is the
+  trailers (option 3); `refs/omgbase/ids` is reserved. The read seam split
+  (`HistoryReader`, the read half of `HistoryRecorder`) is the TS
+  reference's shape; `spec/surface` 6.4 names the states and the `version`
+  keys. Semantic, no DDL: a minor.
 - 2026-10-26, store 17.3 (Phase 5a of `docs/modular-core/`): **D2 step two,
   the four compositions, fault injection.** A procedure minor — no DDL change.
   Decided in the implementation: a tombstone DELETES the document's `blocks`

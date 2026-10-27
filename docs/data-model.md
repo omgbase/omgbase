@@ -545,6 +545,19 @@ Base-62 fractional indexing (Figma-style). `key_between(a, b)` MUST return a key
 
 `omg rebuild-index [--sections|--edges|--fts|--vec|--projections|--all]` MUST reconstruct every table in §4 from tables in §3 only, byte-identically for deterministic tables (sections, doc_edges, block_changes) and semantically for FTS/vec. CI runs a drop-and-rebuild equivalence check on the fixture vault. `file_stats` is the one exception: it caches filesystem state, not engine state, so it is rebuilt by re-statting the working tree (any missing/empty `file_stats` simply forces the next freshness sweep to hash every file — correct, just not free), never from §3.
 
+## 6a. The git history provider (store 17.5, modular-core Phase 6a)
+
+A repository's history is kept by one provider — the recorder's tables above, or (`spec/store` §5.12) a **bare Git
+repository at `<workspace>/.omgbase/git`** outside the database. The `capabilities` row says which: `config.provider`
+absent is the native recorder, `{ provider: "git", git_dir, branch, cadence, ids_ref, remote }` the git provider. A
+git-provider repository writes **no history table** (its commits write `feed`/`feed_entries` alone; `anyHistoryEnabled`
+— the opener's rule for the history bundle's DDL — counts native rows only) and keeps one reserved `sync_state` row,
+`(repo_id, '$git', '')` — `revision` the branch tip's sha, `cursor` `{ epoch, seq }` — as the cache of the checkpoint
+worker's position (the truth is the tip commit's `omgbase-seq` trailer). The bare repository's objects are the
+provider's bytes: `git count-objects -v` beside `doctor --size` is the honest comparison (`docs/modular-core/baseline.md`
+§3). Nothing in the schema changed for it; the provider's data model is Git's — blobs of the documents' accepted bytes at
+their paths, one commit per feed row (or per fold) carrying the trailers of `spec/store` §5.12.
+
 ## 7. Retention & GC
 
 - Default retention: keep every revision and commit row forever; bodies older than the policy below move to archive segments on demand (nothing moves until `omg history export --prune` is run). The measurement that motivated it: a 131 MB database over 5 MB of Markdown held 57 MB of history — a whole Merkle root per revision (no sharing across revisions; schema v16's delta nodes, §5.1, are the answer to that half), uncompressed blobs.

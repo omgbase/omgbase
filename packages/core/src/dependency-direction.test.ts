@@ -159,6 +159,11 @@ describe("dependency direction (modular-core Phase 1)", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("the core imports nothing from @omgbase/git-adapter: the git history provider is attached by the composition layer through the provider registry (Phase 6a)", () => {
+    const importers = walk(SRC).map(rel).filter((f) => !isTest(f)).filter((f) => /from\s*["']@omgbase\/git-adapter["']/.test(readFileSync(join(SRC, f), "utf8")));
+    expect(importers).toEqual([]);
+  });
+
   it("the dead CEL filter compiler is gone (D9) and nothing imports search/cel/ outside its own tests", () => {
     const files = walk(SRC).map(rel);
     expect(files).not.toContain("search/cel/compile.ts");

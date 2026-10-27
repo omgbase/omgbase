@@ -15,11 +15,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
 import { isHistoryStep, isLifecycleStep } from "../store/fixture.js";
-import { HAS_HISTORY, HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
+import { HAS_GIT, HAS_HISTORY, HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { buildServer, toolDescriptions, toolNames, TOOLS_PROFILES, type ToolsProfile } from "../../src/mcp/server.js";
 import {
-  carriesCorpus, compositionQueryExpect, compositionReadsExpect, deepEqualTol, describeChange, diffQueryExpect, isEmbedStep, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, touchesRevisions, validateFixtureFile,
+  carriesCorpus, compositionQueryExpect, compositionReadsExpect, deepEqualTol, describeChange, diffQueryExpect, isEmbedStep, isGitCase, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, touchesRevisions, validateFixtureFile,
   type CursorCase, type CursorSuite, type ExamplesSuite, type FixtureFile, type LoadedCorpus, type ProfilesSuite, type QueryCase, type QuerySuite, type ReadsCase, type ReadsSuite,
 } from "./fixture.js";
 
@@ -213,6 +213,16 @@ function runQuery(corpus: LoadedCorpus, c: QueryCase, suite: string): void {
 
 async function runReads(c: ReadsCase, suite: string, corpus?: Record<string, string>): Promise<void> {
   const id = `${suite}::${c.name}`;
+  // README §7.3 (6.4, Phase 6a): a case driving the git provider runs where the provider is attached (`full`, `git`) and is compared as recorded — no composition mapping.
+  if (isGitCase(c)) {
+    if (!HAS_GIT) { ledger.skip(id, "needs the git history provider"); return; }
+    const { expect: actual, problems: runnerProblems } = await runReadsCase(c, corpus);
+    expect(runnerProblems).toEqual([]);
+    ledger.record(id);
+    const diff = deepEqualTol(actual, c.expect, EPS);
+    if (diff !== null) expect(sortKeys(actual), diff).toEqual(sortKeys(c.expect));
+    return;
+  }
   // Phase 4a: a retention step (export, attach, plan, read_at) or a lifecycle step needs the history module; the embed steps the semantic one. Skipped and counted.
   if (!HAS_HISTORY && c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s))) { ledger.skip(id, "needs the history module"); return; }
   if (!HAS_SEMANTIC && c.steps.some((s) => isEmbedStep(s))) { ledger.skip(id, "needs the semantic module"); return; }

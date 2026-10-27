@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import {
+  historyProviderOf, NATIVE_PROVIDER, requireProvider, providerConfigOf, CapabilityUnavailable,
   rebuildIndex,
   runGc,
   buildEmbedTasks,
@@ -178,7 +179,18 @@ function runDoctor(cli: Cli, args: string[]): number {
   const manifest = readCapability(db, repo.repoId, "history");
   const since = openCoverageFrom(manifest);
   const recorder = captureFor(db, repo.repoId);
-  if (recorder && since !== null) {
+  const provider = historyProviderOf(manifest);
+  if (provider !== NATIVE_PROVIDER && since !== null) {
+    // Phase 6a (spec/cli §6, 5.5): a git-provider repository's capture is the worker's — the check reads how far the
+    // branch tip lags the heads; `provider git: <n> heads not yet checkpointed`, or `unavailable` when the provider cannot run.
+    try {
+      const uncaptured = requireProvider(db, repo.repoId, provider).reader(repo.repoId, providerConfigOf(manifest!)).uncapturedHeads(repo.repoId, since);
+      checks.push({ name: "capture complete", ok: uncaptured === 0, detail: `provider ${provider}: ${uncaptured} heads not yet checkpointed` });
+    } catch (e) {
+      if (!(e instanceof CapabilityUnavailable)) throw e;
+      checks.push({ name: "capture complete", ok: false, detail: `provider ${provider}: unavailable (${(e.data() as { reason?: string }).reason ?? e.message})` });
+    }
+  } else if (recorder && since !== null) {
     const uncaptured = recorder.uncapturedHeads(repo.repoId, since);
     checks.push({ name: "capture complete", ok: uncaptured === 0, detail: `${uncaptured} heads without a revision` });
   } else {
@@ -274,7 +286,9 @@ function capabilityLine(capabilities: SizeReport["capabilities"], name: "history
   if (!capabilities) return "no repository selected";
   const c = capabilities.find((x) => x.capability === name);
   if (!c || c.state === "disabled") return "disabled";
-  if (name === "history") return c.coverage_from ? `enabled since ${c.coverage_from}` : "enabled";
+  // Phase 6a: a provider row says which — `enabled since <ts> (git)`.
+  const provider = typeof c.config.provider === "string" ? ` (${c.config.provider})` : "";
+  if (name === "history") return c.coverage_from ? `enabled since ${c.coverage_from}${provider}` : `enabled${provider}`;
   const model = c.config.model;
   return typeof model === "string" ? `enabled (${model})` : "enabled";
 }

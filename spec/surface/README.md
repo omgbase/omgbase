@@ -1414,6 +1414,48 @@ keep the reference's **camelCase** (`hasSource`, `currentRev`,
   read `disabled` either way. `reads::semantic-switched-off` pins it with
   the `embed_enable`/`embed_disable` devices (§6).
 
+- **The git provider (6.4; `spec/store` §5.12, modular-core Phase 6a).** A
+  repository whose history is kept by the git history provider (`version.
+  capabilities.history.provider: "git"`) answers the same tools under the
+  same shapes, read from the bare repository: a VERSION is a commit whose
+  trailers name the document — `docs_history`'s version has `_rev` the head
+  token the trailer recorded, `_seq` the feed seq the commit covers, `_commit`
+  the **git sha** (40 hex), `_ts` the exact instant of the `omgbase-ts`
+  trailer, `_origin`/`_actor` the trailers, `_hash` the sha256 of the blob's
+  bytes (never git's sha1), `_archived` false, `retained` true; the current
+  head is listed UNRETAINED (resolution 11) until a commit names it — the
+  worker has not run since the write. `docs_read { at }` / `docs_read_at`
+  take a git sha OR a head token and return the blob at that commit (`_path`
+  as of it, `renderedHashMatch` true); `docs_diff_unified` diffs two blobs
+  (defaults: the two latest commits naming the document); the `revisions`
+  root and `_revisions` relation list the git versions (`_commit` the sha,
+  `_reason` the subject). **Two tools have nothing to answer from**: the
+  provider keeps whole documents, not block lineage — `blocks_history` and
+  `docs_diff` fail `capability_unavailable { capability: "history", state:
+  "unsupported", provider: "git", fix }` (`retriable: false`; `fix` the tool
+  that does work — `docs_history`, `docs_diff_unified`; the message `` <tool>
+  is not available on a repository whose history is kept by the <provider>
+  provider (it records whole documents, not block lineage) — use <fix> ``,
+  byte for byte in both engines). **The decision table extends** for a token
+  of the provider's own form — a 40-hex sha — decided by the provider's
+  reader: an object git does not have → `pruned` (`{ history, pruned, rev,
+  fix? }`); a commit whose `omgbase-ts` falls outside the repository's
+  coverage → `outside_coverage`; a commit that names no version of the
+  document (another document's, a deletion) → `target_missing`; a token that
+  is neither a sha nor a head token the commits name is settled by the
+  claim-based table above (an unclaimed one → `target_missing` on an enabled
+  repository); `disabled`/`unavailable` as today, and **`unavailable` also
+  when the provider cannot run** — `git` not on PATH, or the composition never
+  attached the provider the manifest names — `{ history, unavailable,
+  provider, reason }` (retriable; the `history_provider_unavailable` alert
+  raised): reads fail, WRITES CONTINUE — the worker simply cannot run, the
+  asynchronous-capture tradeoff. `version`/`sync_status` advertise the
+  coverage honestly (§4 `version`: `provider`, `completeness`).
+  `reads::git-history` pins the round over a repository born disabled
+  (`capabilities: { history: false }`, §6): the baseline, the unretained head,
+  the checkpoint, every state and refusal, a `docs_move` (the tree carries
+  the new path), `disable`, `purge` (the sha then `pruned`), a re-enable.
+
 ## 4. The MCP tool catalog
 
 Served as MCP over stdio; every result is one text content item holding
@@ -1732,7 +1774,7 @@ identity consequences the 3.x result carried are the Plan's
 | `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0; `docs_read_at` is `docs_read { at }`'s sugar since 4.7, §2) |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 (3.0; 6.0 with sync 4.0): `repos_status` names the repository `{ _id, slug, rootPath, docs, blocks, feed: { epoch, oldest, head }, openEdges, disk }` (the root row's `_id`, §1.1; `slug` and the rest roles; `feed` replaces the `commits` count, `unconverged` — identically zero under I1 — is gone); `sync_status` is `{ epoch, oldest, head, lastBatch: { ts, batchId, files } \| null, convergent, diskChecked, disk, capabilities }` (`lastCommitSeq`/`lastCheckpoint` through 5.x; `convergent` = `diskChecked && no drift`; `capabilities` as `version` reports them) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
-| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"); `capabilities` (5.1, modular-core Phase 2; since 6.0 read from the store's `capabilities` manifest — §4 "Alerts"; 6.1, store 17.1 Phase 4a: `phase-1-contracts.md` §2.3's keys) `{ history: { state, coverage_from: "<ts>" \| null, writer_requires: boolean }, semantic: { state, model: "<string>" \| null } }` — `coverage_from` the manifest row's first coverage interval's `from` (`spec/store` §3.1 rule 2; null when capture never ran, or without a repository), `writer_requires` its flag (false without a repository), `model` the semantic row's `config.model` (null when none is configured); the keys always present, in that order, so the shape is pinned (the CLI's `version` reads the SELECTED repository's row, the MCP server its default repository's); `epoch` (6.0, the last key) the default repository's feed epoch (`spec/store` §3.1 `repos.epoch` — the first half of a `changes_since` cursor), `null` without a repository. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
+| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"); `capabilities` (5.1, modular-core Phase 2; since 6.0 read from the store's `capabilities` manifest — §4 "Alerts"; 6.1, store 17.1 Phase 4a: `phase-1-contracts.md` §2.3's keys) `{ history: { state, provider, coverage_from: "<ts>" \| null, writer_requires: boolean, completeness }, semantic: { state, model: "<string>" \| null } }` — `provider` (6.4, Phase 6a) the manifest row's `config.provider`, `"native"` when absent (the recorder), `"git"` for the git history provider (`spec/store` §5.12); `coverage_from` the manifest row's first coverage interval's `from` (`spec/store` §3.1 rule 2; null when capture never ran, or without a repository), `writer_requires` its flag (false without a repository), `completeness` (6.4) `"every"` — one version per feed row: the native recorder, the git provider under cadence `every` — or `"checkpoints"` — the git provider under a `debounce_ms` cadence folds the rows pending when its worker runs; `model` the semantic row's `config.model` (null when none is configured); the keys always present, in that order, so the shape is pinned (6.4 moved every `version`/`sync_status` fixture by the two keys) (the CLI's `version` reads the SELECTED repository's row, the MCP server its default repository's); `epoch` (6.0, the last key) the default repository's feed epoch (`spec/store` §3.1 `repos.epoch` — the first half of a `changes_since` cursor), `null` without a repository. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
 `plan` never triggers the host's post-mutation hook (the embed drain);
 successful writes do.
@@ -1938,6 +1980,18 @@ necessary.
   plants a stale pending row with an `exec` step and shows the `alerts`
   member raised on a read past the threshold, carried by `query` and
   `docs_read`, absent on an error envelope, and gone after `recover`.
+- **`reads.json`, the git provider (6.4; `spec/store` §5.12, §9.4):** a case
+  may carry `capabilities: { history: false }` (the repository born disabled,
+  as a store observation case's) and the git steps the store runner shares —
+  `history_enable { ts, provider: "git", branch?, cadence? }`, `git_checkpoint
+  { ts }`, `git_log {}`, `git_tree {}`, `git_fault { fail }` — with their
+  store outcomes; such a case runs on the compositions that attach the
+  provider (`full`, `git`) and is compared as recorded, skipped elsewhere
+  (§7.3). The runner gives it a workspace directory (the working tree's
+  `.omgbase/git` when `workspace: true`), runs the provider with the identity
+  `omgbase <omgbase@fixture>`, and so every sha the outcomes carry is pinned —
+  including the one a `docs_read { at: <sha> }` step names, which an author
+  copies from the baseline's `tip` after a first regeneration.
 - **`cursor.json`**: `{ name, parts | (cursor, arity), expect }` encode /
   decode cases (`{ cursor }`, `{ parts }` or `{ error: "filter_invalid" }`).
 
@@ -2185,6 +2239,16 @@ Each runner (`spec.test.ts`, `interop.test.ts`) prints one ledger line
 skipped) that `pnpm conformance` collects; the reference's matrix is in
 `docs/modular-core/README.md` §6a. The Rust harness mirrors the rule for the
 composition its binary runs with.
+
+**The fifth composition, `git` (6.4, modular-core Phase 6a; `spec/store`
+§9.6).** `OMGBASE_CAPABILITIES=git` attaches the git history provider and no
+native recorder: every rule above for a composition without the history
+module applies to it (`history` means the native module), and a case that
+drives the provider — `reads::git-history`, a case with a `history_enable`
+naming `provider: "git"` or a `git_*` step — runs on `full` and `git` as
+recorded (no mapping) and is skipped (`needs the git history provider`) on
+`core`, `history` and `semantic`. The interop suite has no git case in 6a;
+its peers under `git` answer the history tools as under `core`.
 
 ### 7.4 Peers
 
@@ -2615,6 +2679,19 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-26, surface 6.4 (store 17.5, Phase 6a of `docs/modular-core/` —
+  the git history provider, decided by Brendan 2026-10-26): `version.
+  capabilities.history` gains `provider` and `completeness` (one wire shape for
+  the native recorder and the git provider — every `version`/`sync_status`
+  fixture moved by the two keys); the §3 bullet "The git provider": the
+  versions read from the bare repository under the native shape with `_commit`
+  the git sha, `docs_read { at: <sha> }`, the decision table's rows for a sha
+  (`pruned`, `outside_coverage`, `target_missing`), `unavailable` when the
+  provider cannot run (writes continue), and the new state **`unsupported`**
+  for `blocks_history`/`docs_diff` (no block lineage; `fix` the tool that
+  works). Fixtures: `reads::git-history`; the `capabilities` case key and the
+  git steps of `reads.json` (§6); the `git` composition rule (§7.3). Additive:
+  a minor.
 - 2026-10-26, surface 6.3 (store 17.3, Phase 5a of `docs/modular-core/`):
   **the four compositions in the runners.** No surface change: §7.3's two
   mappings are keyed on the absent module so `OMGBASE_CAPABILITIES=history|

@@ -14,6 +14,9 @@
 // Compositions (each a fresh `init` + one `source add`):
 //   history on  + embedder off     init --no-embedder; source add
 //   history off + embedder off     init --no-embedder; source add --no-history   (the core alone)
+//   git history + embedder off     init --no-embedder; source add --no-history; history enable --provider git; history checkpoint;
+//                                  git gc — the bare repository's bytes (`git count-objects -v`: size + size-pack) printed
+//                                  beside the database (Phase 6a), so the comparison with native history is honest
 //   history on  + embedder on      init --embedder <cmd>; source add; embed drain          (only with --embedder)
 //   history off + embedder on      init --embedder <cmd>; source add --no-history; embed drain
 //
@@ -90,14 +93,34 @@ function dbBytes(ws) {
   return { db: sz(db), wal: sz(`${db}-wal`) };
 }
 
-/** One composition: fresh workspace, init, source add, (drain), size report. */
-function measure(name, { history, embed }) {
+/** The bare repository's bytes after `git gc` (`count-objects -v`: `size` + `size-pack`, KiB → bytes), and its object count. */
+function gitBytes(ws) {
+  const gitDir = join(ws, ".omgbase", "git");
+  const env = { PATH: process.env.PATH, GIT_DIR: gitDir, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+  spawnSync("git", ["gc", "--quiet"], { env, encoding: "utf8" });
+  const out = spawnSync("git", ["count-objects", "-v"], { env, encoding: "utf8" }).stdout ?? "";
+  const n = (k) => Number((new RegExp(`^${k}: (\\d+)$`, "m").exec(out) ?? [0, 0])[1]);
+  const commits = Number((spawnSync("git", ["rev-list", "--count", "omgbase"], { env, encoding: "utf8" }).stdout ?? "0").trim());
+  return { bytes: (n("size") + n("size-pack")) * 1024, objects: n("count") + n("in-pack"), commits };
+}
+
+/** One composition: fresh workspace, init, source add, (drain), size report; `git` enables the git history provider and checkpoints after the import. */
+function measure(name, { history, embed, git = false }) {
   const ws = join(tmp, name.replace(/[^a-z0-9]+/gi, "-"));
   mkdirSync(ws, { recursive: true });
   const t0 = performance.now();
   const init = spawnSync(CLI[0], [...CLI.slice(1), "init", ws, "--yes", ...(embed ? ["--embedder", embedder] : ["--no-embedder"])], { encoding: "utf8" });
   if (init.status !== 0) throw new Error(`init failed: ${init.stderr}`);
   omg(ws, ["source", "add", corpus, "--repo", "real", "-y", ...(history ? [] : ["--no-history"])]);
+  let gitMs = null;
+  let gitRepo = null;
+  if (git) {
+    const t2 = performance.now();
+    omg(ws, ["history", "enable", "--provider", "git"]);
+    omg(ws, ["history", "checkpoint"]);
+    gitMs = performance.now() - t2;
+    gitRepo = gitBytes(ws);
+  }
   const importMs = performance.now() - t0;
   let drainMs = null;
   let drained = null;
@@ -112,9 +135,9 @@ function measure(name, { history, embed }) {
   const cats = Object.fromEntries(size.categories.map((c) => [c.name, { bytes: c.bytes, rows: c.rows }]));
   const tables = Object.fromEntries(size.categories.flatMap((c) => c.tables.map((t) => [t.name, { bytes: t.bytes, rows: t.rows }])));
   const total = bytes.db + bytes.wal;
-  console.error(`  ${name.padEnd(28)} db ${(total / 1e6).toFixed(2)} MB  ${(total / md.bytes).toFixed(1)}×  history ${((cats.history?.bytes ?? 0) / 1e6).toFixed(2)} MB  search ${((cats.search?.bytes ?? 0) / 1e6).toFixed(2)} MB  (${(importMs / 1000).toFixed(1)} s import${drainMs !== null ? `, ${(drainMs / 1000).toFixed(1)} s drain` : ""})`);
+  console.error(`  ${name.padEnd(28)} db ${(total / 1e6).toFixed(2)} MB  ${(total / md.bytes).toFixed(1)}×  history ${((cats.history?.bytes ?? 0) / 1e6).toFixed(2)} MB  search ${((cats.search?.bytes ?? 0) / 1e6).toFixed(2)} MB${gitRepo ? `  git ${(gitRepo.bytes / 1e6).toFixed(2)} MB (${gitRepo.commits} commits, ${gitRepo.objects} objects)` : ""}  (${(importMs / 1000).toFixed(1)} s import${drainMs !== null ? `, ${(drainMs / 1000).toFixed(1)} s drain` : ""}${gitMs !== null ? `, ${(gitMs / 1000).toFixed(1)} s git` : ""})`);
   return {
-    name, history, embed, file: bytes, total, amplification: total / md.bytes, categories: cats, tables,
+    name, history, embed, git, file: bytes, total, amplification: total / md.bytes, categories: cats, tables, git_repo: gitRepo, git_ms: gitMs === null ? null : Math.round(gitMs),
     docs: typeof counts?.docs === "number" ? counts.docs : (tables.docs?.rows ?? null), blocks: tables.blocks?.rows ?? null,
     import_ms: Math.round(importMs), drain_ms: drainMs === null ? null : Math.round(drainMs), drained,
   };
@@ -124,6 +147,7 @@ console.error(`engine ${engine} (${CLI.join(" ")}); ${md.files} Markdown files, 
 const runs = [
   measure("history on, embedder off", { history: true, embed: false }),
   measure("history off, embedder off", { history: false, embed: false }),
+  measure("git history, embedder off", { history: false, embed: false, git: true }),
   ...(embedder ? [measure("history on, embedder on", { history: true, embed: true }), measure("history off, embedder on", { history: false, embed: true })] : []),
 ];
 
@@ -132,15 +156,19 @@ const runs = [
 const mb = (b) => (b / 1e6).toFixed(2);
 const cat = (r, name) => (r.categories[name] ? mb(r.categories[name].bytes) : "");
 const share = (r, name) => (r.categories[name] && r.total > 0 ? `${((100 * r.categories[name].bytes) / r.total).toFixed(1)} %` : "");
-let table = `| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
+let table = `| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync | git repo MB |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
 for (const r of runs) {
-  table += `| ${r.name} | ${r.docs ?? ""} | ${r.blocks ?? ""} | ${mb(md.bytes)} | ${mb(r.total)} | ${r.amplification.toFixed(1)}× | ${cat(r, "content")} (${share(r, "content")}) | ${cat(r, "identity")} | ${cat(r, "recovery")} | ${cat(r, "history")} (${share(r, "history")}) | ${cat(r, "search")} (${share(r, "search")}) | ${cat(r, "sync")} |\n`;
+  table += `| ${r.name} | ${r.docs ?? ""} | ${r.blocks ?? ""} | ${mb(md.bytes)} | ${mb(r.total)} | ${r.amplification.toFixed(1)}× | ${cat(r, "content")} (${share(r, "content")}) | ${cat(r, "identity")} | ${cat(r, "recovery")} | ${cat(r, "history")} (${share(r, "history")}) | ${cat(r, "search")} (${share(r, "search")}) | ${cat(r, "sync")} | ${r.git_repo ? `${mb(r.git_repo.bytes)} (${r.git_repo.commits} commits)` : "—"} |\n`;
 }
 const base = runs[0];
 const off = runs[1];
+const gitRun = runs[2];
 table += `\nHistory off saves ${mb(base.total - off.total)} MB (${((100 * (base.total - off.total)) / base.total).toFixed(0)} % of the history-on database; ${base.amplification.toFixed(1)}× → ${off.amplification.toFixed(1)}× the Markdown).\n`;
-if (runs.length === 4) {
-  const [, , onE, offE] = runs;
+if (gitRun?.git_repo) {
+  table += `The git provider keeps the same import as ${mb(gitRun.git_repo.bytes)} MB of packed objects beside a ${mb(gitRun.total)} MB database (database + git ${mb(gitRun.total + gitRun.git_repo.bytes)} MB, ${((gitRun.total + gitRun.git_repo.bytes) / md.bytes).toFixed(1)}× the Markdown) against ${mb(base.categories.history?.bytes ?? 0)} MB of native history rows.\n`;
+}
+if (runs.length === 5) {
+  const [, , , onE, offE] = runs;
   table += `With the embedder the vectors add ${mb(onE.total - base.total)} MB (history on) / ${mb(offE.total - off.total)} MB (history off); the four compositions span ${off.amplification.toFixed(1)}× – ${onE.amplification.toFixed(1)}×.\n`;
 }
 process.stdout.write(table);
