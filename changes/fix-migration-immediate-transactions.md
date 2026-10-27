@@ -1,0 +1,8 @@
+---
+crates:
+  omgbase-store: patch
+  omgbase: patch
+---
+Opening a store concurrently no longer fails with `sqlite: database is locked`. Every transaction in `omgbase-store`'s migration module came from `unchecked_transaction` (`BEGIN DEFERRED`), which takes a read lock and upgrades on the first write — and SQLite does not invoke the busy handler for an upgrade, because blocking there could deadlock, so it returns `SQLITE_BUSY` at once however long the busy timeout is. The module's transactions now begin `IMMEDIATE` (`write_tx`), taking the write lock up front and waiting their turn like any other writer; every one of the eleven call sites is a migration writer, so no read path loses concurrency. The binary's `open_store_at` also sets `busy_timeout` on the connection *before* `Store::from_connection_at` rather than after it, since the open itself writes — the `migrate_v17_*` finish steps run on every open of an already-current database, not only when the version moves.
+
+The MCP host is what exposed it: it opens four stores at once (the host, the watcher's registry connection, the watcher thread's own and the drain thread's own, a `Store` being unable to cross threads) while the priming sweep writes, so a boot could lose the race and log `[mcp] embed drain disabled: sqlite: database is locked` and `[watch] error: sqlite: database is locked`. The second is the damaging one: a failed store open is fatal to `watch::run`, which unwatches and closes the adapter and lets the thread exit, leaving a server that still reports `watcher live` and serves reads but reconciles nothing from the filesystem.
