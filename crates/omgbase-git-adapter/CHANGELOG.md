@@ -4,6 +4,11 @@ All notable changes to `omgbase-git-adapter` are recorded here. The format follo
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.2.1] - 2026-10-27
+
+### Patch
+- Dependency pins moved: omgbase-store 17.6.0 → 17.6.1.
+
 ## [0.2.0] - 2026-10-27
 
 ### Minor

@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-git-adapter"
-version = "0.2.0"
+version = "0.2.1"
 description = "omgbase git history provider: the checkpoint worker that builds commits in a bare repository from the change feed, the git-backed history reader and the git plumbing wrapper (spec/store §5.12) — Rust implementation of @omgbase/git-adapter"
 keywords = ["markdown", "git", "history", "sqlite", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -16,7 +16,7 @@ repository.workspace = true
 # The seams this crate implements (`HistoryProvider`, `HistoryReader`), the
 # change feed it consumes (`changes_since`), the bytes it commits
 # (`reconstruct`), the manifest and alert helpers, the `git.commit` fault site.
-omgbase-store = { version = "17.6.0", path = "../omgbase-store" }
+omgbase-store = { version = "17.6.1", path = "../omgbase-store" }
 # `sha256`/`hex`: a version's `_hash` is the blob's sha256 (never git's sha1).
 omgbase-format = { version = "0.2.4", path = "../omgbase-format" }
 # The store's connection: the cursor row, the feed and docs reads.
