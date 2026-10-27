@@ -515,6 +515,22 @@ function enableProviderHistory(db: Database, repoId: string, name: string, exist
   })();
 }
 
+/**
+ * (17.6, Phase 6b; spec/store §5.12 "The remote binding") Rewrite a provider
+ * row's `config` in place — `history remote set|unset` moving the `remote`
+ * member — keeping its state, coverage, versions and `writer_requires`: the
+ * binding is configuration, not a change of the data's identity, so nothing is
+ * rebuilt. Refused on a native row (its config is `{}`) and when the provider
+ * named differs from the row's. Returns the row as written.
+ */
+export function updateHistoryProviderConfig(db: Database, repoId: string, config: HistoryProviderConfig, now: string = new Date().toISOString()): ManifestRow {
+  const existing = readCapability(db, repoId, "history");
+  if (!existing || historyProviderOf(existing) === NATIVE_PROVIDER) throw new Error("the repository's history is not a provider's: there is no provider config to update");
+  if (historyProviderOf(existing) !== config.provider) throw new Error(`the repository's history is the ${historyProviderOf(existing)} provider's, not ${config.provider}'s`);
+  writeRow(db, repoId, { capability: "history", state: existing.state, interfaceV: existing.interface_v, dataV: existing.data_v, config, coverage: existing.coverage, writerRequires: existing.writer_requires, now });
+  return readCapability(db, repoId, "history")!;
+}
+
 /** `history enable --provider <b>` on a repository enabled under provider `<a>` (spec/store §5.12): refused — `history disable` first. The CLI renders it as a usage error. */
 export class HistoryProviderConflict extends Error {
   constructor(readonly current: string, readonly requested: string) {

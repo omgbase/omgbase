@@ -1,0 +1,10 @@
+---
+npm:
+  "@omgbase/core": minor
+  omgbase: minor
+crates:
+  omgbase-store: minor
+  omgbase-surface: minor
+  omgbase-sync: minor
+---
+Modular-core Phase 6b — **the remote half of the Git-backed history provider** (spec/store 17.6 §5.12, spec/surface 6.5, spec/cli 5.6, spec/sync 4.6). The manifest's `remote` member becomes the binding `{ name, url, branch, push: off | on-checkpoint | periodic, fetch: off | periodic | webhook }` — nothing automatic until configured, credentials refused; `omg history remote set|unset|status`, `omg history push` (the branch and the ids ref, never `--force`; a rejected push raises `git_remote_diverged`), `omg history fetch` (a fast-forward whose tree changes enter the vault through the source boundary as external edits; a three-way merge at the tree level when both sides moved — one merge commit with `omgbase-merge`; conflicts keep both versions, the remote's as `<stem>.remote-<sha>.md`, with `git_merge_conflict` raised until `omg history remote resolve <path> --ours|--theirs`), a rewritten remote detected, stopped and alerted with push and fetch paused and the explicit remediations `omg history remote reconcile --rebase|--merge|--adopt|--fork` (backup refs, never a force-push). The worker writes the identity record's second half — `refs/omgbase/ids`, one canonical-JSON id map per document, carried by push and fetch — and gains the no-op and resume rules; the debounce cadence gets its timer in the MCP host's mutation hook (`every` runs the worker synchronously after each write). The core gains the `HistoryVaultSink` seam, `remoteSummary`/`remoteSync` on `HistoryProvider`, `updateHistoryProviderConfig`, the freshness sweep's steps 7–8 and `fsVaultSink`, the error codes `git_remote_diverged`/`git_merge_conflict`; `version.capabilities.history` gains `remote` (every `version`/`sync_status` fixture moved by the one key). The Rust crates track the spec bumps; their twin follows as a separate task with `spec/store/cases/history/git-remote.json`, `reads::git-remote` and the six `history::history-git-remote-*` CLI cases as its contract.

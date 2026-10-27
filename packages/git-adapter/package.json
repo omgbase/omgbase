@@ -2,7 +2,7 @@
   "name": "@omgbase/git-adapter",
   "version": "0.1.0",
   "private": true,
-  "description": "Open Markdown Graph Base — the Git-backed history provider (modular-core Phase 6a): a checkpoint worker that builds commits in a bare repository under .omgbase/git from the engine's change feed, and a HistoryReader over it; attached by the CLI/MCP host through the core's provider registry",
+  "description": "Open Markdown Graph Base — the Git-backed history provider (modular-core Phase 6): a checkpoint worker that builds commits in a bare repository under .omgbase/git from the engine's change feed, a HistoryReader over it, and the remote half — push (never --force), fetch with a tree-level three-way merge whose inbound content enters through the source boundary, conflict sidecars, divergence remediations, the refs/omgbase/ids identity chain; attached by the CLI/MCP host through the core's provider registry",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -13,11 +13,22 @@
   "bugs": {
     "url": "https://github.com/omgbase/omgbase/issues"
   },
-  "keywords": ["markdown", "knowledge-graph", "omgbase", "git", "history"],
+  "keywords": [
+    "markdown",
+    "knowledge-graph",
+    "omgbase",
+    "git",
+    "history"
+  ],
   "engines": {
     "node": ">=22"
   },
-  "files": ["dist", "!dist/**/*.test.*", "!dist/**/*.map", "!dist/**/*.tsbuildinfo"],
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo"
+  ],
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

@@ -110,7 +110,7 @@ describe("the semantic row follows the settings until the Phase 4 verbs", () => 
 
   it("version.capabilities is the table's rendering: enabled/enabled with a provider, semantic disabled without one; coverage_from, writer_requires and model ride along (Phase 4a)", () => {
     const repoId = ensureRepo(store, "fixture", null);
-    const history = { state: "enabled", provider: "native", coverage_from: T0, writer_requires: true, completeness: "every" };
+    const history = { state: "enabled", provider: "native", coverage_from: T0, writer_requires: true, completeness: "every", remote: null };
     expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "disabled", model: null } });
     writeWorkspaceSettings(store, { embedding: { provider: "omgbase-embedder", model: "gte-base" } });
     expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "enabled", model: "gte-base" } });
@@ -118,7 +118,7 @@ describe("the semantic row follows the settings until the Phase 4 verbs", () => 
     writeWorkspaceSettings(store, { embedding: {} });
     expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "disabled", model: null } });
     // Without a repository there is no row: the workspace layer's setting answers, as Phase 2 did.
-    expect(capabilityStates(store, null)).toEqual({ history: { state: "enabled", provider: "native", coverage_from: null, writer_requires: false, completeness: "every" }, semantic: { state: "disabled", model: null } });
+    expect(capabilityStates(store, null)).toEqual({ history: { state: "enabled", provider: "native", coverage_from: null, writer_requires: false, completeness: "every", remote: null }, semantic: { state: "disabled", model: null } });
   });
 });
 

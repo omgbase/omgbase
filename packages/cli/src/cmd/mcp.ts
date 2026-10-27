@@ -1,8 +1,9 @@
 import { parseArgs } from "node:util";
 import {
   serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, withWriterLock, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, resolveSettings,
-  parseToolsProfile, TOOLS_PROFILES, type SyncSource, type ToolsProfile,
+  parseToolsProfile, TOOLS_PROFILES, readCapability, historyProviderOf, NATIVE_PROVIDER, runProviderCheckpoint, type SyncSource, type ToolsProfile,
 } from "@omgbase/core";
+import { createCheckpointScheduler, readGitConfig, type CheckpointScheduler } from "@omgbase/git-adapter";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
@@ -131,6 +132,27 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
       })
     : null;
 
+  // The git history provider's cadence (spec/store §5.12 "Cadence", 17.6 —
+  // Phase 6b): the mutation hook below also runs the checkpoint worker — under
+  // `every` synchronously after each successful write (the git history is
+  // complete without `omg sync`), under `{ debounce_ms }` once, `debounce_ms`
+  // after the last mutation (a burst folds into one commit). The worker runs
+  // under the workspace writer lock (re-entrant when the hook fires inside a
+  // locked tool call); the watcher's checkpoints notify it too.
+  const historyRow = readCapability(ws.store.db, repo.repoId, "history");
+  const gitHistory = historyRow !== null && historyRow.state === "enabled" && historyProviderOf(historyRow) !== NATIVE_PROVIDER;
+  const scheduler: CheckpointScheduler | null = gitHistory
+    ? createCheckpointScheduler({
+        cadence: readGitConfig({ ...historyRow.config, provider: historyProviderOf(historyRow) }).cadence,
+        run: () => { withWriterLock(ws.omgbaseDir, () => runProviderCheckpoint(ws.store, repo.repoId)); },
+        onError: (err: unknown) => cli.io.err(cli.style.dim(`[mcp] git checkpoint failed: ${String(err)}`)),
+      })
+    : null;
+  if (scheduler) {
+    const cadence = readGitConfig({ ...historyRow!.config, provider: historyProviderOf(historyRow) }).cadence;
+    cli.io.err(cli.style.dim(`[mcp] git checkpoint on mutation: ${cadence === "every" ? "every write" : `${cadence.debounce_ms} ms after the last write`}`));
+  }
+
   // Decide whether to run the in-process watcher. Off if --no-watch, or if a
   // live watcher already holds the lease (another `omg watch`/`omg mcp`).
   const leaseHeld = watchLeaseLive(ws.omgbaseDir);
@@ -157,8 +179,9 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
           onCheckpoint: (r) => {
             if (r.ingested.length > 0 || r.deleted.length > 0) {
               cli.io.err(cli.style.dim(`[watch] batch: +${r.ingested.length} -${r.deleted.length}`));
-              // A file change the watcher ingested may also need (re-)embedding.
+              // A file change the watcher ingested may also need (re-)embedding — and a git checkpoint.
               drainer?.schedule();
+              scheduler?.notify();
             }
           },
           onError: (err) => cli.io.err(cli.style.dim(`[watch] error: ${String(err)}`)),
@@ -209,7 +232,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     repoId: repo.repoId,
     omgbaseDir: ws.omgbaseDir,
     ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
-    ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
+    ...(drainer || scheduler ? { onMutation: () => { drainer?.schedule(); scheduler?.notify(); } } : {}),
     ...(embedQuery ? { embedQuery } : {}),
     ...(loaded ? { embedProvider: loaded.providerName } : {}),
     ...(semanticUnavailable ? { semanticUnavailable } : {}),
@@ -228,6 +251,8 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     // Drain any pending embeds before killing the provider process. flush()
     // runs a debounced-but-not-yet-fired drain; close() then awaits in-flight.
     if (drainer) { try { await drainer.flush(); } catch { /* reported via onError */ } await drainer.close(); }
+    // A debounced git checkpoint still pending runs now (its error is reported, never thrown).
+    if (scheduler) { scheduler.flush(); scheduler.close(); }
     if (embedding) await embedding.close();
     await handle.close();
     ws.close();

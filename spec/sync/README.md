@@ -206,6 +206,25 @@ filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
    cannot run (`git` not on PATH) raises `history_provider_unavailable` and
    is skipped; the sweep itself never fails for it and the rows wait for the
    next run. A native repository has no step 6.
+7. **Provider push** (4.6; `spec/store` §5.12 "Push"): when the repository's
+   provider binds a remote whose `push` policy is `periodic`, run the
+   provider's push — the branch and the ids ref, never `--force`. The sweep
+   is the timer: there is none in the adapter. Skipped while a divergence
+   (`git_remote_diverged` carrying `old_remote_tip`, `git_remote_forked`) or
+   a merge with conflicts (`git_merge_conflict`) stands; a rejected push
+   raises its alert and is otherwise swallowed here as step 6's failures are.
+8. **Provider fetch** (4.6; `spec/store` §5.12 "Fetch"): when the binding's
+   `fetch` policy is `periodic`, run the provider's fetch — the remote's
+   changes enter the vault THROUGH THE SOURCE BOUNDARY: the sweep hands the
+   provider a vault sink bound to the repository's root (`fs_vault_sink`:
+   the files written under the root as external edits, then
+   `process_checkpoint` over exactly those paths and the stat cache refreshed
+   for them — never step 6 again inside the sink), and the provider
+   fast-forwards or merges its branch after the ingest. Paused as step 7 is.
+   `webhook` is RESERVED: the sweep fetches nothing; an external caller runs
+   `omg history fetch`. A repository binding no remote has no steps 7–8. The
+   reference runs 7 and 8 as one call of the provider seam's `remoteSync`
+   (fetch first, then push) and reports `{ pushed, fetched, paused }`.
 
 Result: the batch result plus `{ scanned, candidates, changed:
 ingested or deleted or conflicted or failed or repaired non-empty, materialized, repaired }`; a sweep with nothing to do
@@ -377,18 +396,27 @@ client** (in-process or over MCP) with no reconciliation logic of its own.
   speaks paths, not ids — so a moved document is a write at the new path and
   a removal of the old one, and runs the procedure at most once per
   `sync_out` call (a second expiry is the caller's retry).
-- **The `$git` cursor row (4.5, store 17.5 Phase 6a; `spec/store` §5.12).**
-  The git history provider's checkpoint worker is a consumer of this feed
-  like any other: its cursor is one reserved row of `sync_state` per
-  repository, `(repo_id, '$git', '')` — a sentinel source id like the
+- **The `$git` cursor row (4.5, store 17.5 Phase 6a; 4.6; `spec/store`
+  §5.12).** The git history provider's checkpoint worker is a consumer of
+  this feed like any other: its cursor is one reserved row of `sync_state`
+  per repository, `(repo_id, '$git', '')` — a sentinel source id like the
   semantic watermark's `$semantic`, never a minted `src_` id — with
-  `revision` the branch tip's sha and `cursor` the JSON `{ epoch, seq }` it
-  covers. The row is a CACHE of the tip's `omgbase-seq` trailer: the worker
-  resumes from the trailer, writes the row after every commit, and a crash
-  between the two leaves the row behind the tip, which the next run reads
-  past; `history purge` deletes it. An `expired_cursor` is its rescan — one
-  snapshot commit at the head (§5.12), the procedure above applied by a
-  consumer that keeps the current tree rather than a copy.
+  `revision` the branch tip's sha and `cursor` the JSON `{ epoch, seq,
+  pushed? }`. `{ epoch, seq }` is a CACHE of the tip's `omgbase-seq`
+  trailer, refined (4.6) past it when the row names the same tip and stands
+  further on — the worker's no-op rule moved it (rows whose bytes were
+  already in the tree), or a fetch fast-forwarded the branch to a tip that is
+  not the worker's own and set the row at its position: the worker resumes
+  from the trailer, or from the row when the row names the tip and stands
+  further on (`spec/store` §5.12 "the resume rule"), writes the row after
+  every commit, and a crash between the ref and the row leaves the row behind
+  the tip, which the next run reads past; `history purge` deletes it. `pushed`
+  (4.6) — `{ tip, seq }`, the tip the remote holds since the last push and
+  the feed seq its trailer covers — is `pushed_through` on the wire
+  (`history remote status`, `version.capabilities.history.remote`); a push
+  replaces it, `history remote unset` clears it. An `expired_cursor` is its
+  rescan — one snapshot commit at the head (§5.12), the procedure above
+  applied by a consumer that keeps the current tree rather than a copy.
 - **The sync base.** A client of the feed keeps its own base — the `(epoch,
   seq)` it last applied and the hashes it last saw; the server promises
   nothing beyond the feed's retention floor. Optional history supplies no
@@ -565,7 +593,10 @@ one ledger line `[sync spec] composition=<name>: compared=<n> mapped=<n>
 skipped=<n>` (4.3) that `pnpm conformance` collects; (7) the fifth
 composition `git` (4.5, `spec/store` §9.6) has no native module and
 compares exactly as `core` — no sync fixture drives the git provider (the
-sweep's step 6 is a no-op on a native repository). The reference:
+sweep's steps 6–8 are no-ops on a native repository; the provider's own
+behaviour, the sink included, is pinned by `spec/store` `cases/history/
+git-remote.json` and the CLI's `history::history-git-remote-*` cases, whose
+`fetch` runs through the filesystem sink of step 8). The reference:
 `packages/core/corpus/sync/spec.test.ts` (`coreModeCheckpointExpect`); the
 coordinator cases of `@omgbase/sync`'s runner read the feed, never a history
 table, and need no mapping.
@@ -677,6 +708,15 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-26, sync 4.6 (store 17.6 Phase 6b of `docs/modular-core/` — the
+  git history provider's remote half): the freshness sweep's **steps 7–8**
+  (§4.3) run the attached provider's push and fetch under the binding's
+  `periodic` policies, the fetch's inbound content entering through the
+  **filesystem vault sink** (the files under the root as external edits, then
+  `process_checkpoint` over them — the source boundary, never a row written
+  by the provider); the **`$git` row** (§6) gains `pushed` (`pushed_through`
+  on the wire) and the resume rule's refinement. Procedures added, no stored
+  row's meaning changed: a minor. No sync fixture moved.
 - 2026-10-26, sync 4.5 (store 17.5 Phase 6a of `docs/modular-core/` — the
   git history provider): the freshness sweep's **step 6** runs the attached
   provider's checkpoint worker (§4.3); the **`$git` cursor row** of

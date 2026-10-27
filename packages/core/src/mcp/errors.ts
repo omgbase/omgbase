@@ -31,7 +31,11 @@ export type ErrorCode =
   | "capability_unavailable"
   | "capture_failed"
   // spec/surface 6.0 / spec/store 17.0 (D7): a `changes_since` cursor the feed no longer serves — another epoch, past the head, behind the oldest retained row — `data: { epoch, oldest, head }`, never retriable: the consumer rescans (spec/sync §6)
-  | "expired_cursor";
+  | "expired_cursor"
+  // spec/store 17.6 §5.12 (Phase 6b, the git history provider's remote half): a push the remote rejected (non-fast-forward) or a fetch that found the remote rewritten — `data: { remote, branch, local_tip, remote_tip, old_remote_tip? }`, retriable (an operator action resolves it); the remote verbs refuse with it while the alert stands
+  | "git_remote_diverged"
+  // spec/store 17.6 §5.12: a tree-level merge left conflicts — `data: { remote, branch, remote_tip, paths }`; `history remote resolve` settles them
+  | "git_merge_conflict";
 
 export interface EngineErrorBody {
   error: ErrorCode;

@@ -1,8 +1,9 @@
 import { dirname, resolve } from "node:path";
-import type { Store, CommitRecord, HistoryProvider, HistoryProviderAvailability, HistoryProviderConfig, HistoryCheckpointResult, HistoryProviderFactory } from "@omgbase/core";
+import type { Store, CommitRecord, HistoryProvider, HistoryProviderAvailability, HistoryProviderConfig, HistoryCheckpointResult, HistoryProviderFactory, HistoryPushResult, HistoryRemoteSummary, HistoryRemoteSyncResult, HistoryVaultSink } from "@omgbase/core";
 import { GitRepo, gitAvailable, type GitIdentity } from "./git.js";
 import { GitHistoryReader } from "./reader.js";
-import { GIT_PROVIDER, gitConfigFor, readGitConfig, type GitCadence, type GitHistoryConfig } from "./config.js";
+import { GIT_PROVIDER, gitConfigFor, readGitConfig, type GitCadence, type GitHistoryConfig, type GitRemoteOptions } from "./config.js";
+import { fetchRemote, pushAfterCheckpoint, pushBranch, reconcileRemote, remoteSet, remoteStatus, remoteSummary, remoteSync, remoteUnset, resolveConflict, type FetchResult, type ReconcileMode, type ReconcileResult, type RemoteStatus, type ResolveChoice, type ResolveResult } from "./remote.js";
 import { commitSnapshot, runCheckpoint, type WorkerContext } from "./worker.js";
 import { clearGitCursor } from "./cursor.js";
 import { ensureExcluded } from "./exclude.js";
@@ -73,7 +74,56 @@ export class GitHistoryProvider implements HistoryProvider {
   }
 
   checkpoint(repoId: string, config: HistoryProviderConfig, opts: { now?: string } = {}): HistoryCheckpointResult {
-    return runCheckpoint(this.context(repoId, readGitConfig(config)), opts);
+    const ctx = this.context(repoId, readGitConfig(config));
+    const result = runCheckpoint(ctx, opts);
+    // `push: "on-checkpoint"` (17.6): the push follows a checkpoint that committed; its outcome rides on the receipt.
+    const push = pushAfterCheckpoint(ctx, opts.now ?? new Date().toISOString(), result.committed);
+    return push === undefined ? result : { ...result, push };
+  }
+
+  // ---- the remote half (17.6, Phase 6b; `remote.ts`) ----
+
+  remoteSummary(repoId: string, config: HistoryProviderConfig): HistoryRemoteSummary | null {
+    return remoteSummary(this.context(repoId, readGitConfig(config)));
+  }
+
+  remoteSync(repoId: string, config: HistoryProviderConfig, opts: { now: string; vault: HistoryVaultSink }): HistoryRemoteSyncResult | null {
+    return remoteSync(this.context(repoId, readGitConfig(config)), opts.now, opts.vault);
+  }
+
+  /** `history remote set`: returns the config as written to the row. */
+  remoteSet(repoId: string, config: HistoryProviderConfig, options: GitRemoteOptions, now: string = new Date().toISOString()): GitHistoryConfig {
+    return remoteSet(this.context(repoId, readGitConfig(config)), options, now);
+  }
+
+  /** `history remote unset`. */
+  remoteUnset(repoId: string, config: HistoryProviderConfig, now: string = new Date().toISOString()): GitHistoryConfig {
+    return remoteUnset(this.context(repoId, readGitConfig(config)), now);
+  }
+
+  /** `history remote status` (local refs only). */
+  remoteStatus(repoId: string, config: HistoryProviderConfig): RemoteStatus {
+    return remoteStatus(this.context(repoId, readGitConfig(config)));
+  }
+
+  /** `history push`. */
+  push(repoId: string, config: HistoryProviderConfig, now: string = new Date().toISOString()): HistoryPushResult & { ids: "pushed" | "rejected" | "none" } {
+    return pushBranch(this.context(repoId, readGitConfig(config)), now);
+  }
+
+  /** `history fetch`: inbound content through `vault`. */
+  fetch(repoId: string, config: HistoryProviderConfig, vault: HistoryVaultSink, now: string = new Date().toISOString()): FetchResult {
+    return fetchRemote(this.context(repoId, readGitConfig(config)), now, vault);
+  }
+
+  /** `history remote resolve <path> --ours|--theirs`. */
+  resolve(repoId: string, config: HistoryProviderConfig, vault: HistoryVaultSink, path: string, choice: ResolveChoice, now: string = new Date().toISOString()): ResolveResult {
+    return resolveConflict(this.context(repoId, readGitConfig(config)), now, vault, path, choice);
+  }
+
+  /** `history remote reconcile --rebase|--merge|--adopt|--fork`. */
+  reconcile(repoId: string, config: HistoryProviderConfig, vault: HistoryVaultSink, mode: ReconcileMode, now: string = new Date().toISOString()): ReconcileResult {
+    return reconcileRemote(this.context(repoId, readGitConfig(config)), now, vault, mode);
   }
 
   /** The bare repository of a repository (the measurement script, tests). */

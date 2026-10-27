@@ -450,7 +450,7 @@ export function compositionInteropExpect(expect: { writes: ReadOutcome[]; reads:
 }
 
 /** The history capability's `version`/`sync_status` answer on the core-only composition (Phase 4a): no module, so `unavailable`; a repository it created has no coverage and requires nothing. */
-export const CORE_HISTORY_STATE = { state: "unavailable", provider: "native", coverage_from: null, writer_requires: false, completeness: "every" };
+export const CORE_HISTORY_STATE = { state: "unavailable", provider: "native", coverage_from: null, writer_requires: false, completeness: "every", remote: null };
 
 /** Does the query text reach the `revisions` root or the `_revisions` relation (whose rows are the recorder's)? */
 export function touchesRevisions(query: string): boolean {

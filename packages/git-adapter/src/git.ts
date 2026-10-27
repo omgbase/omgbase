@@ -55,6 +55,8 @@ export function gitBin(): string {
 }
 
 export const ZERO_SHA = "0".repeat(40);
+/** The empty tree's sha (git's well-known constant for the SHA-1 object format). */
+export const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 export const SHA_RE = /^[0-9a-f]{40}$/;
 
 /** `ts` (RFC 3339) as git's raw date `@<seconds> +0000`. */
@@ -172,20 +174,151 @@ export class GitRepo {
     return this.text(["rev-parse", `${commit}^{tree}`]).trim();
   }
 
-  /** `git commit-tree` with the message on stdin and the identities/dates in the environment; the commit sha. */
-  commitTree(tree: string, parent: string | null, message: string, id: CommitIdentity): string {
+  /** `git commit-tree` with the message on stdin and the identities/dates in the environment; the commit sha. `parent` may be several (a merge commit, 17.6). */
+  commitTree(tree: string, parent: string | string[] | null, message: string, id: CommitIdentity): string {
     const date = gitDate(id.ts);
     const env = {
       GIT_AUTHOR_NAME: id.author.name, GIT_AUTHOR_EMAIL: id.author.email, GIT_AUTHOR_DATE: date,
       GIT_COMMITTER_NAME: id.committer.name, GIT_COMMITTER_EMAIL: id.committer.email, GIT_COMMITTER_DATE: date,
     };
-    const args = ["commit-tree", tree, ...(parent ? ["-p", parent] : []), "-F", "-"];
+    const parents = parent === null ? [] : Array.isArray(parent) ? parent : [parent];
+    const args = ["commit-tree", tree, ...parents.flatMap((p) => ["-p", p]), "-F", "-"];
     return this.text(args, { env, input: message }).trim();
   }
 
   /** `git update-ref` with the old value as the compare-and-swap (`ZERO_SHA` = the ref must not exist). */
   updateRef(branch: string, newSha: string, oldSha: string | null): void {
-    this.run(["update-ref", `refs/heads/${branch}`, newSha, oldSha ?? ZERO_SHA]);
+    this.updateRefRaw(`refs/heads/${branch}`, newSha, oldSha);
+  }
+
+  // ---- refs, ancestry and trees (17.6, the remote half) ----
+
+  /** `git update-ref <ref> <new> <old>` on any full ref name (the ids ref, the remote-tracking and bookkeeping refs). */
+  updateRefRaw(ref: string, newSha: string, oldSha: string | null): void {
+    this.run(["update-ref", ref, newSha, oldSha ?? ZERO_SHA]);
+  }
+
+  /** `git update-ref <ref> <new>` without a compare-and-swap (a tracking or bookkeeping ref that mirrors something else). */
+  setRef(ref: string, sha: string): void {
+    this.run(["update-ref", ref, sha]);
+  }
+
+  /** The author of a commit: `%an` and `%ae`. */
+  authorOf(commit: string): GitIdentity {
+    const [name, email] = this.text(["log", "-1", "--format=%an%x1f%ae", commit]).trim().split("\x1f");
+    return { name: name ?? "", email: email ?? "" };
+  }
+
+  /** `git update-ref -d <ref>`; a missing ref is fine. */
+  deleteRef(ref: string): void {
+    this.run(["update-ref", "-d", ref], { allowFailure: true });
+  }
+
+  /** The sha a full ref name points at, or null when it does not exist. */
+  ref(ref: string): string | null {
+    const r = this.run(["rev-parse", "--verify", "--quiet", ref], { allowFailure: true });
+    if (r.status !== 0) return null;
+    const sha = r.stdout.toString("utf8").trim();
+    return SHA_RE.test(sha) ? sha : null;
+  }
+
+  /** Is `ancestor` an ancestor of (or equal to) `descendant`? (`git merge-base --is-ancestor`.) */
+  isAncestor(ancestor: string, descendant: string): boolean {
+    return this.run(["merge-base", "--is-ancestor", ancestor, descendant], { allowFailure: true }).status === 0;
+  }
+
+  /** `git merge-base a b`, or null when the histories are unrelated. */
+  mergeBase(a: string, b: string): string | null {
+    const r = this.run(["merge-base", a, b], { allowFailure: true });
+    if (r.status !== 0) return null;
+    const sha = r.stdout.toString("utf8").trim();
+    return SHA_RE.test(sha) ? sha : null;
+  }
+
+  /** The commits reachable from `to` and not from `from`, oldest first (`git rev-list --reverse from..to`; `from` null = all of `to`). */
+  revList(from: string | null, to: string): string[] {
+    const range = from === null ? to : `${from}..${to}`;
+    return this.text(["rev-list", "--reverse", range]).split("\n").map((l) => l.trim()).filter((l) => SHA_RE.test(l));
+  }
+
+  /** The parents of a commit. */
+  parentsOf(commit: string): string[] {
+    return this.text(["rev-list", "--parents", "-n", "1", commit]).trim().split(/\s+/).slice(1).filter((p) => SHA_RE.test(p));
+  }
+
+  /** A tree-ish's blobs: `path → blob sha` (`git ls-tree -r`; only blobs — the content branch holds nothing else). */
+  treeEntries(treeish: string): Map<string, string> {
+    const out = new Map<string, string>();
+    if (treeish === EMPTY_TREE) return out;
+    for (const line of this.text(["ls-tree", "-r", "-z", treeish]).split("\0")) {
+      if (line === "") continue;
+      const m = /^(\d{6}) (\w+) ([0-9a-f]{40})\t(.*)$/s.exec(line);
+      if (m && m[2] === "blob") out.set(m[4]!, m[3]!);
+    }
+    return out;
+  }
+
+  /** The paths whose blob differs between two tree-ishes: `path → the blob in b` (null = gone in b). `git diff-tree -r`. */
+  diffTrees(a: string, b: string): Map<string, string | null> {
+    const out = new Map<string, string | null>();
+    // The -z form interleaves `:<mode a> <mode b> <sha a> <sha b> <status>` and `<path>` records; parse pairwise.
+    const records = this.text(["diff-tree", "-r", "-z", "--no-renames", a, b]).split("\0");
+    for (let i = 0; i + 1 < records.length; i += 2) {
+      const meta = records[i]!;
+      const path = records[i + 1]!;
+      const m = /^:(\d{6}) (\d{6}) ([0-9a-f]{40}) ([0-9a-f]{40}) ([ADMT])/.exec(meta);
+      if (!m) continue;
+      out.set(path, m[5] === "D" ? null : m[4]!);
+    }
+    return out;
+  }
+
+  /** A blob's bytes. */
+  blob(sha: string): Buffer {
+    return this.run(["cat-file", "blob", sha]).stdout;
+  }
+
+  /** The configured remotes (`git remote`). */
+  remotes(): string[] {
+    return this.text(["remote"]).split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  }
+
+  /** `git remote add` or `set-url` so that `name` points at `url`; `remote.<name>.fetch` left as git sets it (the tracking refs under `refs/remotes/<name>/`). */
+  setRemote(name: string, url: string): void {
+    if (this.remotes().includes(name)) this.run(["remote", "set-url", name, url]);
+    else this.run(["remote", "add", name, url]);
+  }
+
+  /** `git remote remove`; a missing remote is fine. */
+  removeRemote(name: string): void {
+    this.run(["remote", "remove", name], { allowFailure: true });
+  }
+
+  /**
+   * `git push <remote> <refspec>…` — NEVER `--force`. Returns `ok`, or `rejected`
+   * when the remote refused a non-fast-forward (git's `[rejected]` /
+   * `non-fast-forward` / `fetch first` / `stale info` lines), or `failed` with
+   * git's stderr for anything else (no network, no such remote).
+   */
+  push(remote: string, refspecs: string[]): { status: "ok" } | { status: "rejected"; stderr: string } | { status: "failed"; stderr: string } {
+    const r = this.run(["push", "--porcelain", "--quiet", remote, ...refspecs], { allowFailure: true });
+    if (r.status === 0) return { status: "ok" };
+    const text = `${r.stdout.toString("utf8")}\n${r.stderr}`;
+    if (/\[rejected\]|non-fast-forward|fetch first|stale info|\n!\t/.test(text)) return { status: "rejected", stderr: r.stderr.trim() };
+    return { status: "failed", stderr: r.stderr.trim() };
+  }
+
+  /** `git fetch <remote> <refspec>…` (the refspecs may carry `+`: a tracking ref follows the remote wherever it went). Returns null on success, git's stderr on failure. */
+  fetch(remote: string, refspecs: string[]): string | null {
+    const r = this.run(["fetch", "--quiet", "--no-tags", remote, ...refspecs], { allowFailure: true });
+    return r.status === 0 ? null : r.stderr.trim();
+  }
+
+  /** `git ls-remote <remote> <ref>`: the sha the remote holds for `ref`, null when it has none; throws when the remote cannot be reached. */
+  lsRemote(remote: string, ref: string): string | null {
+    const out = this.text(["ls-remote", remote, ref]);
+    const m = /^([0-9a-f]{40})\t/.exec(out);
+    return m ? m[1]! : null;
   }
 
   /** The type of an object (`commit`, `blob`, `tree`, `tag`), or null when the object is missing. */

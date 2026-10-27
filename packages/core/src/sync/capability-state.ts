@@ -1,6 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import type { CapabilityState } from "../core/capabilities/errors.js";
-import { attachedProvider, coverageFrom, historyProviderOf, NATIVE_PROVIDER, readCapabilities, semanticProviderConfigured, type ManifestRow } from "../core/store/manifest.js";
+import { attachedProvider, coverageFrom, historyProviderOf, NATIVE_PROVIDER, providerConfigOf, readCapabilities, semanticProviderConfigured, type ManifestRow } from "../core/store/manifest.js";
+import type { HistoryRemoteSummary } from "../core/capabilities/types.js";
 import { resolveSettings } from "./settings.js";
 
 // Capability discovery (modular-core Phase 2 → 3e-ii; phase-1-contracts §1.5,
@@ -21,8 +22,8 @@ import { resolveSettings } from "./settings.js";
 export type HistoryCompleteness = "every" | "checkpoints";
 
 export interface CapabilityStates {
-  /** `provider` (6.4): the manifest row's `config.provider`, `native` when absent; `coverage_from`: the first coverage interval's `from` (spec/store §3.1 rule 2), null when capture never ran; `writer_requires`: the manifest flag (resolution 17); `completeness` (6.4): see `HistoryCompleteness`. */
-  history: { state: CapabilityState; provider: string; coverage_from: string | null; writer_requires: boolean; completeness: HistoryCompleteness };
+  /** `provider` (6.4): the manifest row's `config.provider`, `native` when absent; `coverage_from`: the first coverage interval's `from` (spec/store §3.1 rule 2), null when capture never ran; `writer_requires`: the manifest flag (resolution 17); `completeness` (6.4): see `HistoryCompleteness`; `remote` (6.5, Phase 6b): the provider's remote binding — `{ name, branch, state, pushed_through }` — null for the native recorder and for a provider row that binds none. */
+  history: { state: CapabilityState; provider: string; coverage_from: string | null; writer_requires: boolean; completeness: HistoryCompleteness; remote: HistoryRemoteSummary | null };
   /** `model`: the manifest row's `config.model`, null when none is configured. */
   semantic: { state: CapabilityState; model: string | null };
 }
@@ -59,6 +60,22 @@ export function historyState(store: Store, repoId: string | null): CapabilitySta
   return row?.state ?? "disabled";
 }
 
+/**
+ * The `remote` member of `version.capabilities.history` (6.5, Phase 6b; spec/store §5.12 "Remote status"): the attached
+ * provider's summary of the row's binding — the three levels a client needs are then on one wire: current state (the
+ * rows), locally checkpointed (`completeness`, the tip) and remotely synchronised (`remote.state`, `pushed_through`).
+ * Null for the native recorder, a row without a binding, or a provider that is not attached or cannot run (its state
+ * says `unavailable`). Local refs only: no network is touched by a `version` call.
+ */
+export function historyRemote(store: Store, repoId: string | null, row: ManifestRow | null): HistoryRemoteSummary | null {
+  if (repoId === null || !row) return null;
+  const provider = historyProviderOf(row);
+  if (provider === NATIVE_PROVIDER) return null;
+  const p = attachedProvider(store.db, provider);
+  if (!p || !p.remoteSummary || !p.available().ok) return null;
+  return p.remoteSummary(repoId, providerConfigOf(row));
+}
+
 /** The `completeness` of a repository's capture (6.4): `checkpoints` only for a provider row whose `cadence` is a debounce object. */
 export function historyCompleteness(row: ManifestRow | null): HistoryCompleteness {
   const cadence = row?.config.cadence;
@@ -87,7 +104,7 @@ export function semanticState(store: Store, repoId: string | null, failed?: Sema
 export function capabilityStates(store: Store, repoId: string | null, failed?: SemanticHostReport | null): CapabilityStates {
   const rows = repoId === null ? { history: null, semantic: null } : readCapabilities(store.db, repoId);
   return {
-    history: { state: historyState(store, repoId), provider: historyProviderOf(rows.history), coverage_from: coverageFrom(rows.history), writer_requires: rows.history?.writer_requires ?? false, completeness: historyCompleteness(rows.history) },
+    history: { state: historyState(store, repoId), provider: historyProviderOf(rows.history), coverage_from: coverageFrom(rows.history), writer_requires: rows.history?.writer_requires ?? false, completeness: historyCompleteness(rows.history), remote: historyRemote(store, repoId, rows.history) },
     semantic: { state: semanticState(store, repoId, failed), model: modelOf(rows.semantic) },
   };
 }

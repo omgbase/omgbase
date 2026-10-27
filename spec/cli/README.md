@@ -1153,6 +1153,79 @@ debounce-cadence`, `history-git-refused-when-native-enabled`,
 `history-checkpoint-on-native`, `history-enable-bad-provider`,
 `history-enable-bad-cadence`, `history-enable-cadence-without-git`.
 
+**The remote half (cli 5.6, store 17.6 Phase 6b — `spec/store` §5.12 "The
+remote binding" … "Divergence").** Every verb below is the git provider's:
+on a native repository it is `usage: history <verb> is the git provider's:
+this repository's history is native (captured in every commit)` with the
+switch as the hint; on a disabled one `usage: history is disabled for this
+repository — enable it with 'omg history enable --provider git'`; without a
+binding (`push`, `fetch`, `remote status`) `usage: no remote is bound to this
+repository's git history` with the hint `bind one with 'omg history remote
+set --url <url>'`; a verb that writes into the vault (`fetch`, `remote
+resolve`, `remote reconcile`) on a sourceless repository is a usage error
+naming `source add`. Each runs under the writer lock; the engine's errors
+`git_remote_diverged` and `git_merge_conflict` render as `error[<code>]:
+<message>` with the detail printed (exit 1); the active alerts print after
+the verb as every verb's do (`alert[warning] git_remote_diverged: …`).
+**`remote set --url <url> [--name <remote>] [--branch <b>] [--push
+off|on-checkpoint|periodic] [--fetch off|periodic|webhook]`** binds the
+remote: stderr `  remote <name> → <url> (branch <b>, push <p>, fetch <f>)`,
+`--json` `{ remote: { name, url, branch, push, fetch } }`; the refusals are
+usage errors — `--url` missing (`usage: history remote set requires --url
+<url>`), credentials in the URL (`usage: the remote URL carries credentials
+(a user or password in the URL) — omgbase never stores credentials; let git
+resolve access through the host (ssh keys, a credential helper)`), a bad
+policy (`usage: --push must be one of off|on-checkpoint|periodic (got
+"<x>")`, `--fetch … off|periodic|webhook`). **`remote unset`**: `  remote
+<name> unbound` / `  no remote was bound`; `--json` `{ remote: null }`.
+**`remote status`** (local refs, no network): stdout five rows — `  remote
+<name>/<branch>`, `  state <s>`, `  local tip <sha>|—`, `  remote tip
+<sha>|—`, `  pushed through seq <n>|—` — in the shared two-column layout;
+`--json` `{ remote, branch, local_tip, remote_tip, pushed_through, state }`.
+**`push`**: stderr `  pushed <sha> to <name>/<branch> (through seq <n>)` /
+`  nothing to push (<name>/<branch> at <sha>)`, ` (the ids ref was rejected:
+the remote's identity record is another engine's)` appended when so;
+`--json` `{ pushed, tip, pushed_through, ids }`; a rejected push is
+`error[git_remote_diverged]: push to <name>/<branch> was rejected: …` (exit
+1); while a merge waits `error[git_merge_conflict]`. **`fetch`**: by state
+— `  nothing to fetch from <name>/<branch> (at <sha>)`, `  fast-forwarded to
+<sha>: <n> file(s) written into the vault`, `  merged <name>/<branch> at
+<sha>: <n> file(s) written into the vault, merge commit <sha>`, `  <n>
+conflict(s): <paths> — the remote's versions are beside yours; settle each
+with omg history remote resolve <path> --ours|--theirs`; `--json` `{ state,
+remote_tip, tip, applied, conflicts }`; a rewritten remote is
+`error[git_remote_diverged]: the remote <name>/<branch> was rewritten: …`
+(exit 1 — detect, stop, alert). **`remote resolve <path> --ours|--theirs`**
+(`<path>` in either form): `  resolved <path> (--<choice>); <n> conflict(s)
+remaining[; merge commit <sha>]`; `--json` `{ path, choice, remaining,
+merged, tip }`; no path (`usage: history remote resolve requires a <path>`),
+both or neither choice (`usage: history remote resolve takes exactly one of
+--ours or --theirs`), no pending conflict or not that path (the engine's
+message as a usage error). **`remote reconcile --rebase|--merge|--adopt|
+--fork`** (exactly one, else `usage: history remote reconcile takes exactly
+one of --rebase | --merge | --adopt | --fork`; refused when not diverged —
+the engine's message as a usage error): `  rebased <n> commit(s) onto the
+remote's head, tip <sha>; the previous tip is kept on refs/omgbase/backup;
+<n> file(s) written into the vault[; <conflicts>]`, `  merged the remote's
+head: merge commit <sha>; …` / `  merge pending: …`, `  adopted the remote's
+head <sha>; …`, `  pushed the engine's branch as <fork>; merge it with git,
+then run omg history remote reconcile --adopt`; `--json` `{ mode, tip,
+backup, rewritten, fork, applied, conflicts }`. **`checkpoint`** under
+`push: on-checkpoint` prints a second line — `  pushed <sha> (through seq
+<n>)` / `  nothing to push` / `  push failed: <reason>` — and `--json` gains
+`push`. `version`'s `capabilities.history.remote` and `doctor --json`'s
+`capabilities[0].config.remote` show the binding. Exact bytes:
+`history::history-git-remote-set-push-fetch` (the round: status refused,
+set, status by both renderings, push, nothing to push, the remote's commit
+fetched as a fast-forward into the vault — `ls`/`cat` show it — the no-op
+checkpoint, unset, the refusal), `history-git-remote-conflict-resolve`
+(the sidecar in `ls`, the alert line, the push refused, `--theirs`, the
+merge commit, the push), `history-git-remote-diverged-reconcile-rebase`
+(the rewrite, `fetch` exit 1, `push` paused, status `diverged`, the usage
+errors, `--rebase`, the push), `history-git-remote-push-on-checkpoint`
+(the receipt's `push`, `version --json`'s `remote` by shape),
+`history-git-remote-bad-arguments`, `history-push-on-native`.
+
 ### `init`
 
 `init [<dir>] [--yes] [--embedder <cmd|url> | --no-embedder]` — creates
@@ -1783,7 +1856,7 @@ classifier word for word for the composition its binary runs with.
 §9.6).** `OMGBASE_CAPABILITIES=git` attaches the git history provider and no
 native module, so every history rule above applies to it unchanged, plus
 one: a **git case** — a step whose argv names `--provider git` or `history
-checkpoint` — runs where the provider is attached (`full`, `git`) and is
+checkpoint` (5.6: or `history remote|push|fetch`) — runs where the provider is attached (`full`, `git`) and is
 skipped (`needs the git history provider`) on `core`, `history` and
 `semantic`; on `git` it is skipped only when it also needs the native module
 (its text matches `with the native provider`, `history is native` or
@@ -1826,7 +1899,16 @@ when absent — so a verb that reads stdin sees EOF at once), and an
 environment holding only: `PATH` (inherited), `NO_COLOR=1`,
 `HOME=<tmp>/home`, `TMPDIR=<tmp>/tmp`, `OMGBASE_SPEC_MINTER=sequential`,
 `OMGBASE_SPEC_CLOCK=2026-09-27T00:00:00.000Z`, then the case's `env` and the
-step's `env` (later wins). `files` (the case's before the first step, a
+step's `env` (later wins). **The remote device (5.6, store 17.6 Phase 6b):**
+a step's `remote` — `{}` or `{ ts, message?, files, parent? }` — runs after
+its `sql`: the case's REMOTE, a second bare repository at `<tmp>/remote.git`
+(`<workspace>/remote.git` in argv — a local path URL, no network), is created
+(`git init --bare --initial-branch omgbase`, idempotent) and, with `files`,
+gains one commit on `omgbase` as someone else would make it: identity `remote
+<remote@fixture>`, both dates `ts`, the message as given (`remote edit`), the
+tree the current tip's (`parent: "tip^"`: the tip's parent's — a rewrite) plus
+the files (`null` removes) — under the provider's own determinism environment,
+so its sha is a function of the inputs and a case may pin it. `files` (the case's before the first step, a
 step's before that step) are written under `<tmp>`, a `null` value deletes,
 a `*.sh` file is made executable. `sql` (store 17.0, slice 3e-ii; the
 case's before the first step, a step's before that step, after its
@@ -2208,6 +2290,17 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-26, cli 5.6 (store 17.6 Phase 6b, surface 6.5, sync 4.6): **the
+  git history provider's remote half** — `history remote set|unset|status`,
+  `history push`, `history fetch`, `history remote resolve <path>
+  --ours|--theirs`, `history remote reconcile --rebase|--merge|--adopt|
+  --fork`, `checkpoint`'s `push` line under `on-checkpoint`, the usage errors
+  and the two engine errors rendered; the `remote` fixture device and the
+  wider git-case classifier (§8). Verbs and flags added: a minor. Fixtures:
+  the six `history::history-git-remote-*` / `history-push-on-native` cases;
+  every `version --json` and `status --json` shape moved with surface 6.5's
+  `remote` key (26 cases), the help cards and `history-unknown-sub` by the
+  new verbs.
 - 2026-10-26, cli 5.5 (store 17.5 Phase 6a, surface 6.4, sync 4.5): **the
   git history provider** — `history enable --provider git [--branch]
   [--cadence]`, `history checkpoint`, `history purge` on a git repository,

@@ -122,14 +122,14 @@ export { embeddingSettings, type EmbeddingSettings } from "./semantic/provider.j
 export { createExternalProvider, type ExternalProvider } from "./semantic/external.js";
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";
 export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./semantic/vector.js";
-export { capabilityStates, historyState, semanticState, semanticConfigured, historyCompleteness, type CapabilityStates, type SemanticHostReport, type HistoryCompleteness } from "./sync/capability-state.js";
-export { runProviderCheckpoint } from "./sync/freshness.js";
+export { capabilityStates, historyState, semanticState, semanticConfigured, historyCompleteness, historyRemote, type CapabilityStates, type SemanticHostReport, type HistoryCompleteness } from "./sync/capability-state.js";
+export { runProviderCheckpoint, runProviderRemoteSync, fsVaultSink } from "./sync/freshness.js";
 // The capability manifest and the alert channel (spec/store §3.1 `capabilities` / `alerts`, 17.0 — modular-core Phase 3e-ii).
 export {
   readCapability, readCapabilities, coverageFrom, openCoverageFrom, ensureManifest, refreshSemanticManifest, refreshSemanticManifests, requireWriter, writerFor, configHash, canonicalConfigJson,
   HISTORY_INTERFACE_V, HISTORY_DATA_V, SEMANTIC_INTERFACE_V, SEMANTIC_DATA_V, WRITER_REFUSED_ALERT, WRITER_REFUSED_MESSAGE,
   // The capture lifecycle and the composition rule (spec/store §5.9, §3.1 — modular-core Phase 4a).
-  enableHistory, disableHistory, HISTORY_ENABLED_REASON, captureFor, historyReader, requireHistoryReader, historyBundlePresent, applyHistoryBundle, anyHistoryEnabled,
+  enableHistory, updateHistoryProviderConfig, disableHistory, HISTORY_ENABLED_REASON, captureFor, historyReader, requireHistoryReader, historyBundlePresent, applyHistoryBundle, anyHistoryEnabled,
   capture, CAPTURE_FAILED_ALERT, raiseCaptureFailed, clearCaptureFailed,
   // Phase 4b: the read-state table, `history purge`, `embed enable|disable`.
   inCoverage, claimMintedAt, historyReadRefusal, TargetMissingRevision, purgeHistory, enableSemantic, disableSemantic, semanticSwitchedOff, semanticProviderOf,
@@ -285,7 +285,7 @@ export {
   CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_DISABLED_MESSAGE,
   historyProviderUnavailableMessage, historyUnsupportedMessage, historyProviderNotAttachedMessage, HISTORY_PROVIDER_UNAVAILABLE_ALERT,
   CaptureFailed, captureFailedMessage,
-  type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type HistoryReader, type HistoryProvider, type HistoryProviderConfig, type HistoryProviderAvailability, type HistoryCheckpointResult, type CommitRecord,
+  type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type HistoryReader, type HistoryProvider, type HistoryProviderConfig, type HistoryProviderAvailability, type HistoryCheckpointResult, type HistoryPushResult, type HistoryRemoteState, type HistoryRemoteSummary, type HistoryVaultSink, type HistoryRemoteSyncResult, type CommitRecord,
   type SemanticProvider, type SemanticScorer, type SemanticFreshness, type SemanticDrainOptions, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
   type CapabilityName, type CapabilityState, type HistoryReadState, type RevisionQueryRow,
 } from "./core/capabilities/index.js";

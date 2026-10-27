@@ -18,7 +18,7 @@
 import Database from "better-sqlite3";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { repeatingMinter, sequentialMinter, setIdMinter } from "../../src/core/ids.js";
@@ -38,7 +38,8 @@ import {
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
 import { disableHistory, enableHistory, historyBundlePresent, historyReader, HistoryProviderConflict, purgeHistory, readCapability, requireProvider, type CoverageInterval } from "../../src/core/store/manifest.js";
 import { bindCapabilities } from "../../src/core/capabilities/registry.js";
-import { HAS_HISTORY, fixtureGitProvider } from "../composition.js";
+import { HAS_HISTORY, fixtureGitProvider, fixtureGitRepo, REMOTE_FIXTURE_IDENTITY, type FixtureVaultSink } from "../composition.js";
+import { listActiveAlerts } from "../../src/core/store/alerts.js";
 import { FAULT_ENV, resetFaults } from "../../src/core/fault.js";
 import { historyProviderOf, providerConfigOf, NATIVE_PROVIDER } from "../../src/core/store/manifest.js";
 import type { Capabilities, HistoryRecorder } from "../../src/core/capabilities/types.js";
@@ -138,6 +139,30 @@ export type Step =
   | { git_tree: Record<string, never> }
   /** README §9.4 (Phase 6a; §9.7 `git.commit`): arm (`fail: true`) or disarm the `git.commit` fault site for the process → `{ fault: boolean }` */
   | { git_fault: { fail: boolean } }
+  /** README §9.4 (17.6, Phase 6b; §5.12 "The remote binding"): `history remote set` — `url` is `<remote>` (the case's second bare repository) → `{ remote: { name, url: "<remote>", branch, push, fetch } }` or `{ remote: { error } }` */
+  | { git_remote: { ts: string; url: string; name?: string; branch?: string; push?: string; fetch?: string } }
+  /** README §9.4 (17.6): `history remote unset` → `{ remote: null }` */
+  | { git_remote_unset: { ts: string } }
+  /** README §9.4 (17.6): `history remote status` → `{ remote_status: { remote, branch, local_tip, remote_tip, pushed_through, state } }` */
+  | { git_remote_status: Record<string, never> }
+  /** README §9.4 (17.6; §5.12 "Push"): `history push` → `{ push: { pushed, tip, pushed_through, ids } }` or `{ push: { error } }` (a rejected push: the pinned message) */
+  | { git_push: { ts: string } }
+  /** README §9.4 (17.6; §5.12 "Fetch"): `history fetch` with the vault sink bound to `observeBatch` → `{ fetch: { state, remote_tip, tip, applied, conflicts } }` or `{ fetch: { error } }` */
+  | { git_fetch: { ts: string } }
+  /** README §9.4 (17.6): `history remote resolve <path> --ours|--theirs` → `{ resolve: { path, choice, remaining, merged, tip } }` or `{ resolve: { error } }` */
+  | { git_resolve: { ts: string; path: string; choose: "ours" | "theirs" } }
+  /** README §9.4 (17.6; §5.12 "Divergence"): `history remote reconcile --<mode>` → `{ reconcile: { mode, tip, backup, rewritten, fork, applied, conflicts } }` or `{ reconcile: { error } }` */
+  | { git_reconcile: { ts: string; mode: "rebase" | "merge" | "adopt" | "fork" } }
+  /** README §9.4 (17.6): a commit on the REMOTE made by someone else — `items` over the remote branch's tip (`parent: "tip^"` rewrites it: the new commit replaces the tip), identity `remote <remote@fixture>`, dates `ts` → `{ remote_commit: <sha> }` */
+  | { git_remote_commit: { ts: string; message?: string; items: ObserveItem[]; parent?: "tip" | "tip^" } }
+  /** README §9.4 (17.6): the remote's log / tree as text (the `git_log`/`git_tree` format over the remote's branch) */
+  | { git_remote_log: Record<string, never> }
+  | { git_remote_tree: Record<string, never> }
+  /** README §9.4 (17.6; §5.12 "The identity record"): the ids ref's log as text → `{ git_ids_log }`; `git show <ids ref>:.omgbase/ids/<doc>` on the local repository or the remote → `{ git_ids_show: <text | null> }` */
+  | { git_ids_log: Record<string, never> }
+  | { git_ids_show: { doc: string; from?: "local" | "remote" } }
+  /** README §9.4 (17.6): the repository's active alerts → `{ alerts: [{ code, severity, message, since, detail? }] }` */
+  | { alerts: Record<string, never> }
   /** README §9.4 (Phase 4a; §5.9): `history disable` at `ts` → `{ history: { state, coverage, writer_requires, changed } }` */
   | { history_disable: { ts: string } }
   /** README §9.4 (Phase 4b; §7.6): `history purge [--before]` at `ts` → `{ purge: { purged: { <table>: n }, claims_released, coverage, tables_dropped } }` */
@@ -208,7 +233,21 @@ export interface PurgeOutcome {
   /** Phase 6a: on a git-provider repository `provider: { name, removed }` — the bare repository's path is the run's and is not projected. */
   purge: { purged: Record<string, number>; claims_released: number; coverage: CoverageInterval[]; tables_dropped: boolean; provider?: { name: string; removed: boolean } };
 }
-export type StepOutcome = (ObservedOutcome | GoneOutcome | FailedOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string } | LifecycleOutcome | PurgeOutcome | { fault: boolean } | CheckpointOutcome | { git_log: string } | { git_tree: string };
+/** README §9.4 (17.6): the outcomes of the remote steps — the receipts as the verbs print them, or `{ error }`; shas are pinned by the fixture identities and clocks, the remote's path is `<remote>`. */
+export type RemoteOutcome =
+  | { remote: Record<string, unknown> | null }
+  | { remote_status: Record<string, unknown> }
+  | { push: Record<string, unknown> }
+  | { fetch: Record<string, unknown> }
+  | { resolve: Record<string, unknown> }
+  | { reconcile: Record<string, unknown> }
+  | { remote_commit: string }
+  | { git_remote_log: string }
+  | { git_remote_tree: string }
+  | { git_ids_log: string }
+  | { git_ids_show: string | null }
+  | { alerts: unknown[] };
+export type StepOutcome = (ObservedOutcome | GoneOutcome | FailedOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string } | LifecycleOutcome | PurgeOutcome | { fault: boolean } | CheckpointOutcome | { git_log: string } | { git_tree: string } | RemoteOutcome;
 
 /** README §9.4 (15.0): where a case's segments are written — a temporary directory, `<dest>` in every projected path. */
 export interface HistoryContext {
@@ -654,7 +693,7 @@ function runSteps(store: Store, repoId: string, stepsIn: Step[], config: ReturnT
     } else if (isLifecycleStep(step)) {
       // README §5.9 (Phase 4a): `history enable` (the baseline commit and the open
       // interval; every invariant holds after it), `history disable`, the fault device.
-      steps.push(runLifecycleStep(store, repoId, step));
+      steps.push(runLifecycleStep(store, repoId, step, lastSource));
       if (!("recorder_fault" in step)) for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
     } else {
       steps.push(runExecStep(store, step.exec.sql));
@@ -666,7 +705,15 @@ function runSteps(store: Store, repoId: string, stepsIn: Step[], config: ReturnT
 
 // ---- the capture lifecycle steps (README §9.4, §5.9 — Phase 4a) ---------------------------
 
-export type LifecycleStep = Extract<Step, { history_enable: unknown } | { history_disable: unknown } | { history_purge: unknown } | { recorder_fault: unknown } | { git_checkpoint: unknown } | { git_log: unknown } | { git_tree: unknown } | { git_fault: unknown }>;
+export type LifecycleStep = Extract<Step, { history_enable: unknown } | { history_disable: unknown } | { history_purge: unknown } | { recorder_fault: unknown } | { git_checkpoint: unknown } | { git_log: unknown } | { git_tree: unknown } | { git_fault: unknown } | RemoteStep>;
+/** README §9.4 (17.6, Phase 6b): the steps of the remote half. */
+export type RemoteStep = Extract<Step, { git_remote: unknown } | { git_remote_unset: unknown } | { git_remote_status: unknown } | { git_push: unknown } | { git_fetch: unknown } | { git_resolve: unknown } | { git_reconcile: unknown } | { git_remote_commit: unknown } | { git_remote_log: unknown } | { git_remote_tree: unknown } | { git_ids_log: unknown } | { git_ids_show: unknown } | { alerts: unknown }>;
+export const REMOTE_STEP_KINDS = ["git_remote", "git_remote_unset", "git_remote_status", "git_push", "git_fetch", "git_resolve", "git_reconcile", "git_remote_commit", "git_remote_log", "git_remote_tree", "git_ids_log", "git_ids_show", "alerts"] as const;
+export function isRemoteStep(step: object): step is RemoteStep {
+  return (REMOTE_STEP_KINDS as readonly string[]).some((k) => k in step);
+}
+/** README §9.4 (17.6): the token the case's second bare repository goes by in `git_remote.url` and in every outcome. */
+export const REMOTE_TOKEN = "<remote>";
 
 export function isLifecycleStep(step: object): step is LifecycleStep {
   return "history_enable" in step || "history_disable" in step || "history_purge" in step || "recorder_fault" in step || isGitStep(step);
@@ -674,7 +721,7 @@ export function isLifecycleStep(step: object): step is LifecycleStep {
 
 /** README §9.4 (Phase 6a): a step of the git provider — the worker, the two projections, the fault device. */
 export function isGitStep(step: object): boolean {
-  return "git_checkpoint" in step || "git_log" in step || "git_tree" in step || "git_fault" in step;
+  return "git_checkpoint" in step || "git_log" in step || "git_tree" in step || "git_fault" in step || isRemoteStep(step);
 }
 
 /** Does the case drive the git history provider (README §9.6: run only on a composition that attaches it — `full`, `git`)? */
@@ -697,7 +744,8 @@ function disarmGitFault(): void {
 }
 
 /** `history_enable` / `history_disable` through the production verbs, the fault device through the test seam; shared with every observation-script runner. */
-export function runLifecycleStep(store: Store, repoId: string, step: LifecycleStep): LifecycleOutcome | PurgeOutcome | { fault: boolean } | CheckpointOutcome | { git_log: string } | { git_tree: string } {
+export function runLifecycleStep(store: Store, repoId: string, step: LifecycleStep, lastSource?: Map<string, string>): LifecycleOutcome | PurgeOutcome | { fault: boolean } | CheckpointOutcome | { git_log: string } | { git_tree: string } | RemoteOutcome {
+  if (isRemoteStep(step)) return runRemoteStep(store, repoId, step, lastSource);
   if ("history_purge" in step) {
     const r = purgeHistory(store.db, repoId, { now: step.history_purge.ts, before: step.history_purge.before ?? null });
     return { purge: { purged: r.purged, claims_released: r.claims_released, coverage: r.coverage, tables_dropped: r.tables_dropped, ...(r.provider ? { provider: { name: r.provider.name, removed: r.provider.removed } } : {}) } };
@@ -742,6 +790,110 @@ export function runLifecycleStep(store: Store, repoId: string, step: LifecycleSt
     return { history: { state: r.row.state, coverage: r.row.coverage, writer_requires: r.row.writer_requires, changed: r.changed } };
   }
   return { fault: setRecorderFault(store, step.recorder_fault.fail) };
+}
+
+// ---- the remote steps (README §9.4, 17.6 — Phase 6b; §5.12 "The remote binding" …) --------------
+//
+// The case's SECOND bare repository — the remote — lives beside the workspace's
+// `.omgbase` as `<tmp>/remote.git` (`<remote>` in the fixture's text), created
+// on first use with `git init --bare --initial-branch omgbase`; a
+// `git_remote_commit` writes a commit on it as "someone else" would — the
+// identity `remote <remote@fixture>`, both dates the step's `ts`, the message
+// as given — so its sha is pinned too. Inbound content enters through a vault
+// sink bound to `observeBatch` (the source boundary), the same way the surface
+// runner's cases and the CLI's filesystem sink do.
+
+/** The remote's directory for a store with a workspace directory. */
+export function fixtureRemoteDir(store: Store): string {
+  if (store.omgbaseDir === null) throw new Error("a remote step needs a workspace directory (the case drives the git provider)");
+  return join(dirname(store.omgbaseDir), "remote.git");
+}
+
+/** The sink; `lastSource` (the store runner's C1 ledger of what was observed per path) follows the inbound content, as it would any observed edit. */
+function fixtureVault(store: Store, repoId: string, lastSource?: Map<string, string>): FixtureVaultSink {
+  return {
+    apply(changes, ts) {
+      const items = changes.map((c) => ({ path: c.path, content: c.content === null ? null : c.content.toString("utf8") }));
+      observeBatch(store, repoId, items, ts);
+      for (const it of items) {
+        if (it.content === null) lastSource?.delete(it.path);
+        else lastSource?.set(it.path, it.content);
+      }
+    },
+  };
+}
+
+/** Every occurrence of the remote's real path in a projected value becomes `<remote>`. */
+function tokenizeRemote(v: unknown, dir: string): unknown {
+  if (typeof v === "string") return v.split(dir).join(REMOTE_TOKEN);
+  if (Array.isArray(v)) return v.map((x) => tokenizeRemote(x, dir));
+  if (typeof v === "object" && v !== null) return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, tokenizeRemote(x, dir)]));
+  return v;
+}
+
+const errorOf = (e: unknown): { error: string } => ({ error: e instanceof Error ? e.message : String(e) });
+
+export function runRemoteStep(store: Store, repoId: string, step: RemoteStep, lastSource?: Map<string, string>): RemoteOutcome {
+  const remoteDir = fixtureRemoteDir(store);
+  const row = readCapability(store.db, repoId, "history");
+  const provider = fixtureGitProvider(store);
+  const remote = fixtureGitRepo(remoteDir);
+  if (!provider || !remote) throw new Error("the git history provider is not attached (OMGBASE_CAPABILITIES without it)");
+  const config = (): Record<string, unknown> => {
+    if (!row || historyProviderOf(row) === NATIVE_PROVIDER) throw new Error("the repository's history is not the git provider's");
+    return providerConfigOf(row) as unknown as Record<string, unknown>;
+  };
+  const tok = (v: unknown): Record<string, unknown> => tokenizeRemote(v, remoteDir) as Record<string, unknown>;
+  const vault = fixtureVault(store, repoId, lastSource);
+  if ("alerts" in step) return { alerts: tokenizeRemote(listActiveAlerts(store.db, repoId), remoteDir) as unknown[] };
+  if ("git_remote_commit" in step) {
+    const c = step.git_remote_commit;
+    remote.init("omgbase");
+    const tip = remote.tip("omgbase");
+    const parent = c.parent === "tip^" ? (tip === null ? null : remote.parentsOf(tip)[0] ?? null) : tip;
+    const adds = c.items.filter((it) => it.source !== null).map((it) => ({ path: it.path, blob: remote.writeBlob(it.source!) }));
+    const removes = c.items.filter((it) => it.source === null).map((it) => it.path);
+    const tree = remote.buildTree(parent === null ? null : remote.treeOf(parent), adds, removes);
+    const sha = remote.commitTree(tree, parent, `${c.message ?? "remote edit"}\n`, { author: REMOTE_FIXTURE_IDENTITY, committer: REMOTE_FIXTURE_IDENTITY, ts: c.ts });
+    remote.setRef("refs/heads/omgbase", sha);
+    return { remote_commit: sha };
+  }
+  if ("git_remote_log" in step) return { git_remote_log: remote.exists() && remote.tip("omgbase") !== null ? remote.text(["log", "--reverse", "--format=%H%n%s%n%(trailers)", "refs/heads/omgbase"]) : "" };
+  if ("git_remote_tree" in step) return { git_remote_tree: remote.exists() && remote.tip("omgbase") !== null ? remote.text(["ls-tree", "-r", "refs/heads/omgbase"]) : "" };
+  if ("git_ids_log" in step) {
+    const git = provider.gitRepo(config());
+    return { git_ids_log: git.exists() && git.ref("refs/omgbase/ids") !== null ? git.text(["log", "--reverse", "--format=%H%n%s%n%(trailers)", "refs/omgbase/ids"]) : "" };
+  }
+  if ("git_ids_show" in step) {
+    const repo = step.git_ids_show.from === "remote" ? remote : provider.gitRepo(config());
+    const r = repo.exists() ? repo.run(["show", `refs/omgbase/ids:.omgbase/ids/${step.git_ids_show.doc}`], { allowFailure: true }) : null;
+    return { git_ids_show: r && r.status === 0 ? repo.text(["show", `refs/omgbase/ids:.omgbase/ids/${step.git_ids_show.doc}`]) : null };
+  }
+  try {
+    if ("git_remote" in step) {
+      const { ts, url, ...rest } = step.git_remote;
+      // The remote is created on first use: a binding to a repository that does not exist yet is the operator's own affair in production.
+      remote.init("omgbase");
+      const opts: Record<string, string> = { url: url.split(REMOTE_TOKEN).join(remoteDir) };
+      for (const [k, v] of Object.entries(rest)) if (v !== undefined) opts[k] = v;
+      return { remote: tok(provider.remoteSet(repoId, config(), opts, ts).remote) };
+    }
+    if ("git_remote_unset" in step) return { remote: provider.remoteUnset(repoId, config(), step.git_remote_unset.ts).remote };
+    if ("git_remote_status" in step) return { remote_status: provider.remoteStatus(repoId, config()) };
+    if ("git_push" in step) return { push: tok(provider.push(repoId, config(), step.git_push.ts)) };
+    if ("git_fetch" in step) return { fetch: tok(provider.fetch(repoId, config(), vault, step.git_fetch.ts)) };
+    if ("git_resolve" in step) return { resolve: tok(provider.resolve(repoId, config(), vault, step.git_resolve.path, step.git_resolve.choose, step.git_resolve.ts)) };
+    return { reconcile: tok(provider.reconcile(repoId, config(), vault, step.git_reconcile.mode, step.git_reconcile.ts)) };
+  } catch (e) {
+    const err = tok(errorOf(e)) as { error: string };
+    if ("git_remote" in step) return { remote: err };
+    if ("git_remote_unset" in step) return { remote: err };
+    if ("git_remote_status" in step) return { remote_status: err };
+    if ("git_push" in step) return { push: err };
+    if ("git_fetch" in step) return { fetch: err };
+    if ("git_resolve" in step) return { resolve: err };
+    return { reconcile: err };
+  }
 }
 
 // ---- the recorder fault device (README §9.4, Phase 4a) -----------------------------------
@@ -1736,6 +1888,43 @@ function validateHistoryStep(kind: string, body: unknown, here: string, problems
   } else if (typeof body.segment !== "string" || body.segment === "") problems.push(`${here}: \`segment\` must be a segment id`);
 }
 
+/** README §9.4 (17.6): the shapes of the remote steps. */
+function validateRemoteStep(kind: string, body: unknown, here: string, problems: string[]): void {
+  const ts = (b: Record<string, unknown>): void => { if (typeof b.ts !== "string" || !TS_RE.test(b.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`); };
+  if (!isRecord(body)) { problems.push(`${here}: ${kind} takes an object`); return; }
+  const only = (allowed: string[]): boolean => { const extra = Object.keys(body).filter((k) => !allowed.includes(k)); if (extra.length > 0) { problems.push(`${here}: ${kind} takes ${allowed.length === 0 ? "{}" : allowed.map((k) => `\`${k}\``).join(", ")} (got ${extra.join(", ")})`); return false; } return true; };
+  switch (kind) {
+    case "git_remote":
+      if (only(["ts", "url", "name", "branch", "push", "fetch"])) { ts(body); if (typeof body.url !== "string" || body.url === "") problems.push(`${here}: \`url\` must be a non-empty string (\`${REMOTE_TOKEN}\` is the case's remote)`); }
+      return;
+    case "git_remote_unset": case "git_push": case "git_fetch":
+      if (only(["ts"])) ts(body);
+      return;
+    case "git_remote_status": case "git_remote_log": case "git_remote_tree": case "git_ids_log": case "alerts":
+      only([]);
+      return;
+    case "git_resolve":
+      if (only(["ts", "path", "choose"])) { ts(body); if (typeof body.path !== "string" || body.path === "") problems.push(`${here}: \`path\` must be a non-empty string`); if (body.choose !== "ours" && body.choose !== "theirs") problems.push(`${here}: \`choose\` is "ours" or "theirs"`); }
+      return;
+    case "git_reconcile":
+      if (only(["ts", "mode"])) { ts(body); if (!["rebase", "merge", "adopt", "fork"].includes(body.mode as string)) problems.push(`${here}: \`mode\` is one of rebase, merge, adopt, fork`); }
+      return;
+    case "git_remote_commit":
+      if (only(["ts", "message", "items", "parent"])) {
+        ts(body);
+        if (body.message !== undefined && typeof body.message !== "string") problems.push(`${here}: \`message\` must be a string`);
+        if (body.parent !== undefined && body.parent !== "tip" && body.parent !== "tip^") problems.push(`${here}: \`parent\` is "tip" or "tip^"`);
+        if (!Array.isArray(body.items) || body.items.length === 0 || body.items.some((it) => !isRecord(it) || typeof it.path !== "string" || (it.source !== null && typeof it.source !== "string"))) problems.push(`${here}: \`items\` must be a non-empty array of { path, source: string | null }`);
+      }
+      return;
+    case "git_ids_show":
+      if (only(["doc", "from"])) { if (typeof body.doc !== "string" || body.doc === "") problems.push(`${here}: \`doc\` must be a document id`); if (body.from !== undefined && body.from !== "local" && body.from !== "remote") problems.push(`${here}: \`from\` is "local" or "remote"`); }
+      return;
+    default:
+      return;
+  }
+}
+
 /**
  * Validate a §9.4 `steps` list, appending problems; returns the step count (or
  * -1 when the list itself is malformed). Exported because every observation-
@@ -1748,7 +1937,7 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
-  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", "history_enable", "history_disable", "history_purge", "recorder_fault", "git_checkpoint", "git_log", "git_tree", "git_fault", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
+  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", "history_enable", "history_disable", "history_purge", "recorder_fault", "git_checkpoint", "git_log", "git_tree", "git_fault", ...REMOTE_STEP_KINDS, ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -1798,6 +1987,10 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     }
     if (keys[0] === "git_fault") {
       if (!isRecord(body) || Object.keys(body).some((k) => k !== "fail") || typeof body.fail !== "boolean") problems.push(`${here}: git_fault takes only a boolean \`fail\``);
+      return;
+    }
+    if ((REMOTE_STEP_KINDS as readonly string[]).includes(keys[0]!)) {
+      validateRemoteStep(keys[0]!, body, here, problems);
       return;
     }
     if (keys[0] === "history_disable") {

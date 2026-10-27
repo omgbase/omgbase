@@ -72,9 +72,10 @@ function caseText(c: FixtureCase): { argv: string[]; text: string } {
 }
 
 /** Why the case is skipped under this composition, or null when it must pass as recorded. */
-/** A GIT case (spec/cli §8, 5.5): a step names `--provider git` or `history checkpoint`. */
+/** A GIT case (spec/cli §8, 5.5; 5.6): a step names `--provider git`, `history checkpoint`, or (Phase 6b) `history remote|push|fetch`. */
+const GIT_HISTORY_SUBS = new Set(["checkpoint", "remote", "push", "fetch"]);
 function isGitCase(argv: string[]): boolean {
-  return argv.includes("checkpoint") || argv.some((a, i) => a === "--provider" && argv[i + 1] === "git");
+  return argv.some((a, i) => (a === "--provider" && argv[i + 1] === "git") || (a === "history" && GIT_HISTORY_SUBS.has(argv[i + 1] ?? "")));
 }
 
 function skipReason(c: FixtureCase): string | null {

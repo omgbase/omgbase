@@ -1,5 +1,5 @@
 export type {
-  Capabilities, CapabilitiesFactory, HistoryRecorder, HistoryReader, HistoryProvider, HistoryProviderConfig, HistoryProviderAvailability, HistoryCheckpointResult, CommitRecord, SemanticProvider, SemanticScorer, SemanticBlockRow, SemanticDrainOptions, SemanticFreshness, IdentityClaims,
+  Capabilities, CapabilitiesFactory, HistoryRecorder, HistoryReader, HistoryProvider, HistoryProviderConfig, HistoryProviderAvailability, HistoryCheckpointResult, HistoryPushResult, HistoryRemoteState, HistoryRemoteSummary, HistoryVaultSink, HistoryRemoteSyncResult, CommitRecord, SemanticProvider, SemanticScorer, SemanticBlockRow, SemanticDrainOptions, SemanticFreshness, IdentityClaims,
   RevisionTransition, CapturedRevision, RevisionQueryRow, SemanticVec, BlockContextInput, BlockContextResolver,
 } from "./types.js";
 export { bindCapabilities, capabilitiesOf, requireHistory, requireSemantic, semanticOf, claimsOf } from "./registry.js";

@@ -3752,7 +3752,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -4318,7 +4319,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -9595,7 +9597,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -11338,7 +11341,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -14848,7 +14852,8 @@
                 "provider": "<string>",
                 "coverage_from": "<string>",
                 "writer_requires": "<boolean>",
-                "completeness": "<string>"
+                "completeness": "<string>",
+                "remote": "<null>"
               },
               "semantic": {
                 "state": "<string>",

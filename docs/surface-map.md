@@ -144,7 +144,11 @@ vernacular and `--server` does not apply.
 - **Admin / maintenance:** `omg rebuild-index`, `omg gc`, `omg doctor`,
   `omg embed`, `omg config`, `omg history enable [--provider native|git] |
   disable | purge | checkpoint` (cli 5.1–5.5; the git provider's checkpoint
-  worker, `spec/store` §5.12), and (cli 4.6) `omg history plan | export |
+  worker, `spec/store` §5.12), `omg history remote set | unset | status |
+  resolve | reconcile`, `omg history push | fetch` (cli 5.6; the git
+  provider's remote half — its catalog trace is `version.capabilities.
+  history.remote` and the alerts `git_remote_diverged` / `git_merge_conflict`
+  / `git_remote_forked`), and (cli 4.6) `omg history plan | export |
   attach | detach | list` — history retention writes segment files under the
   workspace, takes the writer lock and is driven by a policy and a
   directory (`spec/store` §7.1); the catalog's whole trace of it is the

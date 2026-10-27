@@ -71,7 +71,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20},\"openEdges\":69,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\",\"provider\":\"native\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"writer_requires\":true,\"completeness\":\"every\"},\"semantic\":{\"state\":\"disabled\",\"model\":null}}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+        "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20},\"openEdges\":69,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\",\"provider\":\"native\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"writer_requires\":true,\"completeness\":\"every\",\"remote\":null},\"semantic\":{\"state\":\"disabled\",\"model\":null}}},\"watcher\":\"none\",\"embedQueue\":60}\n"
       }
     },
     {
@@ -84,7 +84,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20},\"openEdges\":69,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\",\"provider\":\"native\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"writer_requires\":true,\"completeness\":\"every\"},\"semantic\":{\"state\":\"disabled\",\"model\":null}}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+        "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20},\"openEdges\":69,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":20,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\",\"provider\":\"native\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"writer_requires\":true,\"completeness\":\"every\",\"remote\":null},\"semantic\":{\"state\":\"disabled\",\"model\":null}}},\"watcher\":\"none\",\"embedQueue\":60}\n"
       }
     },
     {
@@ -880,7 +880,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+        "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\",\"remote\":\"<null>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
       }
     },
     {

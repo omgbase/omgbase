@@ -265,7 +265,7 @@ The tables of `schema.sql` this spec fills:
 | `pending_materializations` | file the `api` path still owes the disk (14.0; self-contained since 17.0 — M4) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, **`head`** (17.0 — the document's head token whose bytes `write`/`rename` leave at `path`, always its CURRENT head (C8); `NULL` for `remove`; no foreign key — `rev_id → revisions` through 16.x), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), **`prior_hash`** (17.0 — the bytes the engine itself last wrote at `path`: the `file_hash` the commit validated the file against, captured at commit time, or inherited from the row it superseded; `NULL` when the engine never wrote there — a created document, a `remove`), `commit_id` (the `api` commit that recorded it; no foreign key since 17.0 — `commits` is the recorder's), **`created_at`** (17.0 — that commit's `ts`). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7); the replay reads only this row and the document's current rows. Empty at quiescence; the observe path never inserts; no cap — a row lives until its path is settled. |
 | `edges` | **open** link relation (17.0, M6) | `spec/graph` §3.3's table: `edge_id`, `repo_id`, `src_doc`, `src_block`, `src_field`, `predicate`, `dst_kind ∈ {document, block, external}` (`collection` struck with the `collections` table, D9), `dst_node`, `anchor`, `provenance`, `via_node`. **Open rows only**: closing an edge deletes its row; `from_commit`/`to_commit` and `idx_edges_temporal` are gone (through 16.x a closed edge stayed with `to_commit` set and every reader filtered on it), `idx_edges_src`/`idx_edges_dst` lose their `WHERE`. The interval record is the recorder's `edge_transitions`, below. Written by the reference during the commit transaction (§5.4 step 9c); pinned by `spec/graph`'s fixtures, not compared here. |
 | `edge_transitions` | edge interval (**the recorder's**, 17.0 — M6) | 16.x's `edges` row verbatim — `edge_id`, `repo_id`, `src_doc`, `src_block`, `src_field`, `predicate`, `dst_kind`, `dst_node`, `anchor`, `provenance`, `via_node`, `from_commit`, `to_commit` — written when the core opens an edge (`to_commit = NULL`) and closed (`to_commit` = the commit) when it deletes one (§5.4 step 15); `dst_node` follows the open edge's in-place rewrites (phantom adoption, a move's re-phantoming — `spec/graph` §3.5) so the record reads as 16.x's table did. Index `idx_edge_transitions_temporal (from_commit, to_commit)`. Pinned by `cases/history/edge-transitions.json` (§9.5). |
-| `capabilities` | (repository, capability) — the **capability manifest** (17.0, slice 3e-ii) | `repo_id`, `capability ∈ {history, semantic}`, `state ∈ {enabled, disabled}`, `interface_v` (the capability interface the writer implements: history 1, semantic 1), `data_v` (the bundle's own schema version: history 1 = 16.0's tables + `edge_transitions`, semantic 1), `config` (canonical JSON — keys sorted bytewise at every level — of the configuration the data was produced under: semantic `{ model?, dim? }` from the effective `embedding.*`, history `{}` for the native recorder, or — 17.5, §5.12 — the git provider's `{ provider: "git", git_dir, branch, cadence, ids_ref, remote }`: `provider` absent reads `native`), `config_hash` (= `sha256(config)`, the fingerprint; a change while `enabled` is a rebuild of the capability's data — semantic: a model switch, history: never), `coverage` (JSON `[{ "from": ts, "to": ts | null }, …]`: the intervals capture was on, the last open — `to: null` — iff `state = 'enabled'`), `writer_requires` (1: a writer without this module must refuse writes on the repository, §5.4 step 0 — resolution 17), `updated_at`. Rules: (1) a repository with no row for a capability is `disabled` with no coverage; (2) `coverage_from` — what `version` and `doctor --size` report — is the first interval's `from`, null when none; (3) the row is engine state, never derived from the settings on read. **Who writes it:** `ensure_repo` (§1 — both rows: `history` `enabled`, coverage from the repository's birth, `writer_requires = 1`; `semantic` `enabled` iff `embedding.provider` resolves for the repository, else `disabled` — resolution 1: stored vectors are never consulted), migration 17 (§3.4 step (13), the same for every existing repository with the history interval anchored on its first commit), the verbs `history enable|disable` (§5.9; 17.1) and `embed enable|disable` (§5.10; 17.2), and a settings write that CHANGES a repository's effective `embedding.provider` (17.2: it re-derives the `semantic` row — set → `enabled` with a new interval, unset → `disabled` with the interval closed; a write that leaves the provider as it was moves the row's `config` and hash alone and keeps its state, so `embed disable` is sticky — through 17.1 every settings write re-derived the row). `history purge` (§7.6) touches neither `state` nor `coverage`: coverage records when capture was ON, which is what tells a purged token (`pruned`) from one minted while capture was off (`outside_coverage`, `spec/surface` §2.1). A table, not settings keys: engine-written state that survives a settings rewrite, typed, projected row for row, read by `doctor` without resolving settings. |
+| `capabilities` | (repository, capability) — the **capability manifest** (17.0, slice 3e-ii) | `repo_id`, `capability ∈ {history, semantic}`, `state ∈ {enabled, disabled}`, `interface_v` (the capability interface the writer implements: history 1, semantic 1), `data_v` (the bundle's own schema version: history 1 = 16.0's tables + `edge_transitions`, semantic 1), `config` (canonical JSON — keys sorted bytewise at every level — of the configuration the data was produced under: semantic `{ model?, dim? }` from the effective `embedding.*`, history `{}` for the native recorder, or — 17.5, §5.12 — the git provider's `{ provider: "git", git_dir, branch, cadence, ids_ref, remote }` — `remote` (17.6) null or the binding `{ name, url, branch, push, fetch }`, rewritten in place by `history remote set|unset` with the row's state and coverage untouched: `provider` absent reads `native`), `config_hash` (= `sha256(config)`, the fingerprint; a change while `enabled` is a rebuild of the capability's data — semantic: a model switch, history: never), `coverage` (JSON `[{ "from": ts, "to": ts | null }, …]`: the intervals capture was on, the last open — `to: null` — iff `state = 'enabled'`), `writer_requires` (1: a writer without this module must refuse writes on the repository, §5.4 step 0 — resolution 17), `updated_at`. Rules: (1) a repository with no row for a capability is `disabled` with no coverage; (2) `coverage_from` — what `version` and `doctor --size` report — is the first interval's `from`, null when none; (3) the row is engine state, never derived from the settings on read. **Who writes it:** `ensure_repo` (§1 — both rows: `history` `enabled`, coverage from the repository's birth, `writer_requires = 1`; `semantic` `enabled` iff `embedding.provider` resolves for the repository, else `disabled` — resolution 1: stored vectors are never consulted), migration 17 (§3.4 step (13), the same for every existing repository with the history interval anchored on its first commit), the verbs `history enable|disable` (§5.9; 17.1) and `embed enable|disable` (§5.10; 17.2), and a settings write that CHANGES a repository's effective `embedding.provider` (17.2: it re-derives the `semantic` row — set → `enabled` with a new interval, unset → `disabled` with the interval closed; a write that leaves the provider as it was moves the row's `config` and hash alone and keeps its state, so `embed disable` is sticky — through 17.1 every settings write re-derived the row). `history purge` (§7.6) touches neither `state` nor `coverage`: coverage records when capture was ON, which is what tells a purged token (`pruned`) from one minted while capture was off (`outside_coverage`, `spec/surface` §2.1). A table, not settings keys: engine-written state that survives a settings rewrite, typed, projected row for row, read by `doctor` without resolving settings. |
 | `alerts` | (repository, condition) — the **alert channel** (17.0, slice 3e-ii; §5.8) | `repo_id`, `code` (the condition), `severity ∈ {info, warning, error}`, `message` (one line for a human, both engines byte for byte), `since` (first raised; kept while the condition stands), `detail` (canonical JSON, `{}` when none), `cleared_at` (`NULL` = active). Raised by the engine when a condition needs a human and cleared when it ends; every MCP tool result carries the active alerts of the call's repository (`spec/surface` §4 "Alerts"), the CLI prints them to stderr (`spec/cli` §3.1), `doctor` lists them. |
 | `external_nodes`, `properties`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties` (17.0, D9: no `created_commit`/`deleted_commit` — a property row is live exactly while its document's rows are, since the commit deletes and rewrites them per document; the four indexes lose their partial predicates) is written by the reference during the same commit transaction; a runner does not compare it. `collections` and `inferred_edges` — created and never written through 16.x — are gone (D9). `sync_state` (17.0, D4) carries, beside the per-attachment rows, one reserved **status row** per repository — `(repo_id, '', '')` with `last_batch_ts`, `last_batch_id`, `last_batch_files` — written by every observed batch together with the pool sweep (`spec/sync` §4.1); the `checkpoints` table it replaces is gone. |
 
@@ -1364,7 +1364,7 @@ cleared when none is left. The sweep's result carries the repaired paths
 of `spec/sync` pin the three outcomes; the migration fixtures pin the
 check (§9.3).
 
-### 5.12 The git history provider (17.5, Phase 6a)
+### 5.12 The git history provider (17.5, Phase 6a; the remote half 17.6, Phase 6b)
 
 A repository's history is kept by **one provider**: the native recorder —
 §5.4 step 15 into the history bundle's tables, the row's `config` `{}` — or
@@ -1391,18 +1391,25 @@ the workspace is one, is never touched except for one line: `.omgbase/` is
 ensured in its `.git/info/exclude` (never `.gitignore`, a tracked file; a
 worktree's exclude is its common dir's). **Credentials never enter
 omgbase**: a URL carrying a user or a password is refused wherever one is
-accepted (`remote`, 6b); `git` resolves access through the host.
+accepted (`history remote set --url`, below); `git` resolves access through
+the host — ssh keys, a credential helper, `GIT_ASKPASS`, a deploy key; for a
+hosted customer the account layer supplies a helper minting short-lived
+tokens, and the engine is identical.
 
 **The manifest row.** `config = { provider: "git", git_dir: ".omgbase/git",
 branch: "omgbase", cadence: "every" | { debounce_ms: <n> }, ids_ref:
-"refs/omgbase/ids", remote: null }` (canonical JSON, §3.1): `branch` the
-ref the commits go on (`--branch`), `cadence` the worker's policy
-(`--cadence every|<ms>`), `ids_ref` the RESERVED per-document id-map ref
-(nothing is written to it in 6a — see "The identity record"), `remote` null
-in 6a (6b wires `{ name, branch, push: off | on-checkpoint | periodic,
-fetch: off | periodic | webhook }`). `coverage` and `writer_requires` as for
-native (`writer_requires` per the enable flag: a writer whose composition
-lacks the attached provider is refused on a repository that requires it).
+"refs/omgbase/ids", remote: null | { name, url, branch, push, fetch } }`
+(canonical JSON, §3.1): `branch` the ref the commits go on (`--branch`),
+`cadence` the worker's policy (`--cadence every|<ms>`), `ids_ref` the
+per-document id-map ref the worker writes beside the branch (17.6 — see "The
+identity record"), `remote` the REMOTE BINDING (17.6, "The remote binding"
+below) — null until `history remote set` binds one; nothing is automatic
+until it does. `coverage` and `writer_requires` as for native
+(`writer_requires` per the enable flag: a writer whose composition lacks the
+attached provider is refused on a repository that requires it). The binding
+is configuration, not a change of the data's identity: `history remote
+set|unset` rewrite `config` (and `config_hash`) in place — the row's state,
+coverage, versions and `writer_requires` untouched — and nothing is rebuilt.
 
 **`history enable --provider git`**, in one transaction: (1) the attached
 provider (`capability_unavailable { history, unavailable, provider: "git",
@@ -1427,7 +1434,8 @@ count 0, nothing dropped, coverage untouched); `--before` has no meaning
 (the CLI refuses it) — a git history is one line of commits.
 
 **The checkpoint worker** (`omg history checkpoint`; the freshness sweep's
-step 6, `spec/sync` §4.3; no timer in 6a). A consumer of the change feed:
+step 6, `spec/sync` §4.3; the MCP host's mutation hook, "Cadence" below). A
+consumer of the change feed:
 it reads `changes_since` from its cursor and turns feed rows into git commits
 **built from the database rows, never from the vault's files**:
 
@@ -1436,7 +1444,12 @@ it reads `changes_since` from its cursor and turns feed rows into git commits
    every commit). A tip of the repository's epoch resumes after its seq; no
    tip (purged, never baselined) or a tip of another epoch is a **rescan**
    (below). A seq the tip already covers is skipped — the worker is
-   idempotent.
+   idempotent. **The resume rule (17.6)** refines this: when the `$git` row
+   names the SAME tip and stands further on (the no-op rule below moved it;
+   a fetch fast-forwarded the branch to a tip that is not the worker's own —
+   another engine's trailer, or none — and set the row at its position), the
+   row's seq is the cursor; the tip's trailer and the row agreeing on the tip
+   resume from the greater of the two; a tip neither places is a rescan.
 2. *Page* `changes_since(cursor)` to the head; an `expired_cursor` is a
    rescan.
 3. *Stage* each row's documents: `created`/`changed` → the document's current
@@ -1467,7 +1480,19 @@ it reads `changes_since` from its cursor and turns feed rows into git commits
 6. **Fault site `git.commit`** (§9.7): here, after the objects and before the
    ref moves.
 7. *Ref*: `git update-ref refs/heads/<branch> <new> <old>` — the old value is
-   the compare-and-swap (`0000…` for the first commit); then the cursor row.
+   the compare-and-swap (`0000…` for the first commit); then the cursor row;
+   then the ids commit ("The identity record").
+8. **The no-op rule (17.6).** A checkpoint (one row under `every`, the fold
+   under a debounce) whose staged tree equals its parent's writes NO commit:
+   the rows' bytes are already in the tree — a fetch brought them in through
+   the vault (below), a document edited and edited back within the pending
+   span, a row touching superseded documents alone — and the `$git` row
+   alone advances past the rows (the ids commit is still written when the
+   identities moved). Never for a snapshot. Consequence, stated: a head the
+   worker committed nothing for is listed UNRETAINED by `docs_history`
+   (no commit's trailer names it) although its bytes are in the tree under
+   the remote's commit; `docs_read` serves it from the rows as the current
+   head. The receipt's `committed` counts commits written.
 
 **Trailers.** The message is one subject line — the feed row's `reason`, or
 `<origin>: <n> document(s)`; a folded commit `checkpoint: <k> commits, <n>
@@ -1477,28 +1502,269 @@ enabled` — a blank line, then, in this order: `omgbase-seq: <epoch>:<seq>`
 instant — git keeps seconds), one `omgbase-commit: <c_id>` per feed row
 folded, `omgbase-origin: <origin>`, `omgbase-actor: <actor>` (when present),
 `omgbase-plan: <plan_id>` (when present), `omgbase-rescan: <epoch>:<head>`
-(a snapshot), then one `omgbase-doc: <doc_id> <path> <head>` per touched
-document (the storage path; a deleted document's head `-`). Both engines
-render and parse this text themselves (never `git interpret-trailers`); a
-path may hold spaces (the id is the first token, the head the last). The
-trailers are the **identity record** of 6a (option 3): metadata and the
-per-document heads ride on every commit; the per-document id-map blobs under
-`.omgbase/ids/<doc_id>` on the separate ref `refs/omgbase/ids` are RESERVED —
-named in the config and here, written by nothing yet. Consequence, stated: a
-clone of the content branch recovers **content**, not identities, until that
-ref exists.
+(a snapshot), `omgbase-merge: <remote tip>` (17.6; a merge commit — "Merge"
+below), `omgbase-content: <sha>` (17.6; on the ids ref alone — the content
+commit an ids commit belongs to), then one `omgbase-doc: <doc_id> <path>
+<head>` per touched document (the storage path; a deleted document's head
+`-`). Both engines render and parse this text themselves (never `git
+interpret-trailers`); a path may hold spaces (the id is the first token, the
+head the last). The trailers are the first half of the **identity record**
+(option 3): metadata and the per-document heads ride on every commit; the
+second half is the ids ref below.
+
+**The identity record (17.6).** Beside the content branch — a plain notes
+repository a customer clones — the worker keeps a PARALLEL commit chain on
+`config.ids_ref` (`refs/omgbase/ids`) whose tree holds one blob per live
+document at `.omgbase/ids/<doc_id>`: canonical JSON (keys sorted bytewise at
+every level, as §3.1's `config`) `{ "blocks": [{ "hash", "id", "ordinal",
+"parent" }, …], "doc": "<d_…>", "head": "<r_…>" }` and a final newline — the
+document's id and head token, its blocks in document pre-order (the `blocks`
+rows by `order_key`) with the block id, the parent block id (`null` at the
+top level), the sibling `ordinal` and `raw_hash` as hex. After every content
+commit (step 7) — and after a no-op checkpoint whose identities moved — one
+ids commit is written over the previous ids tree with the touched documents'
+blobs added or replaced (a deleted document's blob removed; a snapshot
+re-stages every live document): subject `ids: <n> document(s)`, trailers
+`omgbase-seq` (the checkpoint's), `omgbase-ts`, `omgbase-actor` (when the
+row had one) and `omgbase-content: <the content commit sha — the tip at that
+moment>`; the author's name the actor's, the identity and dates the content
+commit's rule; the ref moves by compare-and-swap. The ids chain is written
+AFTER the content ref moved: a crash between the two leaves it behind by one,
+and the next run catches up (an ids tip whose `omgbase-seq` is behind the
+content tip's re-stages every live document once). Push and fetch carry the
+ref ("Push", "Fetch"), so a clone of BOTH refs recovers content AND
+identities — `git show refs/omgbase/ids:.omgbase/ids/<doc_id>` lists a
+document's id map from the remote; restoration from it (an engine adopting a
+clone's identities) is 6c. Two engines writing one remote's ids ref diverge
+in it (their identities differ): the ids ref's rejection alone is reported
+on the push receipt (`ids: "rejected"`), never forced, and is 6c's to
+reconcile.
 
 **Cadence.** `"every"`: one commit per feed row — completeness `every`.
 `{ debounce_ms }`: the rows pending when the worker runs fold into one
 commit (the range trailer; the last row's `ts`, origin, actor, plan) —
-completeness `checkpoints`. 6a has no timer: the fold is of whatever is
-pending at `omg history checkpoint` or the sweep.
+completeness `checkpoints`. The worker runs at `omg history checkpoint`, at
+the freshness sweep's step 6, and (17.6) from **the MCP host's mutation
+hook**: after every successful write tool, under `every` the worker runs
+SYNCHRONOUSLY inside the hook (one commit per write — the git history is
+complete without `omg sync`), under `{ debounce_ms }` the hook (re)arms one
+timer so the worker runs `debounce_ms` after the LAST mutation, a burst of
+writes folding into one commit; a pending timer runs at the host's shutdown.
+The hook runs the worker under the workspace writer lock (`spec/sync` §7);
+the reference's host notifies it from the watcher's checkpoints too.
 
 **Rescan.** One commit of the full current tree at the feed head —
 `omgbase-seq: <epoch>:<head>`, `omgbase-rescan: <epoch>:<head>`, an
 `omgbase-doc` per live document — on an expired cursor, a tipless branch
 (after a purge the next checkpoint recreates the repository and rescans) or
 a tip of another epoch; the receipt says `rescanned: true`.
+
+**The remote binding (17.6, Phase 6b).** `omg history remote set --url <url>
+[--name <remote>] [--branch <b>] [--push off|on-checkpoint|periodic] [--fetch
+off|periodic|webhook]` writes `config.remote = { name, url, branch, push,
+fetch }` — `name` the git remote's name in the bare repository (`origin`),
+`url` as given (refused when it carries credentials: `` the remote URL
+carries credentials (a user or password in the URL) — omgbase never stores
+credentials; let git resolve access through the host (ssh keys, a credential
+helper) ``; a local path is a URL — the fixtures' remotes are), `branch` the
+remote branch (the local branch's name by default), `push` WHEN the engine
+pushes — `off` (the default), `on-checkpoint` (after every checkpoint that
+committed, the push's outcome on the receipt as `push: { pushed, tip,
+pushed_through, ids } | { error }`), `periodic` (the freshness sweep's step
+7, `spec/sync` §4.3; the sweep is the timer, the adapter has none) — and
+`fetch` WHEN it fetches — `off`, `periodic` (the sweep's step 8), `webhook`
+(RESERVED: an external caller — a webhook receiver, a cron — runs `omg
+history fetch`; the engine itself fetches nothing) — and runs `git remote
+add|set-url <name> <url>` in the bare repository (a previous binding under
+another name is removed with its refs); a bad name, branch or policy is
+refused. `history remote unset` removes the remote, its tracking and
+bookkeeping refs (below), the alerts about it and the row's binding, and
+clears the pushed record. **Three levels** a client can tell apart are then
+on the wire: the current state (the rows), the locally checkpointed
+(`version.capabilities.history.completeness`, the branch tip) and the
+remotely synchronised (`version.capabilities.history.remote`, `history remote
+status`).
+
+**Remote status** (`omg history remote status`; `version.capabilities.
+history.remote = { name, branch, state, pushed_through } | null`, `spec/
+surface` §4). Local refs only — no network: `{ remote: <name>, branch,
+local_tip, remote_tip, pushed_through, state }` where `remote_tip` is the
+remote-tracking ref `refs/remotes/<name>/<branch>` — the tip we last saw on
+the remote, moved by fetch and by a successful push — `pushed_through` the
+feed seq the last pushed tip's `omgbase-seq` trailer covers (the `$git`
+row's `pushed`, `spec/sync` §6; null before any push), and `state` one of
+`unknown` (no remote tip is known, or no local tip), `diverged` (a
+`git_remote_diverged` or `git_remote_forked` alert stands, or neither tip is
+the other's ancestor — both sides moved), `in-sync` (the same commit), `ahead`
+(the remote tip is an ancestor of ours — a push is due), `behind` (ours is an
+ancestor of the remote's — a fetch fast-forwards).
+
+**Push** (`omg history push`; `push: on-checkpoint|periodic`). `git push
+<name> refs/heads/<branch>:refs/heads/<remote branch>`, then — when it exists
+— `git push <name> refs/omgbase/ids:refs/omgbase/ids`; **never `--force`**.
+A push that lands moves the tracking ref to our tip, records `pushed` on the
+`$git` row and clears a standing rejection alert; the receipt is `{ pushed:
+<the tracking ref moved>, tip, pushed_through, ids: "pushed" | "rejected" |
+"none" }`. A push the remote REJECTS (non-fast-forward — git's `[rejected]`
+/ `non-fast-forward` / `fetch first` lines) raises the alert
+**`git_remote_diverged`** (`warning`; detail `{ remote, branch, local_tip,
+remote_tip }` — `remote_tip` from `git ls-remote`, the tracking ref untouched
+since we lack the object) with the message `` push to <name>/<branch> was
+rejected: the remote is at <remote_tip>, which does not descend from
+<local_tip> — run omg history fetch to merge the remote's commits, then push
+again `` and fails with the error `git_remote_diverged` (retriable; the CLI
+exits 1). A rejection pauses nothing: `history fetch` merges the remote's
+commits and the push lands after. While a merge with conflicts waits
+("Merge") a push refuses with `git_merge_conflict` instead — it could only be
+rejected. No remote bound: a usage error. Under `on-checkpoint` the push's
+failure rides on the checkpoint receipt and never fails the checkpoint.
+
+**Fetch** (`omg history fetch`; `fetch: periodic`). `git fetch <name>
++refs/heads/<remote branch>:refs/remotes/<name>/<branch>` (and the remote's
+`refs/omgbase/ids` into `refs/omgbase/remotes/<name>/ids` when it has one —
+kept for 6c, never adopted: identities are matched by the reconcile below);
+a remote branch that does not exist yet, a tip equal to the one we knew or to
+ours: `{ state: "nothing" }`. Then, with `old` the tracking ref before the
+fetch, `R` after it and `L` our tip:
+
+- **Divergence** — `old` is not an ancestor of `R` (the remote was
+  REWRITTEN: rebased, force-pushed), or `old` is null and `L` and `R` share
+  no ancestor (unrelated histories): detect, stop, alert. The old tip is
+  kept on `refs/omgbase/diverged/<name>` (its objects stay reachable), the
+  alert **`git_remote_diverged`** is raised (`warning`; detail `{ remote,
+  branch, local_tip, remote_tip, old_remote_tip }`; message `` the remote
+  <name>/<branch> was rewritten: its tip <remote_tip> does not descend from
+  the last known <old_remote_tip> — push and fetch are paused while
+  checkpoints continue locally; choose omg history remote reconcile --rebase
+  | --merge | --adopt | --fork ``, `(none — unrelated histories)` for a null
+  old tip), the fetch returns `{ state: "diverged", remote_tip,
+  old_remote_tip }` (the CLI fails with `git_remote_diverged`, exit 1), and
+  **push and fetch PAUSE** — the verbs refuse with the alert's message and
+  code, the sweep's steps 7–8 skip — while the worker keeps checkpointing
+  locally; one of the four remediations ("Divergence") ends it.
+- **Behind** (`L` null or an ancestor of `R`): the tree changes `L → R`
+  (`git diff-tree -r`) are written into the vault **through the source
+  boundary** — the `HistoryVaultSink` of the composition layer: the files
+  under the repository's root as EXTERNAL EDITS, ingested as one observed
+  batch (`processCheckpoint`: the echo gate, the ordinary reconcile matching
+  identities, the feed recording the rows); a fixture runner binds the sink
+  to `observeBatch` — then the branch fast-forwards to `R` and the `$git` row
+  is set to `{ tip: R, seq: <the position before the ingest> }` so the
+  worker's next run finds the rows' bytes already in the tree (the no-op
+  rule) and records the new heads on the ids ref. The provider writes no
+  row. `{ state: "fast-forward", remote_tip: R, tip: R, applied: [paths] }`.
+- **Ahead** (`R` an ancestor of `L`): nothing to merge; a push is due.
+- **Both moved**: the **merge** below.
+
+**Merge** — a three-way merge AT THE TREE LEVEL with the common ancestor git
+supplies (`git merge-base L R`; the piece optional native history took
+away). Per path over `diff-tree base→L` and `diff-tree base→R`: changed on
+the remote's side alone → taken (written into the vault through the sink, a
+deletion removes the file); changed on both sides to the SAME blob → nothing
+to do; changed on our side alone → kept; changed on both sides to DIFFERENT
+blobs → a **conflict**. Clean (no conflict): the remote's changes enter the
+vault, then ONE merge commit on our branch — tree = ours plus the remote's
+changes, parents `(L, R)`, subject `merge <name>/<remote branch>`, trailers
+`omgbase-seq: <epoch>:<position>` (the position before the ingest),
+`omgbase-ts: <now>`, `omgbase-merge: <R>`, the engine's identity and `now`
+as both dates — and the `$git` row at it; `{ state: "merged", tip: <the
+merge>, applied }`. Conflicts: BOTH VERSIONS ARE KEPT — ours stays at the
+path, the remote's version is written into the vault beside it as the
+SIDECAR `<stem>.remote-<short sha of R>.md` (`<path>` minus its `.md`
+extension; a path without one keeps its name and gains the suffix; a path
+the remote deleted gets no sidecar) — a document of the vault like any other
+(the next checkpoint commits it), the remote's non-conflicting changes enter
+as above, the remote tip waits on `refs/omgbase/merge/<name>`, the alert
+**`git_merge_conflict`** is raised (`warning`; detail `{ remote, branch,
+remote_tip, paths: [<the conflicting paths, sorted>], base }`; message `` the
+merge of <name>/<branch> at <R> left <n> conflict(s): <paths, comma-joined> —
+both versions are in the vault; settle each with omg history remote resolve
+<path> --ours|--theirs ``), NO merge commit is made, and `{ state:
+"conflict", applied: [the paths written — the sidecars included], conflicts
+}`. While it stands, `fetch` and `push` refuse with `git_merge_conflict` and
+the sweep's steps 7–8 skip.
+
+**Resolve** (`omg history remote resolve <path> --ours|--theirs`): the path
+must be a pending conflict (else a usage error). `--ours`: the sidecar leaves
+the vault (through the sink); `--theirs`: the remote's bytes at that commit
+are written over the path, then the sidecar leaves. The path leaves the
+alert's `paths` (the alert refreshed with the remainder); when none remains
+the alert clears and — if a merge waits on `refs/omgbase/merge/<name>` —
+the resolution is CHECKPOINTED first (the worker once) and the merge commit
+is then written over it (tree = the tip's, parents `(tip, R)`, the trailers
+as above) and the waiting ref deleted. Receipt `{ path, choice, remaining,
+merged: <the merge commit sha> | null, tip }`. For a conflict `--adopt`
+produced ("Divergence") the roles are reversed — the alert's `holds` says
+so: `{ <path>: "ours" }` with `sidecars: { <path>: <stem>.local-<short>.md
+}` — and `--ours` restores our bytes from the sidecar while `--theirs` keeps
+the remote's; no merge commit is pending.
+
+**Divergence** — the remediation menu, each an explicit operator action
+(`omg history remote reconcile --rebase | --merge | --adopt | --fork`) that
+REFUSES unless `git_remote_diverged` (carrying `old_remote_tip`) or
+`git_remote_forked` is active (`` the remote is not diverged: history remote
+reconcile applies only while the git_remote_diverged (or git_remote_forked)
+alert is active ``, a usage error in the CLI); `old` below is the kept old
+remote tip, `R` the tracking ref, `L` our tip. **Never**: a force-push, an
+unpushed local commit dropped without a backup ref, a silent last-write-wins.
+
+- **`--rebase`** — replay our unpushed checkpoints (`rev-list old..L`,
+  oldest first) onto the new remote head: for each commit, its own changes
+  (`diff-tree` against its first parent) applied over the running tree —
+  a path the remote also changed since `old` to the same blob needs nothing;
+  to a different blob is a CONFLICT: ours stands in the rewritten commit and
+  the remote's version goes to the vault as a `.remote-<short>` sidecar
+  ("Merge") — each commit re-created with its message and trailers byte for
+  byte, its author's name and `omgbase-ts` date, the engine's committer
+  identity (so the sha changes, the record does not); the remote's changes
+  since `old` we never touched enter the vault; our previous tip is kept on
+  `refs/omgbase/backup/<ts>` (`<ts>` = `now` as `yyyyMMddTHHmmssZ`); the
+  branch moves to the replayed tip by compare-and-swap, the `$git` row with
+  it; the **ids ref is rebased alongside** — every ids commit whose
+  `omgbase-content` names a rewritten commit is replayed over the remote's
+  ids tip (when one was fetched; else over its own base) with the trailer
+  re-pointed at the rewritten sha; the alert and the diverged ref clear;
+  conflicts raise `git_merge_conflict` (no merge commit pends). Receipt `{
+  mode: "rebase", tip, backup, rewritten: <commits replayed>, fork: null,
+  applied, conflicts }`.
+- **`--merge`** — one merge commit, both histories kept: the three-way merge
+  of "Merge" with `old` as the base (the state both sides last agreed on;
+  `merge-base L R` when `old` is null) — clean: the remote's changes into
+  the vault, the backup ref, the merge commit `(L, R)` with `omgbase-merge:
+  <R>`, the alert cleared, `rewritten: 1`; conflicts: sidecars, the pending
+  merge ref and `git_merge_conflict` as in "Merge" (resolve completes it),
+  the divergence alert cleared, `rewritten: 0`.
+- **`--adopt`** — the remote's head becomes truth: over the union of `R`'s
+  and `L`'s paths with `old`'s tree as the base, a path the remote alone
+  changed since `old` takes the remote's bytes (a deletion removes the
+  file); a path WE changed since `old` that the remote does not have the
+  same way is a conflict surfaced, never lost: the remote's version (or
+  its absence) takes the path and ours stays beside it as
+  `<stem>.local-<short sha of L>.md` (the alert's `holds: { <path>: "ours"
+  }`, `sidecars`); a path new on our side alone is kept (the next
+  checkpoint commits it on top). All of it enters the vault through the
+  sink; our tip is kept on `refs/omgbase/backup/<ts>`; the branch is RESET
+  to `R` by compare-and-swap, the `$git` row at `R`; the divergence clears.
+  Receipt `{ mode: "adopt", tip: R, backup, rewritten: 0, applied,
+  conflicts }`.
+- **`--fork`** — our branch is pushed to the remote as `<remote
+  branch>-omgbase-<ts>` (the remote's own branch untouched; the ids ref is
+  not pushed — identities follow with 6c) and the alert
+  **`git_remote_forked`** (`warning`; detail `{ remote, branch, fork,
+  local_tip, remote_tip, old_remote_tip }`; message `` the engine's branch
+  was pushed to <name>/<fork> — merge it into <branch> with git, then run
+  omg history remote reconcile --adopt (push and fetch stay paused until
+  then) ``) replaces the divergence alert: push and fetch stay paused — the
+  human merges with git, then `--adopt` takes the result (or `remote
+  unset|set` ends it). Receipt `{ mode: "fork", tip: L, backup: null,
+  rewritten: 0, fork, applied: [], conflicts: [] }`.
+
+The refs this half keeps, all under names git itself never writes:
+`refs/remotes/<name>/<branch>` (the tracking ref), `refs/omgbase/remotes/
+<name>/ids` (the remote's ids ref as fetched), `refs/omgbase/diverged/<name>`
+(the old remote tip while a divergence stands), `refs/omgbase/merge/<name>`
+(the remote tip a merge with conflicts waits on), `refs/omgbase/backup/<ts>`
+(our previous tip before a remediation moved the branch).
 
 **Reads** (`spec/surface` §3 "The git provider"): the provider's
 `HistoryReader` over the bare repository — a VERSION of a document is a
@@ -1532,8 +1798,16 @@ composition attaches it beside the recorder (production: the `omgbase`
 binary registers it before any store opens). `cases/history/git.json` pins
 the worker and its commits as text (§9.4 — the `git_log`/`git_tree` steps),
 the fault and its replay, the fold, the purge-then-rescan, the re-enable and
-the conflict; `spec/surface` `reads::git-history` the reads; `spec/cli`
-the verbs.
+the conflict; `cases/history/git-remote.json` (17.6) the remote half against
+a SECOND bare repository under the case's temp dir (§9.4 — the `git_remote*`,
+`git_push`, `git_fetch`, `git_resolve`, `git_reconcile`, `git_ids_*` and
+`alerts` steps): the binding, the push and the remote's log equal to ours,
+`push: on-checkpoint` and the rejected push, the fast-forward through the
+source boundary with the no-op checkpoint and the ids ref carried, the
+clean merge, the conflict with its sidecar and alert and the resolve, the
+rewritten remote detected and each of the four remediations, the refused
+credentials; `spec/surface` `reads::git-history` and `reads::git-remote`
+the reads, `version` and the alerts on the wire; `spec/cli` the verbs.
 
 ## 6. Reads this spec pins
 
@@ -2549,15 +2823,46 @@ unchanged.
   `git log --reverse --format=%H%n%s%n%(trailers) refs/heads/<branch>`> }`
   (`""` without a repository); `git_tree {}` → `{ git_tree: <the text of
   `git ls-tree -r refs/heads/<branch>`> }`; `git_fault { fail }` arms or
-  disarms the `git.commit` site (§9.7) → `{ fault }`. A case with any of
+  disarms the `git.commit` site (§9.7) → `{ fault }`. **The remote steps
+  (17.6; §5.12 "The remote binding" …)**, against the case's SECOND bare
+  repository — the remote at `<tmp>/remote.git`, `<remote>` in the fixture's
+  text and in every outcome, created on first use with `git init --bare
+  --initial-branch omgbase`: `git_remote { ts, url: "<remote>", name?,
+  branch?, push?, fetch? }` runs `history remote set` → `{ remote: { name,
+  url: "<remote>", branch, push, fetch } }` or `{ remote: { error } }`;
+  `git_remote_unset { ts }` → `{ remote: null }`; `git_remote_status {}` →
+  `{ remote_status: { remote, branch, local_tip, remote_tip, pushed_through,
+  state } }`; `git_push { ts }` → `{ push: { pushed, tip, pushed_through, ids
+  } }` or `{ push: { error } }` (the pinned message); `git_fetch { ts }` runs
+  `history fetch` with the vault sink bound to `observeBatch` (the inbound
+  content is an observed batch: the C1 ledger follows it) → `{ fetch: {
+  state, remote_tip, old_remote_tip?, tip, applied, conflicts } }` or `{
+  fetch: { error } }`; `git_resolve { ts, path, choose: "ours" | "theirs" }`
+  → `{ resolve: { path, choice, remaining, merged, tip } }`; `git_reconcile
+  { ts, mode: "rebase" | "merge" | "adopt" | "fork" }` → `{ reconcile: {
+  mode, tip, backup, rewritten, fork, applied, conflicts } }` or `{
+  reconcile: { error } }`; `git_remote_commit { ts, message?, items: [{
+  path, source }], parent?: "tip" | "tip^" }` makes a commit ON THE REMOTE
+  as someone else would — identity `remote <remote@fixture>`, both dates
+  `ts`, the message as given (`remote edit`), the tree the remote branch's
+  tip plus the items (`source: null` removes) or, with `parent: "tip^"`, the
+  tip's parent's (a REWRITE: the new commit replaces the tip) — → `{
+  remote_commit: <sha> }`; `git_remote_log {}` / `git_remote_tree {}` the
+  remote's log and tree as `git_log`/`git_tree` render them; `git_ids_log
+  {}` the ids ref's log in the same format; `git_ids_show { doc, from?:
+  "local" | "remote" }` → `{ git_ids_show: <the text of `git show
+  refs/omgbase/ids:.omgbase/ids/<doc>`> | null }`; `alerts {}` → `{ alerts:
+  [{ code, severity, message, since, detail? }] }` (the active rows, the
+  remote's path tokenised). A case with any of
   them, or a `history_enable` naming a provider, runs on the compositions
   that attach the git provider (`full`, `git`; §9.6) and is compared as
   recorded; its repository must be born disabled (`capabilities: { history:
   false }`) so the enable is not a conflict on `full`; the runner gives it a
   workspace directory (`<tmp>/.omgbase/git` is the bare repository) and runs
   the provider with the identity `omgbase <omgbase@fixture>`, so under the
-  fixture clock every sha a projection shows is pinned. A `history_purge` on
-  a git row projects `provider: { name, removed }` (the path is the run's).
+  fixture clock every sha a projection shows is pinned — the remote's too. A
+  `history_purge` on a git row projects `provider: { name, removed }` (the
+  path is the run's).
   `recorder_fault
   { fail }` is the runner's **fault device** (§5.4 step 15, resolution 18):
   `fail: true` makes every capture call of the store's recorder throw until
@@ -2767,9 +3072,10 @@ recorder and NO semantic module (`full` attaches the provider beside the
 recorder; `core`, `history` and `semantic` attach none). Every rule above
 for a composition without the history module applies to it unchanged — the
 native module is what "history" means there — plus one: a case that drives
-the git provider (a `history_enable` naming it, a `git_*` step; a surface
-case with those steps; a CLI case whose argv names `--provider git` or
-`history checkpoint`) runs on `full` and `git` and is compared AS RECORDED
+the git provider (a `history_enable` naming it, a `git_*` step — the remote
+steps of 17.6 included — or an `alerts` step; a surface
+case with those steps; a CLI case whose argv names `--provider git`, or
+`history checkpoint|remote|push|fetch`) runs on `full` and `git` and is compared AS RECORDED
 (its repository is born disabled and no native row is written, so its
 projection is one on both), and is skipped — `needs the git history
 provider` — on `core`, `history` and `semantic`; a git case that also
@@ -3302,6 +3608,42 @@ brought to it).
   of H1/H3). The 16 → 17 step also rebuilds the FTS index once, and the
   tombstone finish step purges the index entries it holds before deleting
   the rows (the rule the 17.3 twin must correct to).
+- 2026-10-26, store 17.6 (Phase 6b of `docs/modular-core/` — the remote half
+  of the git history provider; the design note's §8 and "Remote divergence",
+  decided by Brendan 2026-10-26): **sync is coordination between the
+  engine's branch and the remote's** (§5.12 "The remote binding" …
+  "Divergence"). The manifest's `remote` member becomes the binding `{ name,
+  url, branch, push: off | on-checkpoint | periodic, fetch: off | periodic |
+  webhook }` (nothing automatic until configured; credentials refused; the
+  binding rewrites `config` in place without a rebuild); `history remote
+  set|unset|status`, `history push` (never `--force`; a rejected push → the
+  `git_remote_diverged` alert and error), `history fetch` (fast-forward with
+  the remote's tree changes entering THROUGH THE SOURCE BOUNDARY — the
+  `HistoryVaultSink` seam the composition layer binds to the filesystem root
+  and the observe path, a fixture runner to `observeBatch`; a three-way
+  merge at the tree level with the ancestor git supplies when both sides
+  moved — one merge commit with `omgbase-merge`; conflicts with BOTH
+  versions kept, the remote's as `<stem>.remote-<short>.md`, the
+  `git_merge_conflict` alert and no merge commit until `history remote
+  resolve`), the rewritten remote detected-stopped-alerted with push and
+  fetch paused and the four explicit remediations `reconcile --rebase |
+  --merge | --adopt | --fork` (backup refs, never a force-push, never a
+  silent last-write-wins). Two worker rules fall out of the inbound path:
+  the **no-op rule** (a checkpoint whose tree is its parent's writes no
+  commit; the cursor row advances) and the **resume rule** (the `$git` row
+  refines the tip's trailer when it names the same tip). The **identity
+  record's second half**: the worker writes `refs/omgbase/ids` — one blob
+  per live document at `.omgbase/ids/<doc_id>`, canonical JSON `{ blocks:
+  [{ hash, id, ordinal, parent }], doc, head }`, a parallel chain with the
+  same `omgbase-seq` and `omgbase-content: <content sha>` — carried by push
+  and fetch; restoration from it is 6c. The debounce cadence gains its timer
+  in the MCP host's mutation hook (`every` runs the worker synchronously).
+  Fixtures: `cases/history/git-remote.json` (11 scripts against a second
+  bare repository, the `git_remote*`/`git_push`/`git_fetch`/`git_resolve`/
+  `git_reconcile`/`git_ids_*`/`alerts` steps of §9.4). Semantic, no DDL: a
+  minor. `spec/surface` 6.5 adds `version.capabilities.history.remote` and
+  the alert codes, `spec/cli` 5.6 the verbs, `spec/sync` 4.6 the sweep's
+  steps 7–8 and the row's `pushed`.
 - 2026-10-26, store 17.5 (Phase 6a of `docs/modular-core/` — the alternative
   history strategy; decided by Brendan 2026-10-26): **the git history
   provider** (§5.12) — a bare repository at `.omgbase/git`, commits built

@@ -37,14 +37,46 @@ export const HAS_GIT = compositionHasGitProvider(COMPOSITION);
 // specifier and resolves nothing — the core's own build never names the package
 // (`dependency-direction.test.ts` pins that).
 const GIT_ADAPTER_SRC = new URL("../../git-adapter/src/index.ts", import.meta.url);
-interface GitAdapterModule { gitHistoryProvider(opts: { identity: { name: string; email: string } }): HistoryProviderFactory; FIXTURE_IDENTITY: { name: string; email: string } }
-/** The git adapter's fixture `GitRepo` handle for a store's provider (the `git_log`/`git_tree` steps read it) — structural, so the core's build names no git-adapter type. */
-export interface FixtureGitProvider { gitRepo(config: Record<string, unknown>): { text(args: string[]): string; exists(): boolean } }
+interface GitAdapterModule { gitHistoryProvider(opts: { identity: { name: string; email: string } }): HistoryProviderFactory; FIXTURE_IDENTITY: { name: string; email: string }; GitRepo: new (dir: string) => FixtureGitRepo }
+/** The adapter's `GitRepo` as the fixture steps drive it (the bare repository, and the SECOND bare repository that plays the remote in 6b) — structural, so the core's build names no git-adapter type. */
+export interface FixtureGitRepo {
+  exists(): boolean;
+  init(branch: string): void;
+  text(args: string[]): string;
+  run(args: string[], opts?: { allowFailure?: boolean }): { status: number };
+  tip(branch: string): string | null;
+  ref(ref: string): string | null;
+  writeBlob(bytes: string): string;
+  buildTree(base: string | null, adds: { path: string; blob: string }[], removes: string[]): string;
+  treeOf(commit: string): string;
+  commitTree(tree: string, parent: string | string[] | null, message: string, id: { author: { name: string; email: string }; committer: { name: string; email: string }; ts: string }): string;
+  setRef(ref: string, sha: string): void;
+  parentsOf(commit: string): string[];
+}
+/** A vault sink as the fixture runners bind it (spec/store §9.4, 17.6): inbound content through `observeBatch`. */
+export interface FixtureVaultSink { apply(changes: readonly { path: string; content: Buffer | null }[], ts: string): void }
+/** The git adapter's provider as the fixture steps drive it (the `git_log`/`git_tree` steps read its repository; the 6b remote steps call its remote half) — structural, so the core's build names no git-adapter type. */
+export interface FixtureGitProvider {
+  gitRepo(config: Record<string, unknown>): FixtureGitRepo;
+  remoteSet(repoId: string, config: Record<string, unknown>, opts: Record<string, string>, now: string): { remote: Record<string, unknown> | null };
+  remoteUnset(repoId: string, config: Record<string, unknown>, now: string): { remote: Record<string, unknown> | null };
+  remoteStatus(repoId: string, config: Record<string, unknown>): Record<string, unknown>;
+  push(repoId: string, config: Record<string, unknown>, now: string): Record<string, unknown>;
+  fetch(repoId: string, config: Record<string, unknown>, vault: FixtureVaultSink, now: string): Record<string, unknown>;
+  resolve(repoId: string, config: Record<string, unknown>, vault: FixtureVaultSink, path: string, choice: "ours" | "theirs", now: string): Record<string, unknown>;
+  reconcile(repoId: string, config: Record<string, unknown>, vault: FixtureVaultSink, mode: "rebase" | "merge" | "adopt" | "fork", now: string): Record<string, unknown>;
+}
 let gitAdapter: GitAdapterModule | null = null;
 if (HAS_GIT && existsSync(fileURLToPath(GIT_ADAPTER_SRC))) {
   gitAdapter = (await import(GIT_ADAPTER_SRC.href)) as GitAdapterModule;
   registerHistoryProvider("git", gitAdapter.gitHistoryProvider({ identity: gitAdapter.FIXTURE_IDENTITY }));
 }
+/** A bare repository handle at `dir` through the adapter's plumbing wrapper (the fixture's remote), or null when the adapter is not loaded. */
+export function fixtureGitRepo(dir: string): FixtureGitRepo | null {
+  return gitAdapter ? new gitAdapter.GitRepo(dir) : null;
+}
+/** The identity the fixture's REMOTE commits carry (spec/store §9.4, 17.6): `remote <remote@fixture>`. */
+export const REMOTE_FIXTURE_IDENTITY = { name: "remote", email: "remote@fixture" };
 /** The git provider attached to `store` (the fixture steps that read the bare repository), or null. */
 export function fixtureGitProvider(store: Store): FixtureGitProvider | null {
   return (store.capabilities.providers.git as unknown as FixtureGitProvider | undefined) ?? null;

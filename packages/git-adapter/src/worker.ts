@@ -2,8 +2,9 @@ import type { Store, CommitRecord, CommitDigest, HistoryCheckpointResult } from 
 import { changesSince, ExpiredCursor, faultPoint, feedStatus, reconstructContent, repoEpoch, storagePath, clearProviderUnavailable } from "@omgbase/core";
 import { GitRepo, type GitIdentity } from "./git.js";
 import { parseMessage, renderMessage, type CommitTrailers, type DocTrailer } from "./trailers.js";
-import { writeGitCursor } from "./cursor.js";
+import { readGitCursor, writeGitCursor } from "./cursor.js";
 import type { GitHistoryConfig } from "./config.js";
+import { syncIds } from "./ids.js";
 
 // The checkpoint worker (spec/store §5.12 "The checkpoint worker"): a consumer
 // of the change feed that turns feed rows into git commits in the bare
@@ -14,23 +15,38 @@ import type { GitHistoryConfig } from "./config.js";
 // `trailers.ts`, and the branch ref moves by compare-and-swap. The worker is
 // idempotent across the non-atomic gap between the database and git: it
 // resumes from the branch tip's `omgbase-seq` trailer (the `$git` cursor row is
-// a cache), a commit already present for a seq is skipped, and the fault site
-// `git.commit` — after the objects are written, before `update-ref` — leaves
-// dangling objects the next run re-creates byte for byte.
+// a cache that may stand further on — below), a commit already present for a
+// seq is skipped, and the fault site `git.commit` — after the objects are
+// written, before `update-ref` — leaves dangling objects the next run
+// re-creates byte for byte.
 //
 // Cadence (`config.cadence`): `"every"` writes one commit per feed row;
 // `{ debounce_ms }` folds the rows pending when the worker runs into one
-// commit whose `omgbase-seq` is the range (6a has no timer: the worker is run
-// by `omg history checkpoint` and by the freshness sweep).
+// commit whose `omgbase-seq` is the range (the timer that runs the worker
+// `debounce_ms` after the last mutation is the MCP host's — `scheduler.ts`).
+//
+// Two rules of 17.6 (Phase 6b). (1) THE NO-OP RULE: a checkpoint whose staged
+// tree equals its parent's writes NO commit — the rows' bytes are already in
+// the tree (the remote's commits brought them in through the vault, a document
+// edited and edited back within the pending span) — and the cursor row alone
+// advances past the rows. (2) THE RESUME RULE: the tip's `omgbase-seq` trailer
+// is the position, unless the cursor row names the same tip and stands further
+// on (rule 1 moved it; a fetch fast-forwarded the branch to a tip that is not
+// the worker's own — a foreign epoch or no trailer — and set the row at the
+// head); a tip neither rule can place is a rescan.
 //
 // What the rows cannot give: the bytes of a document as of a row OLDER than
 // its current head — the core keeps current state only. A document a pending
 // row touched whose `docs.file_hash` no longer equals the row's entry hash is
 // SUPERSEDED within the pending span: its blob is written by the later row (the
 // one whose hash matches), the earlier commit lists it in `omgbase-doc` and
-// leaves its path's blob as it was. Under `every` with a worker run after every
-// write this never happens; stated in the spec as the asynchronous-capture
-// tradeoff.
+// leaves its path's blob as it was (or, when nothing else changed, writes no
+// commit at all — rule 1). Under `every` with a worker run after every write
+// this never happens; stated in the spec as the asynchronous-capture tradeoff.
+//
+// Beside every content commit the worker writes the IDS REF (`ids.ts`): the
+// touched documents' id-map blobs on `refs/omgbase/ids`, one commit carrying
+// the same `omgbase-seq` and `omgbase-content: <content sha>`.
 
 export interface WorkerContext {
   store: Store;
@@ -54,6 +70,23 @@ export function tipPosition(git: GitRepo, branch: string): { tip: string; epoch:
   const t = parseMessage(git.message(tip));
   if (!t) return null;
   return { tip, epoch: t.epoch, seq: t.to };
+}
+
+/**
+ * The resume rule (17.6): the position the worker resumes from — the tip's
+ * trailer when it is of this epoch, refined by the `$git` row when the row
+ * names the tip and stands further on; the row alone when the tip has no
+ * usable trailer but the row names it; null otherwise (a rescan).
+ */
+export function resumePosition(ctx: WorkerContext, epoch: string): { tip: string; seq: number } | null {
+  const tip = ctx.git.tip(ctx.config.branch);
+  if (tip === null) return null;
+  const trailer = parseMessage(ctx.git.message(tip));
+  const fromTrailer = trailer && trailer.epoch === epoch ? trailer.to : null;
+  const row = readGitCursor(ctx.store.db, ctx.repoId);
+  const fromRow = row && row.tip === tip && row.epoch === epoch ? row.seq : null;
+  if (fromTrailer === null && fromRow === null) return null;
+  return { tip, seq: Math.max(fromTrailer ?? -1, fromRow ?? -1) };
 }
 
 function authorFor(identity: GitIdentity, actor: string | null): GitIdentity {
@@ -92,17 +125,29 @@ function stageDigest(ctx: WorkerContext, pending: Pending, d: CommitDigest): voi
   }
 }
 
-/** One git commit over the staged changes; the new tip. */
-function commitPending(ctx: WorkerContext, pending: Pending, parent: string | null, subject: string, trailers: CommitTrailers, actor: string | null, snapshot: boolean): string {
+/**
+ * One git commit over the staged changes — or none, when the staged tree is
+ * the parent's (the no-op rule; never for a snapshot) — then the ids commit;
+ * the new tip and whether a content commit was written.
+ */
+function commitPending(ctx: WorkerContext, pending: Pending, parent: string | null, subject: string, trailers: CommitTrailers, actor: string | null, snapshot: boolean): { tip: string; committed: boolean } {
   const baseTree = snapshot || parent === null ? null : ctx.git.treeOf(parent);
   const tree = ctx.git.buildTree(baseTree, [...pending.adds].map(([path, blob]) => ({ path, blob })).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)), [...pending.removes].sort());
+  const touched = [...pending.docs.keys()];
+  if (!snapshot && parent !== null && tree === baseTree) {
+    // The no-op rule (17.6): the bytes are already in the tree; the cursor row advances, the identities are still recorded.
+    writeGitCursor(ctx.store.db, ctx.repoId, { tip: parent, epoch: trailers.epoch, seq: trailers.to });
+    syncIds({ store: ctx.store, repoId: ctx.repoId, git: ctx.git, config: ctx.config, identity: ctx.identity, docs: touched, epoch: trailers.epoch, from: trailers.from, to: trailers.to, ts: trailers.ts, content: parent, actor });
+    return { tip: parent, committed: false };
+  }
   const message = renderMessage(subject, trailers);
   const sha = ctx.git.commitTree(tree, parent, message, { author: authorFor(ctx.identity, actor), committer: ctx.identity, ts: trailers.ts });
   // OMGBASE_FAULT=git.commit (spec/store §9.7): the objects are written, the ref has not moved.
   faultPoint("git.commit");
   ctx.git.updateRef(ctx.config.branch, sha, parent);
   writeGitCursor(ctx.store.db, ctx.repoId, { tip: sha, epoch: trailers.epoch, seq: trailers.to });
-  return sha;
+  syncIds({ store: ctx.store, repoId: ctx.repoId, git: ctx.git, config: ctx.config, identity: ctx.identity, docs: snapshot ? null : touched, epoch: trailers.epoch, from: trailers.from, to: trailers.to, ts: trailers.ts, content: sha, actor });
+  return { tip: sha, committed: true };
 }
 
 /** The whole live tree of the repository staged (a rescan / the baseline). */
@@ -118,10 +163,11 @@ function stageSnapshot(ctx: WorkerContext): Pending {
 
 /**
  * A SNAPSHOT commit (spec/store §5.12 "Rescan"): the full current tree at the
- * feed head, `omgbase-rescan: <epoch>:<head>`; the baseline `history enable`
- * writes (`record` given: subject `history enabled`, `omgbase-commit`/`origin`
- * of the baseline feed row) and the recovery from an `expired_cursor` or a
- * tipless branch (subject `rescan: <n> document(s)`).
+ * feed head, `omgbase-seq: <epoch>:<head>`, `omgbase-rescan: <epoch>:<head>`;
+ * the baseline `history enable` writes (`record` given: subject `history
+ * enabled`, `omgbase-commit`/`origin` of the baseline feed row) and the
+ * recovery from an `expired_cursor` or a tipless branch (subject `rescan: <n>
+ * document(s)`).
  */
 export function commitSnapshot(ctx: WorkerContext, now: string, record: CommitRecord | null): { tip: string; documents: number; head: number } {
   // A purged (or never initialised) repository is created afresh: the snapshot is its first commit.
@@ -132,40 +178,39 @@ export function commitSnapshot(ctx: WorkerContext, now: string, record: CommitRe
   const trailers: CommitTrailers = {
     epoch: status.epoch, from: status.head, to: status.head, ts: record?.ts ?? now,
     commits: record ? [record.commitId] : [], origin: record?.origin ?? null, actor: record?.actor ?? null, plan: null,
-    docs, rescan: { epoch: status.epoch, head: status.head },
+    docs, rescan: { epoch: status.epoch, head: status.head }, merge: null, content: null,
   };
   const subject = record ? (record.reason ?? `${record.origin}: ${docs.length} document(s)`) : `rescan: ${docs.length} document(s)`;
   const parent = ctx.git.tip(ctx.config.branch);
-  const tip = commitPending(ctx, pending, parent, subject, trailers, record?.actor ?? null, true);
+  const { tip } = commitPending(ctx, pending, parent, subject, trailers, record?.actor ?? null, true);
   return { tip, documents: docs.length, head: status.head };
 }
 
 const PAGE = 200;
 
 /**
- * The worker, once (spec/store §5.12): resume from the tip's trailer (the
- * cursor row when the tip is foreign — then a RESCAN: one snapshot commit at
- * the head), page `changes_since` from there, one commit per row under `every`
- * or one commit over every pending row under `{ debounce_ms }`, and report
- * `{ committed, from_seq, to_seq, tip, rescanned }`.
+ * The worker, once (spec/store §5.12): resume by the resume rule (none → a
+ * RESCAN: one snapshot commit at the head), page `changes_since` from there,
+ * one commit per row under `every` or one commit over every pending row under
+ * `{ debounce_ms }` — a group whose tree is its parent's writes none — and
+ * report `{ committed, from_seq, to_seq, tip, rescanned }`.
  */
 export function runCheckpoint(ctx: WorkerContext, opts: { now?: string } = {}): HistoryCheckpointResult {
   const now = opts.now ?? new Date().toISOString();
-  const { store, repoId, git, config } = ctx;
+  const { store, repoId, config } = ctx;
   const epoch = repoEpoch(store.db, repoId);
-  // The tip's trailer is the truth; the `$git` cursor row is its cache (it may lag the tip after a crash between the two writes).
-  const position = tipPosition(git, config.branch);
-  const start = position && position.epoch === epoch ? position.seq : null;
+  const position = ctx.git.exists() ? resumePosition(ctx, epoch) : null;
+  const start = position?.seq ?? null;
   const rescan = (): HistoryCheckpointResult => {
     const snap = commitSnapshot(ctx, now, null);
     clearProviderUnavailable(store.db, repoId, now);
     return { committed: 1, from_seq: snap.head, to_seq: snap.head, tip: snap.tip, rescanned: true };
   };
-  // No usable position — no tip (the repository was purged or never baselined), or a tip of another epoch — is a rescan.
+  // No usable position — no tip (the repository was purged or never baselined), a tip of another epoch nobody placed — is a rescan.
   if (start === null) return rescan();
   let cursor = start;
   let committed = 0;
-  let tip: string | null = position?.tip ?? null;
+  let tip: string = position!.tip;
   const digests: CommitDigest[] = [];
   // Collect every pending row first (paging), so a debounce cadence folds them all.
   for (;;) {
@@ -194,12 +239,13 @@ export function runCheckpoint(ctx: WorkerContext, opts: { now?: string } = {}): 
     const trailers: CommitTrailers = {
       epoch, from: first.seq, to: last.seq, ts: last.ts,
       commits: group.map((d) => d.commit), origin: last.origin, actor: last.actor, plan: last.plan_id ?? null,
-      docs, rescan: null,
+      docs, rescan: null, merge: null, content: null,
     };
     const reason = group.length === 1 ? reasonOf(store, first.commit) : null;
     const subject = group.length === 1 ? (reason ?? `${first.origin}: ${docs.length} document(s)`) : `checkpoint: ${group.length} commits, ${docs.length} document(s)`;
-    tip = commitPending(ctx, pending, tip, subject, trailers, last.actor, false);
-    committed++;
+    const r = commitPending(ctx, pending, tip, subject, trailers, last.actor, false);
+    tip = r.tip;
+    if (r.committed) committed++;
   }
   clearProviderUnavailable(store.db, repoId, now);
   return { committed, from_seq: start + 1, to_seq: cursor, tip, rescanned: false };

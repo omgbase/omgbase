@@ -2244,7 +2244,8 @@
                 "provider": "<string>",
                 "coverage_from": "<string>",
                 "writer_requires": "<boolean>",
-                "completeness": "<string>"
+                "completeness": "<string>",
+                "remote": "<null>"
               },
               "semantic": {
                 "state": "<string>",

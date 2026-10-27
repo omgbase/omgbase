@@ -583,25 +583,28 @@ touched), 5b runs it on copies of Brendan's workspaces.
 
   The conformance matrix of the reference (`pnpm conformance`, Rust pairings
   skipped — compared / mapped / skipped per cell; see each spec's runner
-  section for what "mapped" means there), as of Phase 6a (the fifth column
+  section for what "mapped" means there), as of Phase 6b (the fifth column
   `git` — `OMGBASE_CAPABILITIES=git`, the git history provider attached and no
-  native recorder — and the `git` fixtures of 6a; `spec/store` §9.6):
+  native recorder — with the `git` fixtures of 6a and the `git-remote`
+  fixtures of 6b; `spec/store` §9.6):
 
   | suite | core | history | semantic | full | git |
   | --- | --- | --- | --- | --- | --- |
-  | store | 0/66/69 | 119/9/7 | 1/65/69 | 135/0/0 | 6/66/63 |
+  | store | 0/66/80 | 119/9/18 | 1/65/80 | 146/0/0 | 17/66/63 |
   | mutate | 0/284/0 | 284/0/0 | 0/284/0 | 284/0/0 | 0/284/0 |
-  | surface | 511/11/47 | 565/2/2 | 512/11/46 | 569/0/0 | 512/11/46 |
+  | surface | 511/11/48 | 565/2/3 | 512/11/47 | 570/0/0 | 513/11/46 |
   | graph | 146/0/0 | 146/0/0 | 146/0/0 | 146/0/0 | 146/0/0 |
   | sync | 61/22/0 | 83/0/0 | 61/22/0 | 83/0/0 | 61/22/0 |
   | search | 32/15/36 | 32/15/36 | 83/0/0 | 83/0/0 | 32/15/36 |
-  | cli | 380/0/191 | 510/0/61 | 413/0/158 | 571/0/0 | 383/0/188 |
+  | cli | 380/0/197 | 510/0/67 | 413/0/164 | 577/0/0 | 388/0/189 |
   | interop (ts→ts; 87 Rust pairings skipped) | 14/15/87 | 28/1/87 | 15/14/87 | 29/0/87 | 14/15/87 |
 
-  40 cells green (`conformance: 40 cells green` over two runs after the
-  fixture fixes, 2026-10-26, ≈ 35 minutes wall-clock — the CLI suite is 2–4.5
-  of them per composition). The Phase 5a matrix (32 cells, before the `git`
-  fixtures and the `version` keys of 6.4) is in the git history of this file.
+  40 cells green (`conformance: 40 cells green`, 2026-10-26, ≈ 35 minutes
+  wall-clock — the CLI suite is 2–5 of them per composition). The Phase 6a
+  matrix (store 135 / surface 569 / cli 571 on `full`, before the 11
+  `git-remote` scripts, `reads::git-remote`, the six remote CLI cases and
+  the `remote` key of 6.5) and the Phase 5a matrix (32 cells) are in the git
+  history of this file.
 
 - **5a-ii (this slice; TypeScript reference + spec, `spec/store` 17.4,
   `spec/sync` 4.4, `spec/cli` 5.4).** What the first 5b run — the script on
@@ -660,7 +663,7 @@ touched), 5b runs it on copies of Brendan's workspaces.
   migration repairs the legacy documents — and run `OMGBASE_FAULT` drives
   against a copy under each engine.
 
-## 6b. Phase 6 — one alternative history strategy (6a: the Git-backed provider, TypeScript reference + spec)
+## 6b. Phase 6 — one alternative history strategy (the Git-backed provider: 6a the engine-owned repository, 6b the remote half; TypeScript reference + spec)
 
 **6a (this slice; TypeScript reference + spec, `spec/store` 17.5 §5.12, `spec/surface` 6.4, `spec/cli` 5.5, `spec/sync`
 4.5; the design decided by Brendan 2026-10-26, followed exactly).** A repository's history may be kept by a **bare Git
@@ -715,6 +718,62 @@ config (push on checkpoint / periodic, fetch periodic / webhook — credentials 
 `refs/omgbase/ids` id-map ref (identities recoverable from a clone), a timer for the debounce cadence, one `git log` per
 `revisionRows` call instead of one per document, the synthetic-workload per-edit comparison, and the MCP host's
 mutation hook running the worker.
+
+**6b (this slice; TypeScript reference + spec, `spec/store` 17.6 §5.12, `spec/surface` 6.5, `spec/cli` 5.6, `spec/sync`
+4.6; the design note's §8 and "Remote divergence", decided by Brendan 2026-10-26 and followed exactly).** Sync is
+coordination between the engine's branch and the remote's. (1) **The remote binding**: `history.config.remote = { name,
+url, branch, push: off | on-checkpoint | periodic, fetch: off | periodic | webhook }` (null until `omg history remote set
+--url <url> [--name] [--branch] [--push] [--fetch]`; both policies default `off` — nothing is automatic until configured;
+a URL with credentials is refused; `history remote unset` forgets it; `history remote status` → `{ remote, branch,
+local_tip, remote_tip, pushed_through, state: in-sync | ahead | behind | diverged | unknown }` from local refs alone);
+`version.capabilities.history.remote = { name, branch, state, pushed_through } | null` puts the third level — remotely
+synchronised, beside current state and locally checkpointed — on the wire (every `version`/`sync_status` fixture moved by
+the one key). The binding rewrites the manifest row's `config` in place (`updateHistoryProviderConfig`): configuration,
+not a rebuild. (2) **Push** (`omg history push`; `on-checkpoint` after each checkpoint that committed, `periodic` the
+sweep's step 7): the branch and the ids ref, never `--force`; a rejected push raises `git_remote_diverged` (warning, `{
+remote, branch, local_tip, remote_tip }`) and exits 1 — a fetch merges, the push lands after; `pushed_through` (the seq
+trailer of the last pushed tip) rides on the `$git` cursor row. (3) **Fetch** (`omg history fetch`; `periodic` the
+sweep's step 8; `webhook` reserved for an external caller): the remote ahead → its tree changes enter the vault THROUGH
+THE SOURCE BOUNDARY — the new `HistoryVaultSink` seam, bound by the composition layer to the repository's root and the
+observe path (`fsVaultSink`: files written as external edits, `processCheckpoint` over them) and by the fixture runners
+to `observeBatch` — then the branch fast-forwards; both sides moved → a three-way merge AT THE TREE LEVEL with the
+ancestor git supplies: one side changed → taken, both to the same blob → nothing, both to different blobs → a CONFLICT
+with both versions kept (ours at the path, the remote's as `<stem>.remote-<short>.md` beside it), the alert
+`git_merge_conflict { paths }`, no merge commit until `history remote resolve <path> --ours|--theirs` settles the last
+one; a clean merge is one merge commit with `omgbase-merge: <remote tip>`. The worker then finds the inbound rows' bytes
+already in the tree and commits nothing for them — the **no-op rule** (a checkpoint whose tree is its parent's writes no
+commit; the cursor row advances) and the **resume rule** (the row refines the tip's trailer when it names the same tip),
+pinned. (4) **Divergence** (the remote rewritten — its tip no longer descends from the tip we last knew): detect, stop,
+alert — `git_remote_diverged { …, old_remote_tip }`, push and fetch pause, checkpointing continues; the four explicit
+remediations, each refusing without the alert: `history remote reconcile --rebase` (our unpushed checkpoints replayed
+onto the new head, per file three-way with the OLD remote tip as base, messages and trailers preserved byte for byte,
+the ids ref rebased alongside, the old tip on `refs/omgbase/backup/<ts>`), `--merge` (one merge commit, both histories
+kept), `--adopt` (the remote's head becomes truth: its tree through the source boundary, our local edits kept beside as
+`<stem>.local-<short>.md` and surfaced as conflicts, our branch reset, the old tip backed up), `--fork` (our branch
+pushed as `<branch>-omgbase-<ts>`, `git_remote_forked`, the human merges with git, then `--adopt`). Never a force-push,
+never an unpushed commit dropped without a backup ref, never a silent last-write-wins. (5) **`refs/omgbase/ids`**: the
+worker writes, beside every checkpoint, the per-document id maps `.omgbase/ids/<doc_id>` — canonical JSON `{ blocks: [{
+hash, id, ordinal, parent }], doc, head }` — as a parallel commit chain carrying the same `omgbase-seq` and
+`omgbase-content: <content sha>`; push and fetch carry the ref; `git show refs/omgbase/ids:.omgbase/ids/<doc_id>` on a
+clone lists a document's id map (pinned on the fixture's remote). The content branch stays a plain notes repository.
+Restoration from the ref is 6c. (6) **The debounce timer and the mutation hook**: `omg mcp` hands its `onMutation` hook
+to `createCheckpointScheduler` — `every` runs the worker synchronously after each successful write tool (the git history
+is complete without `omg sync`), `{ debounce_ms }` re-arms one timer so a burst folds into one commit; the watcher's
+checkpoints notify it too; a pending timer runs at shutdown (fake-timer unit test). (7) **Measured** (`baseline.md` §3):
+the git row of `scripts/baseline/real-corpus.mjs` now also pushes to a local bare remote and reports the remote's packed
+size beside the local one. (8) **Fixtures**: `spec/store/cases/history/git-remote.json` (11 scripts against a SECOND
+bare repository under the case's temp dir — a local path URL, no network — through the new `git_remote*`, `git_push`,
+`git_fetch`, `git_resolve`, `git_reconcile`, `git_remote_commit` (a commit on the remote as someone else, `parent: tip^`
+a rewrite), `git_remote_log|tree`, `git_ids_log|show` and `alerts` steps), `reads::git-remote` (the `version` key by
+shape, `sync_status` literal, the conflict alert riding on `docs_history`/`query` and absent on an error, the resolve),
+the six CLI cases `history::history-git-remote-*` / `history-push-on-native` (the CLI runner's `remote` step device
+creates `<workspace>/remote.git` and commits on it), the adapter's `remote.test.ts` (16). **The Rust twin** mirrors: the
+seam additions (`HistoryVaultSink`, `remoteSummary`/`remoteSync`, `updateHistoryProviderConfig`, the sweep's steps 7–8
+with the filesystem sink, `version…remote`), the adapter's remote module spawning `git` with the same argv (`push
+--porcelain --quiet`, `fetch --quiet --no-tags`, `ls-remote`, `merge-base [--is-ancestor]`, `diff-tree -r -z
+--no-renames`, `ls-tree -r -z`, `rev-list --reverse`), the ref names, the alert codes, messages and detail keys byte for
+byte, the sidecar naming, the no-op and resume rules, the ids blob (canonical JSON + newline) and chain, the error
+codes, the verbs and renderings, the fixture devices (the remote identity `remote <remote@fixture>`).
 
 **Phase 5 closed on 2026-10-26.** The four compositions run every suite in both engines (`pnpm conformance`, 32/32
 cells, interop live in every pairing); `OMGBASE_FAULT` injects at five sites with the acceptance outcomes pinned;

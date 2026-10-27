@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Workspace, rebuildFileStats } from "@omgbase/core";
+import { GitRepo } from "@omgbase/git-adapter";
 
 // packages/cli/corpus/cli → repo root is four levels up.
 export const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -54,11 +55,26 @@ export interface StepInput {
   files?: Record<string, string | null>;
   /** §8 (store 17.0): SQL run verbatim on `<tmp>/.omgbase/omgbase.db` before the step (after `files`), one transaction — the device that puts rows a verb never writes into the workspace (a stale pending row) */
   sql?: string[];
+  /** §8 (cli 5.6, store 17.6 Phase 6b): the case's REMOTE — a second bare repository at `<tmp>/remote.git` — created before the step (after `sql`); with `files` a commit on it as someone else would make it (identity `remote <remote@fixture>`, both dates `ts`, the `message`; `parent: "tip^"` rewrites the tip) */
+  remote?: RemoteDevice;
   pin_stderr?: boolean;
   notes?: string;
   /** recorded by the reference; absent only before the first generation */
   expect?: Expect;
 }
+
+/** §8 (cli 5.6): the remote device. `{}` creates the bare repository alone. */
+export interface RemoteDevice {
+  ts?: string;
+  message?: string;
+  files?: Record<string, string | null>;
+  parent?: "tip" | "tip^";
+}
+
+/** §8 (cli 5.6): the remote's directory under `<tmp>` — `<workspace>/remote.git` in the fixtures' text. */
+export const REMOTE_DIR = "remote.git";
+/** §8 (cli 5.6): the identity the remote device's commits carry (spec/store §9.4). */
+export const REMOTE_IDENTITY = { name: "remote", email: "remote@fixture" };
 
 export interface CaseBase {
   name: string;
@@ -89,7 +105,7 @@ export function isSequence(c: FixtureCase | Record<string, unknown>): c is Seque
 }
 
 const CASE_KEYS = new Set(["name", "notes", "workspace", "env", "files", "sql", "stdin", "argv", "pin_stderr", "expect", "steps"]);
-const STEP_KEYS = new Set(["argv", "stdin", "env", "files", "sql", "pin_stderr", "notes", "expect"]);
+const STEP_KEYS = new Set(["argv", "stdin", "env", "files", "sql", "remote", "pin_stderr", "notes", "expect"]);
 const EXPECT_KEYS = new Set(["exit", "stdout", "stderr"]);
 
 interface ValidateOptions {
@@ -132,6 +148,17 @@ function checkExpect(v: unknown, at: string, problems: string[], required: boole
   if (v.stderr !== undefined && typeof v.stderr !== "string") problems.push(`${at}: expect.stderr must be a string when present`);
 }
 
+function checkRemote(v: unknown, at: string, problems: string[]): void {
+  if (v === undefined) return;
+  if (!isRecord(v)) return void problems.push(`${at}: remote must be an object`);
+  for (const k of Object.keys(v)) if (!["ts", "message", "files", "parent"].includes(k)) problems.push(`${at}: unknown remote key \`${k}\``);
+  if (v.ts !== undefined && (typeof v.ts !== "string" || Number.isNaN(Date.parse(v.ts)))) problems.push(`${at}: remote.ts must be an RFC 3339 instant`);
+  if (v.message !== undefined && typeof v.message !== "string") problems.push(`${at}: remote.message must be a string`);
+  if (v.parent !== undefined && v.parent !== "tip" && v.parent !== "tip^") problems.push(`${at}: remote.parent is "tip" or "tip^"`);
+  checkFiles(v.files, `${at}.remote`, problems);
+  if (v.files !== undefined && v.ts === undefined) problems.push(`${at}: remote.files needs remote.ts (the commit's dates)`);
+}
+
 function checkStep(v: unknown, at: string, problems: string[], required: boolean): void {
   if (!isRecord(v)) return void problems.push(`${at}: a step must be an object`);
   for (const k of Object.keys(v)) if (!STEP_KEYS.has(k)) problems.push(`${at}: unknown step key \`${k}\``);
@@ -140,6 +167,7 @@ function checkStep(v: unknown, at: string, problems: string[], required: boolean
   checkEnv(v.env, at, problems);
   checkFiles(v.files, at, problems);
   checkSql(v.sql, at, problems);
+  checkRemote(v.remote, at, problems);
   if (v.pin_stderr !== undefined && typeof v.pin_stderr !== "boolean") problems.push(`${at}: pin_stderr must be a boolean`);
   checkExpect(v.expect, at, problems, required);
 }
@@ -168,7 +196,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (c.steps.length === 0) problems.push(`${at}: steps must not be empty`);
       c.steps.forEach((s: unknown, j: number) => checkStep(s, `${at}.steps[${j}]`, problems, required));
     } else {
-      checkStep({ argv: c.argv, stdin: c.stdin, env: undefined, files: undefined, sql: undefined, pin_stderr: c.pin_stderr, expect: c.expect }, at, problems, required);
+      checkStep({ argv: c.argv, stdin: c.stdin, env: undefined, files: undefined, sql: undefined, remote: undefined, pin_stderr: c.pin_stderr, expect: c.expect }, at, problems, required);
     }
   });
   return problems;
@@ -482,6 +510,27 @@ function runSql(tmp: string, sql: string[] | undefined): void {
   }
 }
 
+/**
+ * §8 (cli 5.6): the remote device — the second bare repository at `<tmp>/remote.git` (`git init --bare --initial-branch
+ * omgbase`, idempotent) and, with `files`, one commit on its `omgbase` branch under the determinism environment the
+ * provider itself uses: identity `remote <remote@fixture>`, both dates `ts`, the message as given (`remote edit`), the
+ * tree the current tip's (or its parent's, `parent: "tip^"` — a rewrite) plus the files (`null` removes). The sha is a
+ * function of the inputs, so a case may pin it.
+ */
+function applyRemote(tmp: string, device: RemoteDevice | undefined): void {
+  if (!device) return;
+  const repo = new GitRepo(join(tmp, REMOTE_DIR));
+  repo.init("omgbase");
+  if (!device.files) return;
+  const tip = repo.tip("omgbase");
+  const parent = device.parent === "tip^" ? (tip === null ? null : repo.parentsOf(tip)[0] ?? null) : tip;
+  const adds = Object.entries(device.files).filter(([, c]) => c !== null).map(([path, c]) => ({ path, blob: repo.writeBlob(substituteWorkspace(c!, tmp)) }));
+  const removes = Object.entries(device.files).filter(([, c]) => c === null).map(([p]) => p);
+  const tree = repo.buildTree(parent === null ? null : repo.treeOf(parent), adds, removes);
+  const sha = repo.commitTree(tree, parent, `${device.message ?? "remote edit"}\n`, { author: REMOTE_IDENTITY, committer: REMOTE_IDENTITY, ts: device.ts! });
+  repo.setRef("refs/heads/omgbase", sha);
+}
+
 /** Re-record `file_stats` for every repo of the workspace at `tmp` (spec/sync §4.3; no id is minted). */
 function rewarmStatCache(tmp: string): void {
   const ws = Workspace.open(tmp);
@@ -593,6 +642,7 @@ export function runCase(ws: Workspaces, c: CaseInput): CaseRun {
   for (const s of steps) {
     writeFiles(tmp, s.files);
     if (s !== c) runSql(tmp, s.sql);
+    applyRemote(tmp, s.remote);
     const env = { ...(c.env ?? {}), ...(s.env ?? {}) };
     const o = spawnOmg(tmp, s.argv, { ...(s.stdin !== undefined ? { stdin: s.stdin } : {}), env });
     expects.push(toExpect(o, Boolean(s.pin_stderr)));

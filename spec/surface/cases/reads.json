@@ -715,7 +715,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -780,7 +781,8 @@
                 "provider": "<string>",
                 "coverage_from": "<string>",
                 "writer_requires": "<boolean>",
-                "completeness": "<string>"
+                "completeness": "<string>",
+                "remote": "<null>"
               },
               "semantic": {
                 "state": "<string>",
@@ -16991,7 +16993,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -17794,7 +17797,8 @@
                 "provider": "<string>",
                 "coverage_from": "<string>",
                 "writer_requires": "<boolean>",
-                "completeness": "<string>"
+                "completeness": "<string>",
+                "remote": "<null>"
               },
               "semantic": {
                 "state": "<string>",
@@ -17822,7 +17826,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": false,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -18008,7 +18013,8 @@
                 "provider": "<string>",
                 "coverage_from": "<string>",
                 "writer_requires": "<boolean>",
-                "completeness": "<string>"
+                "completeness": "<string>",
+                "remote": "<null>"
               },
               "semantic": {
                 "state": "<string>",
@@ -18036,7 +18042,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -18578,7 +18585,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -18721,7 +18729,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "enabled",
@@ -18778,7 +18787,8 @@
                 "provider": "native",
                 "coverage_from": "2000-01-01T00:00:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -19455,7 +19465,8 @@
                 "provider": "<string>",
                 "coverage_from": "<string>",
                 "writer_requires": "<boolean>",
-                "completeness": "<string>"
+                "completeness": "<string>",
+                "remote": "<null>"
               },
               "semantic": {
                 "state": "<string>",
@@ -19483,7 +19494,8 @@
                 "provider": "git",
                 "coverage_from": "2026-09-27T10:01:00.000Z",
                 "writer_requires": true,
-                "completeness": "every"
+                "completeness": "every",
+                "remote": null
               },
               "semantic": {
                 "state": "disabled",
@@ -20069,7 +20081,8 @@
                 "provider": "<string>",
                 "coverage_from": "<string>",
                 "writer_requires": "<boolean>",
-                "completeness": "<string>"
+                "completeness": "<string>",
+                "remote": "<null>"
               },
               "semantic": {
                 "state": "<string>",
@@ -20077,6 +20090,585 @@
               }
             },
             "epoch": "<string>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "git-remote",
+      "notes": "§3 \"The git provider\" / §4 `version` and \"Alerts\" (6.5; store 17.6 §5.12, Phase 6b) over a repository born disabled. After `history_enable { provider: git }` `version.capabilities.history.remote` is null (no binding); `git_remote` binds the case's second bare repository (`<remote>`, a local path) and `version` reads `remote: { name, branch, state, pushed_through }` by shape, `sync_status` the literal `{ name: origin, branch: omgbase, state: unknown, pushed_through: null }`; after `git_push` the state is `in-sync` with `pushed_through` 2. The remote then edits guide.md while we edit it too (c_2, r_1 checkpointed): `git_fetch` is a CONFLICT — the remote's version lands in the vault as `guide.remote-<short>.md`, the `git_merge_conflict` alert is raised and rides as the LAST member of the next `docs_history` and `query` results (`alerts: [{ code, severity: warning, message, since, detail }]`), absent on an error envelope; `docs_history` of guide.md still lists r_1 (ours) as the retained head. `git_resolve --ours` settles it: the alert is gone, a merge commit was written (`_commit` of the current head unchanged — the merge names no document), the following `docs_history` carries no `alerts`.",
+      "workspace": true,
+      "capabilities": {
+        "history": false
+      },
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "history_enable": {
+            "ts": "2026-09-27T10:01:00.000Z",
+            "provider": "git"
+          }
+        },
+        {
+          "read": {
+            "tool": "version",
+            "args": {}
+          }
+        },
+        {
+          "git_remote": {
+            "ts": "2026-09-27T10:01:30.000Z",
+            "url": "<remote>"
+          }
+        },
+        {
+          "read": {
+            "tool": "version",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "sync_status",
+            "args": {},
+            "ts": "2026-09-27T10:01:40.000Z"
+          }
+        },
+        {
+          "git_push": {
+            "ts": "2026-09-27T10:01:50.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "sync_status",
+            "args": {},
+            "ts": "2026-09-27T10:01:55.000Z"
+          }
+        },
+        {
+          "git_remote_commit": {
+            "ts": "2026-09-27T10:02:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph, the remote's.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-27T10:02:30.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph, ours.\n"
+              }
+            ]
+          }
+        },
+        {
+          "git_checkpoint": {
+            "ts": "2026-09-27T10:03:00.000Z"
+          }
+        },
+        {
+          "git_fetch": {
+            "ts": "2026-09-27T10:04:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "_path": "guide.md"
+            },
+            "ts": "2026-09-27T10:04:30.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "docs { select _path order by _path }"
+            },
+            "ts": "2026-09-27T10:04:30.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "/missing.md"
+            },
+            "ts": "2026-09-27T10:04:30.000Z"
+          }
+        },
+        {
+          "git_resolve": {
+            "ts": "2026-09-27T10:05:00.000Z",
+            "path": "guide.md",
+            "choose": "ours"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "_path": "guide.md"
+            },
+            "ts": "2026-09-27T10:05:30.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "sync_status",
+            "args": {},
+            "ts": "2026-09-27T10:05:40.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "history": {
+              "state": "enabled",
+              "coverage": [
+                {
+                  "from": "2026-09-27T10:01:00.000Z",
+                  "to": null
+                }
+              ],
+              "writer_requires": true,
+              "changed": true,
+              "provider": "git",
+              "baseline": {
+                "commit": "c_1",
+                "revisions": 1
+              },
+              "tip": "5c7986e1b281bedbf0936fd6dbd7b0db0b1b1ae6"
+            }
+          },
+          {
+            "engine": "<string>",
+            "version": "<string>",
+            "components": "<object>",
+            "specs": {
+              "oqx": "<string>",
+              "format": "<string>",
+              "reconcile": "<string>",
+              "store": "<string>",
+              "properties": "<string>",
+              "graph": "<string>",
+              "search": "<string>",
+              "mutate": "<string>",
+              "sync": "<string>",
+              "surface": "<string>",
+              "cli": "<string>"
+            },
+            "schema": "<number>",
+            "mcp": {
+              "protocol": "<string>"
+            },
+            "runtime": "<string>",
+            "commit": "<string|null>",
+            "built": "<string|null>",
+            "profile": "<string>",
+            "capabilities": {
+              "history": {
+                "state": "<string>",
+                "provider": "<string>",
+                "coverage_from": "<string>",
+                "writer_requires": "<boolean>",
+                "completeness": "<string>",
+                "remote": "<null>"
+              },
+              "semantic": {
+                "state": "<string>",
+                "model": "<null>"
+              }
+            },
+            "epoch": "<string>"
+          },
+          {
+            "remote": {
+              "name": "origin",
+              "url": "<remote>",
+              "branch": "omgbase",
+              "push": "off",
+              "fetch": "off"
+            }
+          },
+          {
+            "engine": "<string>",
+            "version": "<string>",
+            "components": "<object>",
+            "specs": {
+              "oqx": "<string>",
+              "format": "<string>",
+              "reconcile": "<string>",
+              "store": "<string>",
+              "properties": "<string>",
+              "graph": "<string>",
+              "search": "<string>",
+              "mutate": "<string>",
+              "sync": "<string>",
+              "surface": "<string>",
+              "cli": "<string>"
+            },
+            "schema": "<number>",
+            "mcp": {
+              "protocol": "<string>"
+            },
+            "runtime": "<string>",
+            "commit": "<string|null>",
+            "built": "<string|null>",
+            "profile": "<string>",
+            "capabilities": {
+              "history": {
+                "state": "<string>",
+                "provider": "<string>",
+                "coverage_from": "<string>",
+                "writer_requires": "<boolean>",
+                "completeness": "<string>",
+                "remote": {
+                  "name": "<string>",
+                  "branch": "<string>",
+                  "state": "<string>",
+                  "pushed_through": "<null>"
+                }
+              },
+              "semantic": {
+                "state": "<string>",
+                "model": "<null>"
+              }
+            },
+            "epoch": "<string>"
+          },
+          {
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 2,
+            "lastBatch": null,
+            "convergent": true,
+            "diskChecked": true,
+            "disk": {
+              "changed": 0,
+              "deleted": 0,
+              "untracked": 0,
+              "checked": true
+            },
+            "capabilities": {
+              "history": {
+                "state": "enabled",
+                "provider": "git",
+                "coverage_from": "2026-09-27T10:01:00.000Z",
+                "writer_requires": true,
+                "completeness": "every",
+                "remote": {
+                  "name": "origin",
+                  "branch": "omgbase",
+                  "state": "unknown",
+                  "pushed_through": null
+                }
+              },
+              "semantic": {
+                "state": "disabled",
+                "model": null
+              }
+            }
+          },
+          {
+            "push": {
+              "pushed": true,
+              "tip": "5c7986e1b281bedbf0936fd6dbd7b0db0b1b1ae6",
+              "pushed_through": 2,
+              "ids": "pushed"
+            }
+          },
+          {
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 2,
+            "lastBatch": null,
+            "convergent": true,
+            "diskChecked": true,
+            "disk": {
+              "changed": 0,
+              "deleted": 0,
+              "untracked": 0,
+              "checked": true
+            },
+            "capabilities": {
+              "history": {
+                "state": "enabled",
+                "provider": "git",
+                "coverage_from": "2026-09-27T10:01:00.000Z",
+                "writer_requires": true,
+                "completeness": "every",
+                "remote": {
+                  "name": "origin",
+                  "branch": "omgbase",
+                  "state": "in-sync",
+                  "pushed_through": 2
+                }
+              },
+              "semantic": {
+                "state": "disabled",
+                "model": null
+              }
+            }
+          },
+          {
+            "remote_commit": "ddd84f0117e0bcbbf308a9d0fdd5bd815278f010"
+          },
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "checkpoint": {
+              "committed": 1,
+              "from_seq": 3,
+              "to_seq": 3,
+              "tip": "c2a0b49c60d58d72896c87d00ac1d674692f05a1",
+              "rescanned": false
+            }
+          },
+          {
+            "fetch": {
+              "state": "conflict",
+              "remote_tip": "ddd84f0117e0bcbbf308a9d0fdd5bd815278f010",
+              "tip": "c2a0b49c60d58d72896c87d00ac1d674692f05a1",
+              "applied": [
+                "guide.remote-ddd84f0.md"
+              ],
+              "conflicts": [
+                "guide.md"
+              ]
+            }
+          },
+          {
+            "docs": [
+              {
+                "_id": "d_0",
+                "_path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_1",
+                "versions": [
+                  {
+                    "_rev": "r_0",
+                    "_seq": 2,
+                    "_commit": "5c7986e1b281bedbf0936fd6dbd7b0db0b1b1ae6",
+                    "_ts": "2026-09-27T10:01:00.000Z",
+                    "_origin": "import",
+                    "_actor": null,
+                    "_hash": "80ef774520b8b1cc8812e3ecab3859e374712d50a1157aac8c58a7d7b007fe2e",
+                    "_is_current": false,
+                    "_archived": false,
+                    "retained": true
+                  },
+                  {
+                    "_rev": "r_1",
+                    "_seq": 3,
+                    "_commit": "c2a0b49c60d58d72896c87d00ac1d674692f05a1",
+                    "_ts": "2026-09-27T10:02:30.000Z",
+                    "_origin": "observed",
+                    "_actor": null,
+                    "_hash": "2dd105b7c6b23e0fe6874189a9b0f5e79425fc1ab2ddaac065773d5af4939b02",
+                    "_is_current": true,
+                    "_archived": false,
+                    "retained": true
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "coverage": [
+              {
+                "from": "2026-09-27T10:01:00.000Z",
+                "to": null
+              }
+            ],
+            "alerts": [
+              {
+                "code": "git_merge_conflict",
+                "severity": "warning",
+                "message": "the merge of origin/omgbase at ddd84f0117e0bcbbf308a9d0fdd5bd815278f010 left 1 conflict(s): guide.md — both versions are in the vault; settle each with omg history remote resolve <path> --ours|--theirs",
+                "since": "2026-09-27T10:04:00.000Z",
+                "detail": {
+                  "base": "5c7986e1b281bedbf0936fd6dbd7b0db0b1b1ae6",
+                  "branch": "omgbase",
+                  "paths": [
+                    "guide.md"
+                  ],
+                  "remote": "origin",
+                  "remote_tip": "ddd84f0117e0bcbbf308a9d0fdd5bd815278f010"
+                }
+              }
+            ]
+          },
+          {
+            "hits": [
+              {
+                "_id": "d_0",
+                "_path": "/guide.md"
+              },
+              {
+                "_id": "d_1",
+                "_path": "/guide.remote-ddd84f0.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect",
+            "alerts": [
+              {
+                "code": "git_merge_conflict",
+                "severity": "warning",
+                "message": "the merge of origin/omgbase at ddd84f0117e0bcbbf308a9d0fdd5bd815278f010 left 1 conflict(s): guide.md — both versions are in the vault; settle each with omg history remote resolve <path> --ours|--theirs",
+                "since": "2026-09-27T10:04:00.000Z",
+                "detail": {
+                  "base": "5c7986e1b281bedbf0936fd6dbd7b0db0b1b1ae6",
+                  "branch": "omgbase",
+                  "paths": [
+                    "guide.md"
+                  ],
+                  "remote": "origin",
+                  "remote_tip": "ddd84f0117e0bcbbf308a9d0fdd5bd815278f010"
+                }
+              }
+            ]
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false,
+            "message": "no document with _id or _path \"/missing.md\"",
+            "data": {
+              "_path": "/missing.md"
+            }
+          },
+          {
+            "resolve": {
+              "path": "guide.md",
+              "choice": "ours",
+              "remaining": [],
+              "merged": "ac8556589bb9c8c5e12ddcb8f7c20f88fe4ae279",
+              "tip": "ac8556589bb9c8c5e12ddcb8f7c20f88fe4ae279"
+            }
+          },
+          {
+            "docs": [
+              {
+                "_id": "d_0",
+                "_path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_1",
+                "versions": [
+                  {
+                    "_rev": "r_0",
+                    "_seq": 2,
+                    "_commit": "5c7986e1b281bedbf0936fd6dbd7b0db0b1b1ae6",
+                    "_ts": "2026-09-27T10:01:00.000Z",
+                    "_origin": "import",
+                    "_actor": null,
+                    "_hash": "80ef774520b8b1cc8812e3ecab3859e374712d50a1157aac8c58a7d7b007fe2e",
+                    "_is_current": false,
+                    "_archived": false,
+                    "retained": true
+                  },
+                  {
+                    "_rev": "r_1",
+                    "_seq": 3,
+                    "_commit": "c2a0b49c60d58d72896c87d00ac1d674692f05a1",
+                    "_ts": "2026-09-27T10:02:30.000Z",
+                    "_origin": "observed",
+                    "_actor": null,
+                    "_hash": "2dd105b7c6b23e0fe6874189a9b0f5e79425fc1ab2ddaac065773d5af4939b02",
+                    "_is_current": true,
+                    "_archived": false,
+                    "retained": true
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "coverage": [
+              {
+                "from": "2026-09-27T10:01:00.000Z",
+                "to": null
+              }
+            ]
+          },
+          {
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 5,
+            "lastBatch": null,
+            "convergent": true,
+            "diskChecked": true,
+            "disk": {
+              "changed": 0,
+              "deleted": 0,
+              "untracked": 0,
+              "checked": true
+            },
+            "capabilities": {
+              "history": {
+                "state": "enabled",
+                "provider": "git",
+                "coverage_from": "2026-09-27T10:01:00.000Z",
+                "writer_requires": true,
+                "completeness": "every",
+                "remote": {
+                  "name": "origin",
+                  "branch": "omgbase",
+                  "state": "ahead",
+                  "pushed_through": 2
+                }
+              },
+              "semantic": {
+                "state": "disabled",
+                "model": null
+              }
+            }
           }
         ]
       }

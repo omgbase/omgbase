@@ -61,7 +61,7 @@ afterEach(() => {
 
 describe("the trailer codec", () => {
   it("renders the pinned order and parses it back, a path with spaces and a deleted document included", () => {
-    const t = { epoch: "ep_0", from: 3, to: 5, ts: "2026-10-20T10:02:00.000Z", commits: ["c_2", "c_3"], origin: "api", actor: "human:x", plan: "ab".repeat(32), docs: [{ docId: "d_0", path: "a b/c d.md", head: "r_1" }, { docId: "d_1", path: "gone.md", head: null }], rescan: null };
+    const t = { epoch: "ep_0", from: 3, to: 5, ts: "2026-10-20T10:02:00.000Z", commits: ["c_2", "c_3"], origin: "api", actor: "human:x", plan: "ab".repeat(32), docs: [{ docId: "d_0", path: "a b/c d.md", head: "r_1" }, { docId: "d_1", path: "gone.md", head: null }], rescan: null, merge: null, content: null };
     const msg = renderMessage("subject\nwith newline", t);
     expect(msg).toBe(`subject with newline\n\nomgbase-seq: ep_0:3-5\nomgbase-ts: 2026-10-20T10:02:00.000Z\nomgbase-commit: c_2\nomgbase-commit: c_3\nomgbase-origin: api\nomgbase-actor: human:x\nomgbase-plan: ${"ab".repeat(32)}\nomgbase-doc: d_0 a b/c d.md r_1\nomgbase-doc: d_1 gone.md -\n`);
     expect(parseMessage(msg)).toEqual(t);
@@ -109,12 +109,12 @@ describe("enable, checkpoint, read", () => {
     expect(log()).toContain("history enabled\nomgbase-seq: ep_0:3\n");
     expect(git().lsTree("refs/heads/omgbase")).toMatch(/a\.md\n.*b\.md\n$/s);
     // The row's state on the wire.
-    expect(capabilityStates(store, repoId).history).toEqual({ state: "enabled", provider: "git", coverage_from: "2026-10-20T10:01:00.000Z", writer_requires: true, completeness: "every" });
+    expect(capabilityStates(store, repoId).history).toEqual({ state: "enabled", provider: "git", coverage_from: "2026-10-20T10:01:00.000Z", writer_requires: true, completeness: "every", remote: null });
     // No native row: the recorder is absent on this composition and `captureFor` is null for the provider row anyway.
     write("a.md", "# A\n\nFirst, edited.\n", "2026-10-20T10:02:00.000Z");
     const cp = runProviderCheckpoint(store, repoId, "2026-10-20T10:03:00.000Z")!;
     expect(cp).toMatchObject({ committed: 1, from_seq: 4, to_seq: 4, rescanned: false });
-    expect(readGitCursor(store.db, repoId)).toEqual({ tip: cp.tip, epoch: "ep_0", seq: 4 });
+    expect(readGitCursor(store.db, repoId)).toEqual({ tip: cp.tip, epoch: "ep_0", seq: 4, pushed: null });
     const reader = historyReaderFor(store.db, repoId)!;
     const history = reader.docsHistory(repoId, { doc: "a.md" });
     expect(history.docs[0]!.versions.map((v) => [v._rev, v._seq, v._is_current, v.retained])).toEqual([["r_0", 3, false, true], ["r_2", 4, true, true]]);

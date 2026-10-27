@@ -4,10 +4,10 @@ import { join, resolve } from "node:path";
 import {
   evaluateRetention, retentionPolicy, exportHistory, attachArchive, detachArchive, listArchives, humanBytes, withWriterLock,
   enableHistory, disableHistory, purgeHistory, openCoverageFrom, historyProviderOf, readCapability, requireProvider, providerConfigOf, NATIVE_PROVIDER, HistoryProviderConflict,
-  RetentionPolicyError, NotASegment, StaleSegment, ARCHIVE_DIR,
-  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace, type HistoryLifecycleResult, type HistoryPurgeResult, type HistoryCheckpointResult,
+  RetentionPolicyError, NotASegment, StaleSegment, ARCHIVE_DIR, EngineError, fsVaultSink,
+  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace, type HistoryLifecycleResult, type HistoryPurgeResult, type HistoryCheckpointResult, type HistoryVaultSink, type ManifestRow,
 } from "@omgbase/core";
-import { parseCadence, GIT_PROVIDER } from "@omgbase/git-adapter";
+import { parseCadence, GIT_PROVIDER, GitHistoryProvider, PUSH_POLICIES, FETCH_POLICIES, rewrittenMessage, type FetchResult, type ReconcileMode, type ReconcileResult, type RemoteStatus, type ResolveResult } from "@omgbase/git-adapter";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -26,7 +26,9 @@ import { columns } from "../render.js";
 // `version.capabilities.history`, the `revisions.archived` attribute,
 // `capability_unavailable` and `revision_archived`.
 
-const SUBCOMMANDS = ["enable", "disable", "purge", "checkpoint", "plan", "export", "attach", "detach", "list"] as const;
+const SUBCOMMANDS = ["enable", "disable", "purge", "checkpoint", "push", "fetch", "remote", "plan", "export", "attach", "detach", "list"] as const;
+const REMOTE_SUBCOMMANDS = ["set", "unset", "status", "resolve", "reconcile"] as const;
+const RECONCILE_MODES: readonly ReconcileMode[] = ["rebase", "merge", "adopt", "fork"];
 const PROVIDERS = [NATIVE_PROVIDER, GIT_PROVIDER] as const;
 type Sub = (typeof SUBCOMMANDS)[number];
 
@@ -39,6 +41,12 @@ function renderCard(cli: Cli): number {
       "history disable",
       "history purge [--before <ts>]",
       "history checkpoint",
+      "history remote set --url <url> [--name <remote>] [--branch <b>] [--push off|on-checkpoint|periodic] [--fetch off|periodic|webhook]",
+      "history remote unset | status",
+      "history push",
+      "history fetch",
+      "history remote resolve <path> --ours|--theirs",
+      "history remote reconcile --rebase|--merge|--adopt|--fork",
       "history plan [--before <ts>] [--policy <json|@file>]",
       "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
       "history attach <file|dir>",
@@ -53,6 +61,13 @@ function renderCard(cli: Cli): number {
       ["--branch <b>", "(enable --provider git) the branch the commits go on (default omgbase)"],
       ["--cadence <c>", "(enable --provider git) every: one commit per feed row (default); <ms>: the rows pending when the worker runs fold into one commit"],
       ["checkpoint", "(git provider) run the checkpoint worker once: the feed rows since the branch tip become commits; prints { committed, from_seq, to_seq, tip, rescanned }"],
+      ["remote set", "(git provider) bind a remote: its URL (never with credentials — git resolves access through the host), the remote branch (default: the local one), when to push (off — the default; on-checkpoint — after every checkpoint that committed; periodic — on every freshness sweep) and when to fetch (off; periodic — on every sweep; webhook — reserved: an external caller runs history fetch)"],
+      ["remote unset", "(git provider) forget the remote, its tracking refs and its alerts"],
+      ["remote status", "(git provider) local refs only, no network: { remote, branch, local_tip, remote_tip, pushed_through, state: in-sync|ahead|behind|diverged|unknown }"],
+      ["push", "(git provider) push the branch and the ids ref — never --force; a rejected push raises git_remote_diverged and exits 1 (run fetch to merge, then push again)"],
+      ["fetch", "(git provider) fetch the remote branch: fast-forward (the remote's changes enter the vault as external edits), a tree-level three-way merge when both sides moved (one merge commit), conflicts kept as <stem>.remote-<sha>.md beside yours with git_merge_conflict raised, or git_remote_diverged when the remote was rewritten (push and fetch pause)"],
+      ["remote resolve", "(git provider) settle one conflict: --ours keeps your bytes, --theirs takes the remote's; the sidecar leaves; the merge commit is written when none remains"],
+      ["remote reconcile", "(git provider; only while git_remote_diverged or git_remote_forked is active) --rebase replays your unpushed checkpoints onto the new remote head (trailers preserved, the ids ref rebased alongside); --merge one merge commit keeping both histories; --adopt the remote's head becomes truth (its tree into the vault, your edits kept beside as <stem>.local-<sha>.md, your old tip on refs/omgbase/backup/<ts>); --fork pushes your branch as <branch>-omgbase-<ts> for a human to merge with git"],
       ["purge", "delete the repository's captured history — every commit, or with --before those before an instant (a live head's revision stays while capture is on); the recorder's id holds are released; the history tables are dropped when no repository is enabled and nothing is left; on a git-provider repository the bare repository and the worker's cursor are removed"],
       ["plan", "per document: revisions kept / to archive and the bytes only they reach; the policy in effect"],
       ["export", "write ONE new segment file (default dest .omgbase/archives/) holding the archived revisions' bodies; --prune then squashes the store and records the segment"],
@@ -323,7 +338,204 @@ function runCheckpoint(cli: Cli, args: string[]): number {
   if (result.rescanned) io.err(style.dim(`  rescanned: 1 commit at seq ${result.to_seq}, tip ${result.tip}`));
   else if (result.committed === 0) io.err(style.dim(`  nothing to checkpoint (tip ${result.tip ?? "none"})`));
   else io.err(style.dim(`  checkpointed ${plural(result.committed, "commit")} (seq ${result.from_seq}..${result.to_seq}), tip ${result.tip}`));
+  // `push: "on-checkpoint"` (cli 5.6): the push that followed, or why it did not.
+  if (result.push) io.err(style.dim("error" in result.push ? `  push failed: ${result.push.error}` : result.push.pushed ? `  pushed ${result.push.tip}${result.push.pushed_through === null ? "" : ` (through seq ${result.push.pushed_through})`}` : `  nothing to push`));
   return EXIT_OK;
+}
+
+// ---- the remote half (spec/cli §6 `history`, 5.6; spec/store §5.12 "The remote binding" …, 17.6 — Phase 6b) ----
+
+interface GitRepoContext {
+  ws: Workspace;
+  repoId: string;
+  rootPath: string | null;
+  row: ManifestRow;
+  provider: GitHistoryProvider;
+}
+
+/** The selected repository as a git-provider repository, or the usage errors every remote verb shares. */
+function gitContext(cli: Cli, verb: string): GitRepoContext {
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+  const row = readCapability(ws.store.db, repo.repoId, "history");
+  const provider = historyProviderOf(row);
+  if (provider === NATIVE_PROVIDER) throw new CliUsageError(`history ${verb} is the git provider's: this repository's history is native (captured in every commit)`, `run '${cli.prog} history enable --provider git' after '${cli.prog} history disable' to switch`);
+  if (!row || row.state !== "enabled") throw new CliUsageError(`history is disabled for this repository — enable it with '${cli.prog} history enable --provider ${provider}'`);
+  const p = requireProvider(ws.store.db, repo.repoId, provider);
+  if (!(p instanceof GitHistoryProvider)) throw new CliUsageError(`history ${verb} is the git provider's (this repository's provider is ${provider})`);
+  return { ws, repoId: repo.repoId, rootPath: repo.rootPath, row, provider: p };
+}
+
+/** The vault the remote half writes inbound content into: the repository's filesystem root through the observe path. A sourceless repository has none. */
+function vaultOf(cli: Cli, ctx: GitRepoContext, verb: string): HistoryVaultSink {
+  if (ctx.rootPath === null) throw new CliUsageError(`history ${verb} needs a repository with a filesystem source: inbound content is written into its root as external edits`, `attach one with '${cli.prog} source add <dir> --repo <slug>'`);
+  return fsVaultSink(ctx.ws.store, ctx.repoId, ctx.rootPath);
+}
+
+/** A thrown `EngineError` of the remote half (`git_remote_diverged`, `git_merge_conflict`) renders as the engine error it is (exit 1); anything else propagates. */
+function remoteError(e: unknown): never {
+  if (e instanceof EngineError) throw new EngineErrorLike(e.code, e.message, { data: e.data, retriable: e.retriable });
+  throw e;
+}
+
+function runRemote(cli: Cli, args: string[]): number {
+  const [sub, ...rest] = args;
+  if (sub === undefined || !(REMOTE_SUBCOMMANDS as readonly string[]).includes(sub)) throw new CliUsageError(`history remote takes one of ${REMOTE_SUBCOMMANDS.join("|")}${sub === undefined ? "" : ` (got ${JSON.stringify(sub)})`}`, `run '${cli.prog} history --help'`);
+  switch (sub as (typeof REMOTE_SUBCOMMANDS)[number]) {
+    case "set": return runRemoteSet(cli, rest);
+    case "unset": return runRemoteUnset(cli, rest);
+    case "status": return runRemoteStatus(cli, rest);
+    case "resolve": return runRemoteResolve(cli, rest);
+    case "reconcile": return runRemoteReconcile(cli, rest);
+  }
+}
+
+function runRemoteSet(cli: Cli, args: string[]): number {
+  const { values } = parseArgs({ args, allowPositionals: false, options: { url: { type: "string" }, name: { type: "string" }, branch: { type: "string" }, push: { type: "string" }, fetch: { type: "string" } } });
+  if (values.url === undefined) throw new CliUsageError("history remote set requires --url <url>");
+  if (values.push !== undefined && !(PUSH_POLICIES as readonly string[]).includes(values.push)) throw new CliUsageError(`--push must be one of ${PUSH_POLICIES.join("|")} (got ${JSON.stringify(values.push)})`);
+  if (values.fetch !== undefined && !(FETCH_POLICIES as readonly string[]).includes(values.fetch)) throw new CliUsageError(`--fetch must be one of ${FETCH_POLICIES.join("|")} (got ${JSON.stringify(values.fetch)})`);
+  const ctx = gitContext(cli, "remote set");
+  let config;
+  try {
+    config = withWriterLock(ctx.ws.omgbaseDir, () => ctx.provider.remoteSet(ctx.repoId, providerConfigOf(ctx.row), { url: values.url!, ...(values.name !== undefined ? { name: values.name } : {}), ...(values.branch !== undefined ? { branch: values.branch } : {}), ...(values.push !== undefined ? { push: values.push } : {}), ...(values.fetch !== undefined ? { fetch: values.fetch } : {}) }));
+  } catch (e) {
+    // The binding's own refusals (credentials in the URL, a bad name, branch or policy) are usage errors.
+    if (e instanceof Error && !(e instanceof EngineError) && /credentials|not a remote name|not a branch name|--push|--fetch|--url/.test(e.message)) throw new CliUsageError(e.message);
+    throw e;
+  }
+  const r = config.remote!;
+  if (cli.flags.mode !== "human") return emitMachine(cli, { remote: r });
+  cli.io.err(cli.style.dim(`  remote ${r.name} → ${r.url} (branch ${r.branch}, push ${r.push}, fetch ${r.fetch})`));
+  return EXIT_OK;
+}
+
+function runRemoteUnset(cli: Cli, args: string[]): number {
+  parseArgs({ args, allowPositionals: false, options: {} });
+  const ctx = gitContext(cli, "remote unset");
+  const had = (ctx.row.config.remote as { name?: string } | null | undefined)?.name ?? null;
+  withWriterLock(ctx.ws.omgbaseDir, () => ctx.provider.remoteUnset(ctx.repoId, providerConfigOf(ctx.row)));
+  if (cli.flags.mode !== "human") return emitMachine(cli, { remote: null });
+  cli.io.err(cli.style.dim(had === null ? "  no remote was bound" : `  remote ${had} unbound`));
+  return EXIT_OK;
+}
+
+function renderRemoteStatus(cli: Cli, s: RemoteStatus): number {
+  if (cli.flags.mode !== "human") return emitMachine(cli, s);
+  const { io, style } = cli;
+  const rows: string[][] = [
+    [style.dim("remote"), `${s.remote}/${s.branch}`],
+    [style.dim("state"), s.state],
+    [style.dim("local tip"), s.local_tip ?? "—"],
+    [style.dim("remote tip"), s.remote_tip ?? "—"],
+    [style.dim("pushed through"), s.pushed_through === null ? "—" : `seq ${s.pushed_through}`],
+  ];
+  for (const line of columns(rows, [{}, {}])) io.out(`  ${line}`);
+  return EXIT_OK;
+}
+
+function runRemoteStatus(cli: Cli, args: string[]): number {
+  parseArgs({ args, allowPositionals: false, options: {} });
+  const ctx = gitContext(cli, "remote status");
+  if (!ctx.row.config.remote) throw new CliUsageError("no remote is bound to this repository's git history", `bind one with '${cli.prog} history remote set --url <url>'`);
+  return renderRemoteStatus(cli, ctx.provider.remoteStatus(ctx.repoId, providerConfigOf(ctx.row)));
+}
+
+function runPush(cli: Cli, args: string[]): number {
+  parseArgs({ args, allowPositionals: false, options: {} });
+  const ctx = gitContext(cli, "push");
+  if (!ctx.row.config.remote) throw new CliUsageError("no remote is bound to this repository's git history", `bind one with '${cli.prog} history remote set --url <url>'`);
+  let r;
+  try {
+    r = withWriterLock(ctx.ws.omgbaseDir, () => ctx.provider.push(ctx.repoId, providerConfigOf(ctx.row)));
+  } catch (e) {
+    remoteError(e);
+  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, r);
+  const remote = ctx.row.config.remote as { name: string; branch: string };
+  const ids = r.ids === "rejected" ? " (the ids ref was rejected: the remote's identity record is another engine's)" : "";
+  cli.io.err(cli.style.dim(r.pushed ? `  pushed ${r.tip} to ${remote.name}/${remote.branch}${r.pushed_through === null ? "" : ` (through seq ${r.pushed_through})`}${ids}` : `  nothing to push (${remote.name}/${remote.branch} at ${r.tip ?? "none"})${ids}`));
+  return EXIT_OK;
+}
+
+function renderFetch(cli: Cli, remote: { name: string; branch: string }, f: FetchResult): number {
+  if (f.state === "diverged") {
+    // Detect, stop, alert (spec/store §5.12 "Divergence"): the verb itself fails so the operator sees it; the alert line follows.
+    throw new EngineErrorLike("git_remote_diverged", rewrittenMessage(remote.name, remote.branch, f.remote_tip, f.old_remote_tip ?? null), { data: { remote: remote.name, branch: remote.branch, local_tip: f.tip, remote_tip: f.remote_tip, old_remote_tip: f.old_remote_tip ?? null }, retriable: true });
+  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, f);
+  const { io, style } = cli;
+  switch (f.state) {
+    case "nothing": io.err(style.dim(`  nothing to fetch from ${remote.name}/${remote.branch}${f.remote_tip ? ` (at ${f.remote_tip})` : ""}`)); break;
+    case "fast-forward": io.err(style.dim(`  fast-forwarded to ${f.tip}: ${plural(f.applied.length, "file")} written into the vault`)); break;
+    case "merged": io.err(style.dim(`  merged ${remote.name}/${remote.branch} at ${f.remote_tip}: ${plural(f.applied.length, "file")} written into the vault, merge commit ${f.tip}`)); break;
+    case "conflict": io.err(style.dim(`  ${plural(f.conflicts.length, "conflict")}: ${f.conflicts.join(", ")} — the remote's versions are beside yours; settle each with ${cli.prog} history remote resolve <path> --ours|--theirs`)); break;
+  }
+  return EXIT_OK;
+}
+
+function runFetch(cli: Cli, args: string[]): number {
+  parseArgs({ args, allowPositionals: false, options: {} });
+  const ctx = gitContext(cli, "fetch");
+  if (!ctx.row.config.remote) throw new CliUsageError("no remote is bound to this repository's git history", `bind one with '${cli.prog} history remote set --url <url>'`);
+  const vault = vaultOf(cli, ctx, "fetch");
+  let f: FetchResult;
+  try {
+    f = withWriterLock(ctx.ws.omgbaseDir, () => ctx.provider.fetch(ctx.repoId, providerConfigOf(ctx.row), vault));
+  } catch (e) {
+    remoteError(e);
+  }
+  return renderFetch(cli, ctx.row.config.remote as { name: string; branch: string }, f);
+}
+
+function runRemoteResolve(cli: Cli, args: string[]): number {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { ours: { type: "boolean" }, theirs: { type: "boolean" } } });
+  const path = positionals[0];
+  if (!path) throw new CliUsageError("history remote resolve requires a <path>");
+  if (Boolean(values.ours) === Boolean(values.theirs)) throw new CliUsageError("history remote resolve takes exactly one of --ours or --theirs");
+  const ctx = gitContext(cli, "remote resolve");
+  const vault = vaultOf(cli, ctx, "remote resolve");
+  const storage = path.replace(/^\/+/, "");
+  let r: ResolveResult;
+  try {
+    r = withWriterLock(ctx.ws.omgbaseDir, () => ctx.provider.resolve(ctx.repoId, providerConfigOf(ctx.row), vault, storage, values.ours ? "ours" : "theirs"));
+  } catch (e) {
+    if (e instanceof Error && !(e instanceof EngineError) && /no merge conflict is pending|is not a pending conflict/.test(e.message)) throw new CliUsageError(e.message);
+    remoteError(e);
+  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, r);
+  cli.io.err(cli.style.dim(`  resolved ${r.path} (--${r.choice}); ${plural(r.remaining.length, "conflict")} remaining${r.merged ? `; merge commit ${r.merged}` : ""}`));
+  return EXIT_OK;
+}
+
+function renderReconcile(cli: Cli, r: ReconcileResult): number {
+  if (cli.flags.mode !== "human") return emitMachine(cli, r);
+  const { io, style } = cli;
+  const conflicts = r.conflicts.length > 0 ? `; ${plural(r.conflicts.length, "conflict")}: ${r.conflicts.join(", ")} (settle each with ${cli.prog} history remote resolve <path> --ours|--theirs)` : "";
+  const applied = `${plural(r.applied.length, "file")} written into the vault`;
+  switch (r.mode) {
+    case "rebase": io.err(style.dim(`  rebased ${plural(r.rewritten, "commit")} onto the remote's head, tip ${r.tip}; the previous tip is kept on refs/omgbase/backup; ${applied}${conflicts}`)); break;
+    case "merge": io.err(style.dim(r.rewritten === 1 ? `  merged the remote's head: merge commit ${r.tip}; the previous tip is kept on refs/omgbase/backup; ${applied}` : `  merge pending: ${applied}${conflicts}`)); break;
+    case "adopt": io.err(style.dim(`  adopted the remote's head ${r.tip}; the previous tip is kept on refs/omgbase/backup; ${applied}${conflicts}`)); break;
+    case "fork": io.err(style.dim(`  pushed the engine's branch as ${r.fork}; merge it with git, then run ${cli.prog} history remote reconcile --adopt`)); break;
+  }
+  return EXIT_OK;
+}
+
+function runRemoteReconcile(cli: Cli, args: string[]): number {
+  const { values } = parseArgs({ args, allowPositionals: false, options: { rebase: { type: "boolean" }, merge: { type: "boolean" }, adopt: { type: "boolean" }, fork: { type: "boolean" } } });
+  const modes = RECONCILE_MODES.filter((m) => (values as Record<string, boolean | undefined>)[m]);
+  if (modes.length !== 1) throw new CliUsageError(`history remote reconcile takes exactly one of ${RECONCILE_MODES.map((m) => `--${m}`).join(" | ")}`);
+  const ctx = gitContext(cli, "remote reconcile");
+  const vault = vaultOf(cli, ctx, "remote reconcile");
+  let r: ReconcileResult;
+  try {
+    r = withWriterLock(ctx.ws.omgbaseDir, () => ctx.provider.reconcile(ctx.repoId, providerConfigOf(ctx.row), vault, modes[0]!));
+  } catch (e) {
+    if (e instanceof Error && !(e instanceof EngineError) && /is not diverged|no remote is bound/.test(e.message)) throw new CliUsageError(e.message);
+    remoteError(e);
+  }
+  return renderReconcile(cli, r);
 }
 
 function runEnable(cli: Cli, args: string[]): number {
@@ -372,6 +584,9 @@ function runHistory(cli: Cli, args: string[]): number {
     case "disable": return runDisable(cli, rest);
     case "purge": return runPurge(cli, rest);
     case "checkpoint": return runCheckpoint(cli, rest);
+    case "push": return runPush(cli, rest);
+    case "fetch": return runFetch(cli, rest);
+    case "remote": return runRemote(cli, rest);
     case "plan": return runPlan(cli, rest);
     case "export": return runExport(cli, rest);
     case "attach": return runAttach(cli, rest);
@@ -380,4 +595,4 @@ function runHistory(cli: Cli, args: string[]): number {
   }
 }
 
-export const cmdHistory: Command = { name: "history", summary: "Capture: enable/disable/purge per repository (native or git provider), checkpoint; retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };
+export const cmdHistory: Command = { name: "history", summary: "Capture: enable/disable/purge per repository (native or git provider), checkpoint, remote set/status, push/fetch, resolve/reconcile; retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };

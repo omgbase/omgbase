@@ -339,12 +339,13 @@ export interface IdentityClaims {
 
 /**
  * The configuration an alternative history provider's manifest row carries
- * (spec/store §3.1 `capabilities.config`, §5.12 — Phase 6a). The git provider's:
+ * (spec/store §3.1 `capabilities.config`, §5.12 — Phase 6a/6b). The git provider's:
  * `{ provider: "git", git_dir, branch, cadence, ids_ref, remote }` — `git_dir`
  * relative to the workspace root, `cadence` `"every"` (one git commit per feed
  * row) or `{ debounce_ms }` (the rows pending when the worker runs fold into one
- * commit), `ids_ref` the RESERVED per-document id-map ref (nothing is written to
- * it in 6a), `remote` null in 6a (6b wires it). A native row's config is `{}`:
+ * commit), `ids_ref` the per-document id-map ref the worker writes beside the
+ * branch (6b), `remote` the remote binding `{ name, url, branch, push, fetch }`
+ * or null (6b: nothing is automatic until one is bound). A native row's config is `{}`:
  * `provider` absent reads `"native"`.
  */
 export interface HistoryProviderConfig {
@@ -352,13 +353,59 @@ export interface HistoryProviderConfig {
   [key: string]: unknown;
 }
 
-/** `history checkpoint`'s receipt (spec/store §5.12, spec/cli §6): the git commits written, the feed span they cover, the branch tip, whether the run was a rescan. */
+/** `history checkpoint`'s receipt (spec/store §5.12, spec/cli §6): the git commits written, the feed span they cover, the branch tip, whether the run was a rescan; `push` (17.6, Phase 6b) only when the remote binding's `push` is `on-checkpoint` — the push that followed, or the error that stopped it. */
 export interface HistoryCheckpointResult {
   committed: number;
   from_seq: number;
   to_seq: number;
   tip: string | null;
   rescanned: boolean;
+  push?: HistoryPushResult | { error: string };
+}
+
+/** `history push`'s receipt (spec/store §5.12 "Push", 17.6): whether anything was pushed, the tip the remote now holds and the feed seq it covers (`pushed_through`). */
+export interface HistoryPushResult {
+  pushed: boolean;
+  tip: string | null;
+  pushed_through: number | null;
+}
+
+/**
+ * The relation of the engine's branch to the last known remote tip (spec/store
+ * §5.12 "Remote status", 17.6): `in-sync` (the same commit), `ahead` (the
+ * remote tip is an ancestor of ours — a push is due), `behind` (ours is an
+ * ancestor of the remote's — a fetch fast-forwards), `diverged` (neither — the
+ * remote was rewritten, or both sides moved), `unknown` (no remote tip is
+ * known yet — nothing pushed or fetched).
+ */
+export type HistoryRemoteState = "in-sync" | "ahead" | "behind" | "diverged" | "unknown";
+
+/** `version.capabilities.history.remote` (spec/surface §4, 6.5): the binding and where the two sides stand, null when no remote is bound. */
+export interface HistoryRemoteSummary {
+  name: string;
+  branch: string;
+  state: HistoryRemoteState;
+  pushed_through: number | null;
+}
+
+/**
+ * The vault, as the remote half of a history provider writes INBOUND content
+ * into it (spec/store §5.12 "Fetch", 17.6 — the design's "through the existing
+ * source/reconciliation boundary"): a batch of `{ path, content }` (`null` =
+ * remove) applied as EXTERNAL EDITS — the composition layer binds it to the
+ * repository's filesystem root and the observe path (`fsVaultSink`), a fixture
+ * runner to `observeBatch` directly — so identities are matched by the ordinary
+ * reconcile, the feed records the change and no row is written by the provider.
+ */
+export interface HistoryVaultSink {
+  apply(changes: readonly { path: string; content: Buffer | null }[], ts: string): void;
+}
+
+/** What the freshness sweep's remote steps did (spec/sync §4.3 steps 7–8, 4.6): the push (`periodic`), the fetch (`periodic`), or `paused` while a divergence alert stands. */
+export interface HistoryRemoteSyncResult {
+  pushed: HistoryPushResult | { error: string } | null;
+  fetched: Record<string, unknown> | { error: string } | null;
+  paused: boolean;
 }
 
 /** Can the provider run on this host? (`git` on PATH for the git provider.) */
@@ -394,6 +441,10 @@ export interface HistoryProvider {
   purge(repoId: string, config: HistoryProviderConfig): { removed: boolean; path: string };
   /** The checkpoint worker, once: read the feed from the cursor and write the provider's commits (spec/store §5.12). */
   checkpoint(repoId: string, config: HistoryProviderConfig, opts?: { now?: string }): HistoryCheckpointResult;
+  /** (17.6, Phase 6b) The remote binding's summary for `version` — null when the row binds no remote. Reads local refs only, never the network. */
+  remoteSummary?(repoId: string, config: HistoryProviderConfig): HistoryRemoteSummary | null;
+  /** (17.6, Phase 6b) The freshness sweep's steps 7–8 (spec/sync §4.3): push when the binding says `periodic`, fetch when it says `periodic`; both paused while a divergence stands; null when no remote is bound. */
+  remoteSync?(repoId: string, config: HistoryProviderConfig, opts: { now: string; vault: HistoryVaultSink }): HistoryRemoteSyncResult | null;
   /** Release process resources (the store is closing). */
   close?(): void;
 }

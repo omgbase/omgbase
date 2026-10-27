@@ -16,7 +16,10 @@
 //   history off + embedder off     init --no-embedder; source add --no-history   (the core alone)
 //   git history + embedder off     init --no-embedder; source add --no-history; history enable --provider git; history checkpoint;
 //                                  git gc — the bare repository's bytes (`git count-objects -v`: size + size-pack) printed
-//                                  beside the database (Phase 6a), so the comparison with native history is honest
+//                                  beside the database (Phase 6a), so the comparison with native history is honest; then
+//                                  (Phase 6b) `history remote set --url <tmp>/remote.git; history push` to a LOCAL bare
+//                                  remote and the remote's packed bytes after `git gc` printed too (they should equal the
+//                                  local packed size: the same objects, the content branch and the ids ref)
 //   history on  + embedder on      init --embedder <cmd>; source add; embed drain          (only with --embedder)
 //   history off + embedder on      init --embedder <cmd>; source add --no-history; embed drain
 //
@@ -94,8 +97,7 @@ function dbBytes(ws) {
 }
 
 /** The bare repository's bytes after `git gc` (`count-objects -v`: `size` + `size-pack`, KiB → bytes), and its object count. */
-function gitBytes(ws) {
-  const gitDir = join(ws, ".omgbase", "git");
+function gitBytes(ws, gitDir = join(ws, ".omgbase", "git")) {
   const env = { PATH: process.env.PATH, GIT_DIR: gitDir, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
   spawnSync("git", ["gc", "--quiet"], { env, encoding: "utf8" });
   const out = spawnSync("git", ["count-objects", "-v"], { env, encoding: "utf8" }).stdout ?? "";
@@ -114,12 +116,23 @@ function measure(name, { history, embed, git = false }) {
   omg(ws, ["source", "add", corpus, "--repo", "real", "-y", ...(history ? [] : ["--no-history"])]);
   let gitMs = null;
   let gitRepo = null;
+  let remoteRepo = null;
+  let pushMs = null;
   if (git) {
     const t2 = performance.now();
     omg(ws, ["history", "enable", "--provider", "git"]);
     omg(ws, ["history", "checkpoint"]);
     gitMs = performance.now() - t2;
     gitRepo = gitBytes(ws);
+    // Phase 6b: a LOCAL bare remote (a path URL — no network) receives the content branch and the ids ref; its packed
+    // size after `git gc` should equal the local one (the same objects).
+    const remote = join(tmp, `${name.replace(/[^a-z0-9]+/gi, "-")}-remote.git`);
+    spawnSync("git", ["init", "--quiet", "--bare", "--initial-branch", "omgbase", remote], { encoding: "utf8", env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } });
+    const t3 = performance.now();
+    omg(ws, ["history", "remote", "set", "--url", remote]);
+    omg(ws, ["history", "push"]);
+    pushMs = performance.now() - t3;
+    remoteRepo = gitBytes(ws, remote);
   }
   const importMs = performance.now() - t0;
   let drainMs = null;
@@ -135,9 +148,10 @@ function measure(name, { history, embed, git = false }) {
   const cats = Object.fromEntries(size.categories.map((c) => [c.name, { bytes: c.bytes, rows: c.rows }]));
   const tables = Object.fromEntries(size.categories.flatMap((c) => c.tables.map((t) => [t.name, { bytes: t.bytes, rows: t.rows }])));
   const total = bytes.db + bytes.wal;
-  console.error(`  ${name.padEnd(28)} db ${(total / 1e6).toFixed(2)} MB  ${(total / md.bytes).toFixed(1)}×  history ${((cats.history?.bytes ?? 0) / 1e6).toFixed(2)} MB  search ${((cats.search?.bytes ?? 0) / 1e6).toFixed(2)} MB${gitRepo ? `  git ${(gitRepo.bytes / 1e6).toFixed(2)} MB (${gitRepo.commits} commits, ${gitRepo.objects} objects)` : ""}  (${(importMs / 1000).toFixed(1)} s import${drainMs !== null ? `, ${(drainMs / 1000).toFixed(1)} s drain` : ""}${gitMs !== null ? `, ${(gitMs / 1000).toFixed(1)} s git` : ""})`);
+  console.error(`  ${name.padEnd(28)} db ${(total / 1e6).toFixed(2)} MB  ${(total / md.bytes).toFixed(1)}×  history ${((cats.history?.bytes ?? 0) / 1e6).toFixed(2)} MB  search ${((cats.search?.bytes ?? 0) / 1e6).toFixed(2)} MB${gitRepo ? `  git ${(gitRepo.bytes / 1e6).toFixed(2)} MB (${gitRepo.commits} commits, ${gitRepo.objects} objects)` : ""}${remoteRepo ? `  remote ${(remoteRepo.bytes / 1e6).toFixed(2)} MB (${remoteRepo.objects} objects)` : ""}  (${(importMs / 1000).toFixed(1)} s import${drainMs !== null ? `, ${(drainMs / 1000).toFixed(1)} s drain` : ""}${gitMs !== null ? `, ${(gitMs / 1000).toFixed(1)} s git` : ""}${pushMs !== null ? `, ${(pushMs / 1000).toFixed(1)} s push` : ""})`);
   return {
     name, history, embed, git, file: bytes, total, amplification: total / md.bytes, categories: cats, tables, git_repo: gitRepo, git_ms: gitMs === null ? null : Math.round(gitMs),
+    remote_repo: remoteRepo, push_ms: pushMs === null ? null : Math.round(pushMs),
     docs: typeof counts?.docs === "number" ? counts.docs : (tables.docs?.rows ?? null), blocks: tables.blocks?.rows ?? null,
     import_ms: Math.round(importMs), drain_ms: drainMs === null ? null : Math.round(drainMs), drained,
   };
@@ -156,9 +170,9 @@ const runs = [
 const mb = (b) => (b / 1e6).toFixed(2);
 const cat = (r, name) => (r.categories[name] ? mb(r.categories[name].bytes) : "");
 const share = (r, name) => (r.categories[name] && r.total > 0 ? `${((100 * r.categories[name].bytes) / r.total).toFixed(1)} %` : "");
-let table = `| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync | git repo MB |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
+let table = `| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync | git repo MB | remote MB |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
 for (const r of runs) {
-  table += `| ${r.name} | ${r.docs ?? ""} | ${r.blocks ?? ""} | ${mb(md.bytes)} | ${mb(r.total)} | ${r.amplification.toFixed(1)}× | ${cat(r, "content")} (${share(r, "content")}) | ${cat(r, "identity")} | ${cat(r, "recovery")} | ${cat(r, "history")} (${share(r, "history")}) | ${cat(r, "search")} (${share(r, "search")}) | ${cat(r, "sync")} | ${r.git_repo ? `${mb(r.git_repo.bytes)} (${r.git_repo.commits} commits)` : "—"} |\n`;
+  table += `| ${r.name} | ${r.docs ?? ""} | ${r.blocks ?? ""} | ${mb(md.bytes)} | ${mb(r.total)} | ${r.amplification.toFixed(1)}× | ${cat(r, "content")} (${share(r, "content")}) | ${cat(r, "identity")} | ${cat(r, "recovery")} | ${cat(r, "history")} (${share(r, "history")}) | ${cat(r, "search")} (${share(r, "search")}) | ${cat(r, "sync")} | ${r.git_repo ? `${mb(r.git_repo.bytes)} (${r.git_repo.commits} commits)` : "—"} | ${r.remote_repo ? `${mb(r.remote_repo.bytes)} (${r.remote_repo.objects} objects)` : "—"} |\n`;
 }
 const base = runs[0];
 const off = runs[1];
@@ -166,6 +180,7 @@ const gitRun = runs[2];
 table += `\nHistory off saves ${mb(base.total - off.total)} MB (${((100 * (base.total - off.total)) / base.total).toFixed(0)} % of the history-on database; ${base.amplification.toFixed(1)}× → ${off.amplification.toFixed(1)}× the Markdown).\n`;
 if (gitRun?.git_repo) {
   table += `The git provider keeps the same import as ${mb(gitRun.git_repo.bytes)} MB of packed objects beside a ${mb(gitRun.total)} MB database (database + git ${mb(gitRun.total + gitRun.git_repo.bytes)} MB, ${((gitRun.total + gitRun.git_repo.bytes) / md.bytes).toFixed(1)}× the Markdown) against ${mb(base.categories.history?.bytes ?? 0)} MB of native history rows.\n`;
+  if (gitRun.remote_repo) table += `Pushed to a local bare remote (the content branch and the ids ref), the remote holds ${mb(gitRun.remote_repo.bytes)} MB of packed objects (${gitRun.remote_repo.objects} objects) — ${gitRun.remote_repo.bytes === gitRun.git_repo.bytes ? "equal to" : `against`} the local ${mb(gitRun.git_repo.bytes)} MB; the bind + push took ${((gitRun.push_ms ?? 0) / 1000).toFixed(1)} s.\n`;
 }
 if (runs.length === 5) {
   const [, , , onE, offE] = runs;

@@ -2,9 +2,11 @@ import type { HistoryProviderConfig } from "@omgbase/core";
 
 // The git provider's manifest config (spec/store §3.1 `capabilities.config`,
 // §5.12): what `history enable --provider git` writes and every later call
-// reads. Pinned keys and defaults; `remote` is null in 6a (6b wires it) and the
-// per-document id-map ref `ids_ref` is RESERVED — named here and in the spec,
-// nothing is written to it yet.
+// reads. Pinned keys and defaults. `remote` (17.6, Phase 6b) is the remote
+// binding `history remote set` writes — `{ name, url, branch, push, fetch }`,
+// null until one is bound; nothing is automatic until it is (`push`/`fetch`
+// default `off`). The per-document id-map ref `ids_ref` is written by the
+// worker since 6b (one commit chain beside the content branch).
 
 export const GIT_PROVIDER = "git";
 export const DEFAULT_GIT_DIR = ".omgbase/git";
@@ -13,11 +15,35 @@ export const IDS_REF = "refs/omgbase/ids";
 
 export type GitCadence = "every" | { debounce_ms: number };
 
+export type GitPushPolicy = "off" | "on-checkpoint" | "periodic";
+export type GitFetchPolicy = "off" | "periodic" | "webhook";
+export const PUSH_POLICIES: readonly GitPushPolicy[] = ["off", "on-checkpoint", "periodic"];
+export const FETCH_POLICIES: readonly GitFetchPolicy[] = ["off", "periodic", "webhook"];
+export const DEFAULT_REMOTE_NAME = "origin";
+
+/**
+ * The remote binding (spec/store §5.12 "The remote binding", 17.6): `name` the
+ * git remote's name in the bare repository (`origin`), `url` what `git` is
+ * given — never with credentials (`refuseCredentials`) — `branch` the remote
+ * branch (the local branch's name by default), `push` when the engine pushes
+ * (`off`; `on-checkpoint` after every checkpoint that committed; `periodic` on
+ * every freshness sweep), `fetch` when it fetches (`off`; `periodic` on every
+ * sweep; `webhook` RESERVED — an external caller runs `history fetch`).
+ */
 export interface GitRemoteConfig {
   name: string;
+  url: string;
   branch: string;
-  push: "off" | "on-checkpoint" | "periodic";
-  fetch: "off" | "periodic" | "webhook";
+  push: GitPushPolicy;
+  fetch: GitFetchPolicy;
+}
+
+export interface GitRemoteOptions {
+  url: string;
+  name?: string;
+  branch?: string;
+  push?: string;
+  fetch?: string;
 }
 
 export interface GitHistoryConfig extends HistoryProviderConfig {
@@ -54,6 +80,38 @@ export function gitConfigFor(opts: GitEnableOptions): GitHistoryConfig {
   return { provider: "git", git_dir: DEFAULT_GIT_DIR, branch, cadence, ids_ref: IDS_REF, remote: null };
 }
 
+/** A git remote name (`git check-ref-format`'s rules, roughly): no spaces, no `..`, no leading `-`, no `/` at either end. */
+export function validRemoteName(name: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(name) && !name.startsWith("-") && !name.includes("..") && !name.endsWith(".lock");
+}
+
+/** The remote binding `history remote set` writes, from the verb's options (defaults: `origin`, the local branch, `off`, `off`); the URL refused when it carries credentials. */
+export function remoteConfigFor(opts: GitRemoteOptions, localBranch: string): GitRemoteConfig {
+  if (typeof opts.url !== "string" || opts.url.trim() === "") throw new Error("--url is required (a git URL or a local path; credentials never enter omgbase)");
+  refuseCredentials(opts.url, "the remote URL");
+  const name = opts.name ?? DEFAULT_REMOTE_NAME;
+  if (!validRemoteName(name)) throw new Error(`not a remote name: ${JSON.stringify(name)}`);
+  const branch = opts.branch ?? localBranch;
+  if (!/^[A-Za-z0-9._/-]+$/.test(branch) || branch.startsWith("-") || branch.includes("..") || branch.endsWith("/") || branch.endsWith(".lock")) throw new Error(`not a branch name: ${JSON.stringify(branch)}`);
+  const push = opts.push ?? "off";
+  if (!(PUSH_POLICIES as readonly string[]).includes(push)) throw new Error(`--push must be one of ${PUSH_POLICIES.join("|")} (got ${JSON.stringify(push)})`);
+  const fetch = opts.fetch ?? "off";
+  if (!(FETCH_POLICIES as readonly string[]).includes(fetch)) throw new Error(`--fetch must be one of ${FETCH_POLICIES.join("|")} (got ${JSON.stringify(fetch)})`);
+  return { name, url: opts.url, branch, push: push as GitPushPolicy, fetch: fetch as GitFetchPolicy };
+}
+
+/** A row's `remote` member read back: the binding when it is well-formed, else null (a row without one, or one an older engine wrote). */
+export function readRemoteConfig(v: unknown): GitRemoteConfig | null {
+  if (typeof v !== "object" || v === null) return null;
+  const r = v as Partial<GitRemoteConfig>;
+  if (typeof r.name !== "string" || typeof r.url !== "string" || typeof r.branch !== "string") return null;
+  return {
+    name: r.name, url: r.url, branch: r.branch,
+    push: (PUSH_POLICIES as readonly string[]).includes(r.push as string) ? (r.push as GitPushPolicy) : "off",
+    fetch: (FETCH_POLICIES as readonly string[]).includes(r.fetch as string) ? (r.fetch as GitFetchPolicy) : "off",
+  };
+}
+
 /** Parse the `--cadence every|<ms>` flag. */
 export function parseCadence(raw: string): GitCadence {
   if (raw === "every") return "every";
@@ -72,6 +130,6 @@ export function readGitConfig(config: HistoryProviderConfig): GitHistoryConfig {
     branch: typeof c.branch === "string" && c.branch !== "" ? c.branch : DEFAULT_BRANCH,
     cadence,
     ids_ref: typeof c.ids_ref === "string" ? c.ids_ref : IDS_REF,
-    remote: c.remote ?? null,
+    remote: readRemoteConfig(c.remote),
   };
 }

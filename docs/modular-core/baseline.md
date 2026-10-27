@@ -1219,6 +1219,31 @@ same as the TypeScript CLI's on an identical workspace under the conformance sea
 clock) — the two engines were driven side by side through enable, `meta`/`new`/`append`/`mv`/`rm`, checkpoint, the
 `git.commit` fault and its replay, and their `git log --format=%H%n%s%n%(trailers)` outputs are byte-identical.
 
+### The remote half (Phase 6b, 2026-10-26; TS CLI at store 17.6)
+
+The git row of `scripts/baseline/real-corpus.mjs` now also binds a LOCAL bare remote (`history remote set --url
+<tmp>/<run>-remote.git`, a path URL — no network), runs `history push` and prints the remote's packed bytes after `git gc`
+beside the local ones. This repository's `docs/` again (44 Markdown files, 0.97 MB, 4,221 blocks; run
+`mc-real-corpus-DBHkZZ`):
+
+| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync | git repo MB | remote MB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| history on, embedder off | 44 | 4221 | 0.97 | 9.94 | 10.2× | 5.35 (53.8 %) | 0.38 | 0.01 | 3.47 (34.9 %) | 0.59 (5.9 %) | 0.15 | — | — |
+| history off, embedder off | 44 | 4221 | 0.97 | 6.42 | 6.6× | 5.32 (83.0 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.60 (9.4 %) | 0.14 | — | — |
+| git history, embedder off | 44 | 4221 | 0.97 | 6.43 | 6.6× | 5.32 (82.8 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.61 (9.5 %) | 0.15 | 0.58 (1 commit, 96 objects) | 0.58 (96 objects) |
+
+Two things moved against the 6a row. **The local repository grew from 0.35 MB / 48 objects to 0.58 MB / 96 objects**: the
+same 44 content blobs, tree and commit, plus the identity record 6b writes beside them — one id-map blob per document
+under `.omgbase/ids/` on `refs/omgbase/ids` (canonical JSON of every block's id, parent, ordinal and hash — 4,221 block
+rows for 44 documents), their tree objects and the ids commit. Identities cost about two thirds of the content's packed
+size on this corpus (0.23 MB for 0.35 MB of Markdown blobs): JSON with 64-hex hashes compresses less well than prose. The
+database is unchanged (6.43 MB — the ids ref is git's, not SQLite's). **The remote holds exactly the local bytes**:
+0.58 MB, 96 objects — the content branch and the ids ref pushed as they are (the push sends the same objects; nothing is
+re-encoded) — so a clone of both refs is a complete copy of content and identities. The enable + checkpoint took 2.6 s
+(the 44 content `hash-object` spawns, the 44 id-map spawns and two commits), the bind + push 1.3 s. The native history
+row (3.47 MB) still buys block lineage the git provider has no equivalent for; the 6b comparison is 0.58 MB of packed
+objects — content AND identities — against it.
+
 ### Qualification of two local 16.x workspaces (2026-10-26, `scripts/qualify/migrate-copy.mjs`)
 
 Two real workspaces at store 16.0.3 were qualified from COPIES (database + WAL + the files; the originals were read and

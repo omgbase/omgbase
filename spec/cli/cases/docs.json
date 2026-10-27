@@ -744,7 +744,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":19,\"blocks\":315,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21},\"openEdges\":69,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\",\"provider\":\"native\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"writer_requires\":true,\"completeness\":\"every\"},\"semantic\":{\"state\":\"disabled\",\"model\":null}}},\"watcher\":\"none\",\"embedQueue\":57}\n"
+            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":19,\"blocks\":315,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21},\"openEdges\":69,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\",\"provider\":\"native\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"writer_requires\":true,\"completeness\":\"every\",\"remote\":null},\"semantic\":{\"state\":\"disabled\",\"model\":null}}},\"watcher\":\"none\",\"embedQueue\":57}\n"
           }
         }
       ]

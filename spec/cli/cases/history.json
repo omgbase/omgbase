@@ -1924,7 +1924,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "usage: unknown history subcommand 'prune' (enable|disable|purge|checkpoint|plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
+        "stderr": "usage: unknown history subcommand 'prune' (enable|disable|purge|checkpoint|push|fetch|remote|plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
       }
     },
     {
@@ -2119,7 +2119,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\",\"remote\":\"<null>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
           }
         }
       ]
@@ -2230,7 +2230,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\",\"remote\":\"<null>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
           }
         }
       ]
@@ -2294,7 +2294,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\",\"remote\":\"<null>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
           }
         },
         {
@@ -2691,7 +2691,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\",\"remote\":\"<null>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
           }
         },
         {
@@ -2985,6 +2985,976 @@
         "exit": 2,
         "stdout": "",
         "stderr": "usage: --branch and --cadence go with --provider git\n"
+      }
+    },
+    {
+      "name": "history-git-remote-set-push-fetch",
+      "notes": "§6 `history remote set|status|unset`, `history push`, `history fetch` (cli 5.6, store 17.6 §5.12 Phase 6b) on an `empty` workspace with a git-provider repository and the case's REMOTE — a second bare repository at `<workspace>/remote.git` the `remote` device creates (`remote: {}`) and commits on (`remote: { ts, files }`, identity `remote <remote@fixture>`). `remote status` before a binding is a usage error; `remote set --url … --json` prints the binding (`push`/`fetch` default `off`); `remote status --json` reads `unknown` (no remote tip known), human the five lines; `history push --json` pushes the branch and the ids ref (`pushed_through` the tip's seq, `ids: pushed`), then status `in-sync`; a second push has nothing to do. The remote then gains c.md: `history fetch --json` fast-forwards — c.md enters the vault through the filesystem source (`ls` lists it, `cat` reads the remote's bytes) and the branch follows the remote's tip; `history checkpoint --stale --json` right after commits nothing (the no-op rule: the bytes are already in the tree). `remote unset` forgets the binding; a push without one is the usage error naming the fix.",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "status"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: no remote is bound to this repository's git history\n  hint: bind one with 'omg history remote set --url <url>'\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set",
+            "--url",
+            "<workspace>/remote.git",
+            "--json"
+          ],
+          "remote": {},
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"remote\":{\"name\":\"origin\",\"url\":\"<workspace>/remote.git\",\"branch\":\"omgbase\",\"push\":\"off\",\"fetch\":\"off\"}}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"remote\":\"origin\",\"branch\":\"omgbase\",\"local_tip\":\"b5ef3a6f7bd35caf21372d3a71784e5911e70537\",\"remote_tip\":null,\"pushed_through\":null,\"state\":\"unknown\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "status"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  remote          origin/omgbase\n  state           unknown\n  local tip       b5ef3a6f7bd35caf21372d3a71784e5911e70537\n  remote tip      —\n  pushed through  —\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"pushed\":true,\"tip\":\"b5ef3a6f7bd35caf21372d3a71784e5911e70537\",\"pushed_through\":3,\"ids\":\"pushed\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"remote\":\"origin\",\"branch\":\"omgbase\",\"local_tip\":\"b5ef3a6f7bd35caf21372d3a71784e5911e70537\",\"remote_tip\":\"b5ef3a6f7bd35caf21372d3a71784e5911e70537\",\"pushed_through\":3,\"state\":\"in-sync\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  nothing to push (origin/omgbase at b5ef3a6f7bd35caf21372d3a71784e5911e70537)\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "fetch",
+            "--json"
+          ],
+          "remote": {
+            "ts": "2026-09-27T00:01:00.000Z",
+            "message": "add c.md on the remote",
+            "files": {
+              "c.md": "# C\n\nWritten on the remote.\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"fast-forward\",\"remote_tip\":\"5f748b0e35c1985a39a3ad964a90af11563e93d5\",\"tip\":\"5f748b0e35c1985a39a3ad964a90af11563e93d5\",\"applied\":[\"c.md\"],\"conflicts\":[]}\n"
+          }
+        },
+        {
+          "argv": [
+            "ls"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "/a.md  2 blocks  0s ago\n/b.md  2 blocks  0s ago\n/c.md  2 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "/c.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "# C\n\nWritten on the remote.\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":0,\"from_seq\":4,\"to_seq\":4,\"tip\":\"5f748b0e35c1985a39a3ad964a90af11563e93d5\",\"rescanned\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"remote\":\"origin\",\"branch\":\"omgbase\",\"local_tip\":\"5f748b0e35c1985a39a3ad964a90af11563e93d5\",\"remote_tip\":\"5f748b0e35c1985a39a3ad964a90af11563e93d5\",\"pushed_through\":3,\"state\":\"in-sync\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "unset"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  remote origin unbound\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: no remote is bound to this repository's git history\n  hint: bind one with 'omg history remote set --url <url>'\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-git-remote-conflict-resolve",
+      "notes": "§6 `history fetch` with a CONFLICT and `history remote resolve` (cli 5.6): after the push the remote edits a.md and so do we (`meta`, then `history checkpoint --stale`); `history fetch --json` reports `state: conflict` with the remote's version written beside ours as `a.remote-<short sha>.md` (the vault lists it), the `git_merge_conflict` alert printed after the verb as `alert[warning] git_merge_conflict: …` (stderr pinned); a push while it stands is `error[git_merge_conflict]` (exit 1); `history remote resolve /a.md --theirs --json` takes the remote's bytes, drops the sidecar and writes the merge commit (`merged` the sha, `remaining` empty); `cat /a.md` reads the remote's bytes; `resolve` again is the usage error; `history push` lands.",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set",
+            "--url",
+            "<workspace>/remote.git"
+          ],
+          "remote": {},
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  remote origin → <workspace>/remote.git (branch omgbase, push off, fetch off)\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  pushed b5ef3a6f7bd35caf21372d3a71784e5911e70537 to origin/omgbase (through seq 3)\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/a.md",
+            "--set",
+            "layer=draft",
+            "--actor",
+            "human:spec",
+            "--stale"
+          ],
+          "remote": {
+            "ts": "2026-09-27T00:01:00.000Z",
+            "message": "edit a.md on the remote",
+            "files": {
+              "a.md": "# A\n\nFirst paragraph, the remote's.\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "d_0\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":1,\"from_seq\":4,\"to_seq\":4,\"tip\":\"86c6ec650ae7b3cd2d08f0945cd491b9afa0bc08\",\"rescanned\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "fetch",
+            "--json"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"conflict\",\"remote_tip\":\"9647e8594260a5269024a36cbea626272add00e1\",\"tip\":\"86c6ec650ae7b3cd2d08f0945cd491b9afa0bc08\",\"applied\":[\"a.remote-9647e85.md\"],\"conflicts\":[\"a.md\"]}\n",
+            "stderr": "alert[warning] git_merge_conflict: the merge of origin/omgbase at 9647e8594260a5269024a36cbea626272add00e1 left 1 conflict(s): a.md — both versions are in the vault; settle each with omg history remote resolve <path> --ours|--theirs\n"
+          }
+        },
+        {
+          "argv": [
+            "ls"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "/a.md                 2 blocks  0s ago\n/a.remote-9647e85.md  2 blocks  0s ago\n/b.md                 2 blocks  0s ago\n",
+            "stderr": "alert[warning] git_merge_conflict: the merge of origin/omgbase at 9647e8594260a5269024a36cbea626272add00e1 left 1 conflict(s): a.md — both versions are in the vault; settle each with omg history remote resolve <path> --ours|--theirs\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[git_merge_conflict]: the merge of origin/omgbase at 9647e8594260a5269024a36cbea626272add00e1 left 1 conflict(s): a.md — both versions are in the vault; settle each with omg history remote resolve <path> --ours|--theirs\n  {\n    \"base\": \"b5ef3a6f7bd35caf21372d3a71784e5911e70537\",\n    \"branch\": \"omgbase\",\n    \"paths\": [\n      \"a.md\"\n    ],\n    \"remote\": \"origin\",\n    \"remote_tip\": \"9647e8594260a5269024a36cbea626272add00e1\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "resolve",
+            "/a.md",
+            "--theirs",
+            "--json"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"path\":\"a.md\",\"choice\":\"theirs\",\"remaining\":[],\"merged\":\"a58677e56639a7df500edd237d35e8312fdee50b\",\"tip\":\"a58677e56639a7df500edd237d35e8312fdee50b\"}\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "/a.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "# A\n\nFirst paragraph, the remote's.\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "resolve",
+            "/a.md",
+            "--ours"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: no merge conflict is pending for this repository\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  pushed a58677e56639a7df500edd237d35e8312fdee50b to origin/omgbase (through seq 7)\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-git-remote-diverged-reconcile-rebase",
+      "notes": "§6 `history fetch` on a REWRITTEN remote and `history remote reconcile --rebase` (cli 5.6, store 17.6 §5.12 \"Divergence\"): after the push the remote gains c.md (fetched: fast-forward, pushed past), then the device rewrites it (`parent: tip^`: c.md's other version replaces the commit); we checkpoint a local `meta` edit. `history fetch` is `error[git_remote_diverged]` (exit 1: detect, stop, alert — the alert line follows); `history push` refuses with the same code (paused); `history remote status --json` reads `diverged`; `reconcile` without a mode and with two are usage errors; `reconcile --rebase --json` replays our checkpoint onto the remote's head (`rewritten` 1, `backup` our previous tip, c.md's rewritten bytes written into the vault, no conflicts) and clears the alert; `history push --json` lands; a reconcile afterwards is the usage error (not diverged).",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set",
+            "--url",
+            "<workspace>/remote.git"
+          ],
+          "remote": {},
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "fetch",
+            "--json"
+          ],
+          "remote": {
+            "ts": "2026-09-27T00:01:00.000Z",
+            "message": "add c.md",
+            "files": {
+              "c.md": "# C\n\nFirst remote version.\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"fast-forward\",\"remote_tip\":\"7f81aab699ffb7be284ff67a5e770bb8f9b4d614\",\"tip\":\"7f81aab699ffb7be284ff67a5e770bb8f9b4d614\",\"applied\":[\"c.md\"],\"conflicts\":[]}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/a.md",
+            "--set",
+            "layer=draft",
+            "--actor",
+            "human:spec",
+            "--stale"
+          ],
+          "remote": {
+            "ts": "2026-09-27T00:02:00.000Z",
+            "message": "rewrite c.md",
+            "parent": "tip^",
+            "files": {
+              "c.md": "# C\n\nRewritten remote version.\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "d_0\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":1,\"from_seq\":5,\"to_seq\":5,\"tip\":\"3de8d87329f071aab1c153fc8efdf1c297719798\",\"rescanned\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "fetch"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[git_remote_diverged]: the remote origin/omgbase was rewritten: its tip 332d1cdb7e48190dc4b80d15f7347ea2bb6e5824 does not descend from the last known 7f81aab699ffb7be284ff67a5e770bb8f9b4d614 — push and fetch are paused while checkpoints continue locally; choose omg history remote reconcile --rebase | --merge | --adopt | --fork\n  {\n    \"remote\": \"origin\",\n    \"branch\": \"omgbase\",\n    \"local_tip\": \"3de8d87329f071aab1c153fc8efdf1c297719798\",\n    \"remote_tip\": \"332d1cdb7e48190dc4b80d15f7347ea2bb6e5824\",\n    \"old_remote_tip\": \"7f81aab699ffb7be284ff67a5e770bb8f9b4d614\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[git_remote_diverged]: the remote origin/omgbase was rewritten: its tip 332d1cdb7e48190dc4b80d15f7347ea2bb6e5824 does not descend from the last known 7f81aab699ffb7be284ff67a5e770bb8f9b4d614 — push and fetch are paused while checkpoints continue locally; choose omg history remote reconcile --rebase | --merge | --adopt | --fork\n  {\n    \"remote\": \"origin\",\n    \"branch\": \"omgbase\",\n    \"local_tip\": \"3de8d87329f071aab1c153fc8efdf1c297719798\",\n    \"remote_tip\": \"332d1cdb7e48190dc4b80d15f7347ea2bb6e5824\",\n    \"old_remote_tip\": \"7f81aab699ffb7be284ff67a5e770bb8f9b4d614\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"remote\":\"origin\",\"branch\":\"omgbase\",\"local_tip\":\"3de8d87329f071aab1c153fc8efdf1c297719798\",\"remote_tip\":\"332d1cdb7e48190dc4b80d15f7347ea2bb6e5824\",\"pushed_through\":4,\"state\":\"diverged\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "reconcile"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history remote reconcile takes exactly one of --rebase | --merge | --adopt | --fork\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "reconcile",
+            "--rebase",
+            "--merge"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history remote reconcile takes exactly one of --rebase | --merge | --adopt | --fork\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "reconcile",
+            "--rebase",
+            "--json"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"mode\":\"rebase\",\"tip\":\"464e8c2502066de61df9b181b5c111c7853dfeb0\",\"backup\":\"3de8d87329f071aab1c153fc8efdf1c297719798\",\"rewritten\":1,\"fork\":null,\"applied\":[\"c.md\"],\"conflicts\":[]}\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "/c.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "# C\n\nRewritten remote version.\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"pushed\":true,\"tip\":\"464e8c2502066de61df9b181b5c111c7853dfeb0\",\"pushed_through\":5,\"ids\":\"pushed\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "reconcile",
+            "--adopt"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: the remote is not diverged: history remote reconcile applies only while the git_remote_diverged (or git_remote_forked) alert is active\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-git-remote-push-on-checkpoint",
+      "notes": "§6 `history remote set --push on-checkpoint` (cli 5.6): the checkpoint that commits pushes by itself — `history checkpoint --stale --json` after a `meta` write carries `push: { pushed, tip, pushed_through, ids }`, human a second `  pushed <sha> (through seq <n>)` line; a checkpoint with nothing to commit carries no `push`. `version --json` by shape shows `capabilities.history.remote` as an object (`name`, `branch`, `state`, `pushed_through` strings/number), the human `version` its line. `doctor --json`'s capabilities row carries the binding in `config.remote`.",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set",
+            "--url",
+            "<workspace>/remote.git",
+            "--push",
+            "on-checkpoint",
+            "--fetch",
+            "periodic",
+            "--json"
+          ],
+          "remote": {},
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"remote\":{\"name\":\"origin\",\"url\":\"<workspace>/remote.git\",\"branch\":\"omgbase\",\"push\":\"on-checkpoint\",\"fetch\":\"periodic\"}}\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/b.md",
+            "--set",
+            "layer=draft",
+            "--actor",
+            "human:spec",
+            "--stale"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "d_1\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":1,\"from_seq\":4,\"to_seq\":4,\"tip\":\"b9a8dda90c1ec413be197e51371e77e3b4a78ee8\",\"rescanned\":false,\"push\":{\"pushed\":true,\"tip\":\"b9a8dda90c1ec413be197e51371e77e3b4a78ee8\",\"pushed_through\":4,\"ids\":\"pushed\"}}\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/a.md",
+            "--set",
+            "layer=draft",
+            "--actor",
+            "human:spec",
+            "--stale"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "d_0\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  checkpointed 1 commit (seq 5..5), tip 3f5e2a7b4f8bcf0f1d6823e13d54d5979d2f34b2\n  pushed 3f5e2a7b4f8bcf0f1d6823e13d54d5979d2f34b2 (through seq 5)\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "checkpoint",
+            "--stale",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"committed\":0,\"from_seq\":5,\"to_seq\":5,\"tip\":\"3f5e2a7b4f8bcf0f1d6823e13d54d5979d2f34b2\",\"rescanned\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "version",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"provider\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\",\"completeness\":\"<string>\",\"remote\":{\"name\":\"<string>\",\"branch\":\"<string>\",\"state\":\"<string>\",\"pushed_through\":\"<number>\"}},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"remote\":\"origin\",\"branch\":\"omgbase\",\"local_tip\":\"3f5e2a7b4f8bcf0f1d6823e13d54d5979d2f34b2\",\"remote_tip\":\"3f5e2a7b4f8bcf0f1d6823e13d54d5979d2f34b2\",\"pushed_through\":5,\"state\":\"in-sync\"}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-git-remote-bad-arguments",
+      "notes": "§6 the usage errors of the remote verbs (cli 5.6): a URL with credentials (`omgbase never stores credentials`), a bad `--push`/`--fetch` policy, `remote set` without `--url`, an unknown `remote` subcommand, `resolve` without a path or with both/neither choice, `fetch`/`push` on a disabled repository, and — on the alchemy repository, whose history is native — `history push` naming the switch.",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nFirst paragraph.\n",
+        "vault/b.md": "---\ntitle: B\n---\n\n# B\n\nOnly paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "-y",
+            "--no-history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture ← <workspace>/vault  2 files\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--provider",
+            "git"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set",
+            "--url",
+            "https://user:secret@example.com/notes.git"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: the remote URL carries credentials (a user or password in the URL) — omgbase never stores credentials; let git resolve access through the host (ssh keys, a credential helper)\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set",
+            "--url",
+            "<workspace>/remote.git",
+            "--push",
+            "always"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: --push must be one of off|on-checkpoint|periodic (got \"always\")\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set",
+            "--url",
+            "<workspace>/remote.git",
+            "--fetch",
+            "hourly"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: --fetch must be one of off|periodic|webhook (got \"hourly\")\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "set"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history remote set requires --url <url>\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "frob"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history remote takes one of set|unset|status|resolve|reconcile (got \"frob\")\n  hint: run 'omg history --help'\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "resolve"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history remote resolve requires a <path>\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "resolve",
+            "/a.md"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history remote resolve takes exactly one of --ours or --theirs\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "remote",
+            "resolve",
+            "/a.md",
+            "--ours",
+            "--theirs"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history remote resolve takes exactly one of --ours or --theirs\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "fetch"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: no remote is bound to this repository's git history\n  hint: bind one with 'omg history remote set --url <url>'\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "disable"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "push"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: history is disabled for this repository — enable it with 'omg history enable --provider git'\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-push-on-native",
+      "notes": "§6: `history push` on the alchemy repository (native history) is the usage error naming the switch, as `checkpoint` is.",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "push"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: history push is the git provider's: this repository's history is native (captured in every commit)\n  hint: run 'omg history enable --provider git' after 'omg history disable' to switch\n"
       }
     }
   ]

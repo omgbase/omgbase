@@ -6,7 +6,10 @@
 // (`omgbase-ts`), the feed row(s) folded (`omgbase-commit`), the provenance
 // (`omgbase-origin`, `omgbase-actor`, `omgbase-plan`), one `omgbase-doc` per
 // touched document (`<doc_id> <path> <head>`, a deleted document's head `-`)
-// and, on a rescan, `omgbase-rescan: <epoch>:<head>`.
+// and, on a rescan, `omgbase-rescan: <epoch>:<head>`. Since 17.6 (Phase 6b) a
+// merge commit carries `omgbase-merge: <remote tip>` and a commit of the ids
+// ref `omgbase-content: <content commit sha>` (the content commit it records
+// the identities of).
 
 export interface DocTrailer {
   docId: string;
@@ -29,6 +32,10 @@ export interface CommitTrailers {
   docs: DocTrailer[];
   /** `omgbase-rescan: <epoch>:<head>` — the commit is a full snapshot */
   rescan: { epoch: string; head: number } | null;
+  /** `omgbase-merge: <remote tip>` (17.6) — the commit merged the remote's tip */
+  merge: string | null;
+  /** `omgbase-content: <sha>` (17.6) — on the ids ref: the content commit this ids commit belongs to */
+  content: string | null;
 }
 
 export const TRAILER_PREFIX = "omgbase-";
@@ -55,6 +62,8 @@ export function renderMessage(subject: string, t: CommitTrailers): string {
   if (t.actor !== null) lines.push(`omgbase-actor: ${t.actor}`);
   if (t.plan !== null) lines.push(`omgbase-plan: ${t.plan}`);
   if (t.rescan !== null) lines.push(`omgbase-rescan: ${t.rescan.epoch}:${t.rescan.head}`);
+  if (t.merge !== null) lines.push(`omgbase-merge: ${t.merge}`);
+  if (t.content !== null) lines.push(`omgbase-content: ${t.content}`);
   for (const d of t.docs) lines.push(`omgbase-doc: ${d.docId} ${d.path} ${d.head ?? "-"}`);
   // A subject never holds a newline (the feed's `reason` may: it is flattened).
   const subjectLine = subject.replace(/\s*\n\s*/g, " ").trim();
@@ -81,6 +90,8 @@ export function parseMessage(message: string): CommitTrailers | null {
   let plan: string | null = null;
   const docs: DocTrailer[] = [];
   let rescan: CommitTrailers["rescan"] = null;
+  let merge: string | null = null;
+  let content: string | null = null;
   for (const line of lines.slice(1)) {
     const m = /^omgbase-([a-z]+): (.*)$/.exec(line);
     if (!m) continue;
@@ -93,6 +104,8 @@ export function parseMessage(message: string): CommitTrailers | null {
       case "actor": actor = value.trim(); break;
       case "plan": plan = value.trim(); break;
       case "rescan": { const r = parseSeq(value); if (r) rescan = { epoch: r.epoch, head: r.to }; break; }
+      case "merge": merge = value.trim(); break;
+      case "content": content = value.trim(); break;
       case "doc": {
         // `<doc_id> <path> <head>`: the id is the first token, the head the last; the path is everything between (it may hold spaces).
         const first = value.indexOf(" ");
@@ -106,5 +119,5 @@ export function parseMessage(message: string): CommitTrailers | null {
     }
   }
   if (!seq) return null;
-  return { epoch: seq.epoch, from: seq.from, to: seq.to, ts: ts ?? "", commits, origin, actor, plan, docs, rescan };
+  return { epoch: seq.epoch, from: seq.from, to: seq.to, ts: ts ?? "", commits, origin, actor, plan, docs, rescan, merge, content };
 }

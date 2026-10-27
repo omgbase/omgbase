@@ -1,7 +1,9 @@
 import type { Store } from "../core/store/store.js";
 import { historyProviderOf, NATIVE_PROVIDER, providerConfigOf, readCapability, requireProvider } from "../core/store/manifest.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
-import type { HistoryCheckpointResult } from "../core/capabilities/types.js";
+import type { HistoryCheckpointResult, HistoryRemoteSyncResult, HistoryVaultSink } from "../core/capabilities/types.js";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { sha256 } from "../core/hash.js";
 import { processCheckpoint, type BatchResult } from "./checkpoint.js";
 import { nodeFs, type SyncFs } from "./fs-util.js";
@@ -197,6 +199,14 @@ export function freshnessSweep(
   // never fails for it.
   runProviderCheckpoint(store, repoId, opts.ts);
 
+  // Steps 7–8 (Phase 6b; spec/store §5.12 "Push"/"Fetch", spec/sync §4.3): the
+  // remote half of an attached provider — push when the binding says
+  // `periodic`, fetch (and merge the inbound tree through the vault sink below)
+  // when it says `periodic`; both pause while a divergence alert stands. Best
+  // effort like step 6: a remote that cannot be reached leaves its alert and the
+  // sweep itself never fails for it.
+  runProviderRemoteSync(store, repoId, fsVaultSink(store, repoId, rootPath, fs), opts.ts);
+
   return {
     ...result,
     scanned: snapshot.length,
@@ -223,6 +233,56 @@ export function runProviderCheckpoint(store: Store, repoId: string, now?: string
     if (e instanceof CapabilityUnavailable) return null;
     throw e;
   }
+}
+
+/**
+ * spec/sync §4.3 steps 7–8 (Phase 6b): the attached provider's remote sync for a repository whose row is `enabled`
+ * and binds a remote — null when none is attached, bound or usable (the provider's own alert stands; writes continue).
+ */
+export function runProviderRemoteSync(store: Store, repoId: string, vault: HistoryVaultSink, now?: string): HistoryRemoteSyncResult | null {
+  const row = readCapability(store.db, repoId, "history");
+  if (!row || row.state !== "enabled" || historyProviderOf(row) === NATIVE_PROVIDER) return null;
+  try {
+    const provider = requireProvider(store.db, repoId, historyProviderOf(row), now);
+    if (!provider.remoteSync) return null;
+    return provider.remoteSync(repoId, providerConfigOf(row), { now: now ?? new Date().toISOString(), vault });
+  } catch (e) {
+    if (e instanceof CapabilityUnavailable) return null;
+    throw e;
+  }
+}
+
+/**
+ * The vault sink of a filesystem-backed repository (spec/store §5.12 "Fetch"; `HistoryVaultSink`): inbound content a
+ * provider's remote half brings in is written as FILES under the repository's root — exactly what a human edit is —
+ * then ingested as one observed batch (`processCheckpoint`: the echo gate, the reconcile, the feed row), with the
+ * stat cache refreshed so the next sweep does not re-hash them. The provider never writes a row. `fs` is the sweep's
+ * seam for the reads; the writes are `node:fs` (a fixture over an in-memory filesystem binds `observeBatch` instead).
+ */
+export function fsVaultSink(store: Store, repoId: string, rootPath: string, fs: SyncFs = nodeFs): HistoryVaultSink {
+  return {
+    apply(changes, ts) {
+      if (changes.length === 0) return;
+      for (const c of changes) {
+        const abs = join(rootPath, c.path);
+        if (c.content === null) rmSync(abs, { force: true });
+        else {
+          mkdirSync(dirname(abs), { recursive: true });
+          writeFileSync(abs, c.content);
+        }
+      }
+      const result = processCheckpoint(store, repoId, rootPath, changes.map((c) => ({ path: c.path })), { fs, ts });
+      const failed = new Set(result.failed);
+      for (const c of changes) {
+        if (failed.has(c.path)) continue;
+        if (c.content === null) store.db.prepare("DELETE FROM file_stats WHERE repo_id = ? AND path = ?").run(repoId, c.path);
+        else {
+          const st = fs.stat(rootPath, c.path);
+          if (st) recordStat(store, repoId, c.path, st, sha256(c.content));
+        }
+      }
+    },
+  };
 }
 
 /** spec/sync §4.3 step 5: the repair pass over the alert's documents; returns the repaired paths in path order. */
