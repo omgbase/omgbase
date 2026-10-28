@@ -348,6 +348,15 @@ function readsThrough(cli, ws) {
 
 // ---- (d) the diff ----------------------------------------------------------------------------
 
+/** One snapshot property row (a JSON string) with a COMPUTED `$key` re-spelled
+ * `_key` — migration 18's rename, so a pre-18 BEFORE compares against a post-18
+ * AFTER. Any other row is returned untouched. */
+export function foldComputedSigil(row) {
+  const r = JSON.parse(row);
+  if (r.source !== "computed" || typeof r.key !== "string" || !r.key.startsWith("$")) return row;
+  return JSON.stringify({ ...r, key: `_${r.key.slice(1)}` }, Object.keys(r));
+}
+
 /** The §7 step-4 invariants between two snapshots; each entry `{ kind, ...where }`. */
 export function diffSnapshots(before, after, expected = {}) {
   const diff = [];
@@ -383,7 +392,16 @@ export function diffSnapshots(before, after, expected = {}) {
     for (const r of x) if (!ys.has(r)) diff.push({ kind: `${kind}_missing`, row: JSON.parse(r) });
     for (const r of y) if (!xs.has(r)) diff.push({ kind: `${kind}_extra`, row: JSON.parse(r) });
   };
-  setDiff("property", before.properties, after.properties);
+  // MIGRATION 18 (spec/store §3.4 step 18, spec/properties 2.0) re-keys the
+  // computed rows: `$title`/`$tags` → `_title`/`_tags`, every other column of
+  // the row — and the row's VALUE — unchanged. It is the one migration that
+  // moves a property key, so crossing the boundary the rows are compared with
+  // the sigil folded; without this every qualification of a pre-18 database
+  // reports two entries per computed row forever. Scoped exactly as the
+  // migration is: `source = 'computed'` only, so an authored `$x` key still
+  // has to come through byte for byte.
+  const crosses18 = before.version < 18 && (after.schema ?? after.version ?? 0) >= 18;
+  setDiff("property", crosses18 ? before.properties.map(foldComputedSigil) : before.properties, after.properties);
   setDiff("link", before.links, after.links);
   if (after.claims < before.claims) diff.push({ kind: "claims", before: before.claims, after: after.claims });
   // Every pre-migration pending row is still present, or its document's file now holds the bytes the row owed (materialized).

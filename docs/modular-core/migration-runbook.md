@@ -119,7 +119,7 @@ The script does this. What it does, so the report reads right:
 | `hash`, `path`, `head`, `doc_missing`, `doc_extra` | a live document's identity, path, head token or `file_hash` |
 | `created_at`, `updated_at` | a 17.x document's timestamps (not compared from a 16.x BEFORE) |
 | `block_missing`, `block_extra`, `block_doc`, `block_parent`, `block_ordinal`, `block_hash` | the id / parent / order / content map of the live blocks |
-| `property_missing`, `property_extra`, `link_missing`, `link_extra` | a property or link row |
+| `property_missing`, `property_extra`, `link_missing`, `link_extra` | a property or link row. **Step 18's computed re-key is NOT one of these:** crossing a pre-18 BEFORE to an 18 AFTER the property rows are compared with the computed sigil folded (`$title` ≡ `_title`), scoped as the migration is to `source = 'computed'`, so an authored `$x` key must still come through byte for byte |
 | `claims` | fewer id claims after than before |
 | `pending_lost` | a pre-migration pending row neither present nor materialized |
 | `bytes_hash` | AFTER's rendered bytes do not hash to the document's `file_hash` (the hash-level byte check, always on). A legacy document (§2 c′) is exactly this diff until `--repair` / `omg sync` repairs it; the migration names them (`after.ts.legacy_bytes`) |
@@ -154,12 +154,13 @@ fall back to hash-level (`before.through` says so) — the refusal check does
 not render and still works. Not ours to fix; the TypeScript 0.27.x `omg` is
 the better `--before-bin`.
 
-| engine / version | schema 16 (store 16.x) | schema 17 (store 17.0–17.3) |
-| --- | --- | --- |
-| TypeScript `omgbase` ≤ 0.27 (store 16.x) | read / write | **refused** ("newer than this build") |
-| TypeScript `omgbase` ≥ 0.28 (store 17.x, this repository) | **migrates on open** to 17 (one-way; needs the history module — a `core`/`semantic` composition refuses with "upgraded by an engine that carries the history module"); rebuilds the FTS index; names the legacy documents (`legacy_bytes`) | read / write; a 17.0–17.3 database runs the finish steps on first open (17.3: tombstoned block rows deleted, with their FTS entries since 17.4; 17.4: the fidelity check behind the signature of legacy rows) |
-| Rust `omgbase` ≥ 0.28 (store 17.x) | migrates on open (the twin of the same step) | read / write (the finish steps with their twins) |
-| any engine, a database with a HIGHER `user_version` | — | refused: an unknown version never writes |
+| engine / version | schema 16 (store 16.x) | schema 17 (store 17.0–17.6) | schema 18 (store 18.0) |
+| --- | --- | --- | --- |
+| TypeScript `omgbase` ≤ 0.27 (store 16.x) | read / write | **refused** ("newer than this build") | **refused** |
+| TypeScript `omgbase` ≥ 0.28, < 0.30.1 (store 17.x) | **migrates on open** to 17 (one-way; needs the history module — a `core`/`semantic` composition refuses with "upgraded by an engine that carries the history module"); rebuilds the FTS index; names the legacy documents (`legacy_bytes`) | read / write; a 17.0–17.3 database runs the finish steps on first open (17.3: tombstoned block rows deleted, with their FTS entries since 17.4; 17.4: the fidelity check behind the signature of legacy rows) | **refused** |
+| Rust `omgbase` ≥ 0.28, < 0.31.2 (store 17.x) | migrates on open (the twin of the same step) | read / write (the finish steps with their twins) | **refused** |
+| TypeScript `omgbase` ≥ 0.30.1 / Rust ≥ 0.31.2 (store 18.0) | migrates 16 → 18 | **migrates on open** to 18 (step 18: the computed property rows are re-keyed `$title`/`$tags` → `_title`/`_tags` and each `prop_id` re-derived, `source = 'computed'` only — an authored `$x` key is untouched; no DDL change) | read / write |
+| any engine, a database with a HIGHER `user_version` | — | — | refused: an unknown version never writes |
 
 The four compositions of either engine open the same 17 database: a
 composition without the history module refuses writes on a repository whose

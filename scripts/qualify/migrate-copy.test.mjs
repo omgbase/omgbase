@@ -15,14 +15,14 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COMPOSITION_VERBS, cliOf, copyWorkspace, diffSnapshots, parseArgs, qualify, refusalOf, sizeTable, snapshotRows } from "./migrate-copy.mjs";
+import { COMPOSITION_VERBS, cliOf, copyWorkspace, diffSnapshots, foldComputedSigil, parseArgs, qualify, refusalOf, sizeTable, snapshotRows } from "./migrate-copy.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(join(ROOT, "packages", "core", "package.json"));
 const Database = require("better-sqlite3");
 const TS_MAIN = join(ROOT, "packages", "cli", "dist", "src", "main.js");
 const RUST_BIN = ["target/release/omgbase", "target/debug/omgbase"].map((p) => join(ROOT, p)).find((p) => existsSync(p)) ?? null;
-const { DDL, HISTORY_DDL, SYNC_DDL } = await import(join(ROOT, "packages", "core", "dist", "src", "core", "store", "schema.js"));
+const { DDL, HISTORY_DDL, SYNC_DDL, SCHEMA_VERSION } = await import(join(ROOT, "packages", "core", "dist", "src", "core", "store", "schema.js"));
 const quiet = () => {};
 
 assert.ok(existsSync(TS_MAIN), `the built CLI is missing at ${TS_MAIN} — run pnpm build`);
@@ -49,6 +49,31 @@ test("refusalOf recognises the pinned refusal by its message whatever the exit (
   assert.deepEqual(refusalOf(0, `\n{"error":"error","message":"${msg}"}\n`), { refused: true, exit: 0, message: msg });
   assert.deepEqual(refusalOf(1, `error: ${msg}\n`), { refused: true, exit: 1, message: msg });
   assert.deepEqual(refusalOf(0, '{"engine":"omgbase","schema":17}\n'), { refused: false, exit: 0, message: null });
+});
+
+test("migration 18's computed re-key is folded across the 18 boundary, and only there", () => {
+  const computed = (key) => JSON.stringify({ path: "a.md", block: null, source: "computed", key, card: "scalar", ord: 0, val_text: "T" });
+  const authored = (key) => JSON.stringify({ path: "a.md", block: null, source: "frontmatter", key, card: "scalar", ord: 0, val_text: "T" });
+
+  // The row survives the fold as itself, with every other column and the value intact.
+  assert.equal(foldComputedSigil(computed("$title")), computed("_title"));
+  assert.equal(foldComputedSigil(computed("$tags")), computed("_tags"));
+  // An AUTHORED `$key` is the user's own — never folded, so the migration is
+  // still held to leaving it byte for byte.
+  assert.equal(foldComputedSigil(authored("$title")), authored("$title"));
+  assert.equal(foldComputedSigil(computed("title")), computed("title"));
+
+  const snap = (version, props) => ({
+    version, schema: version,
+    docs: [], blocks: [], properties: props, links: [], claims: 0, pending: [], bytes: {},
+    tombstoned_blocks: 0,
+  });
+  // 17 → 18: the re-key is the migration doing its job, not a diff.
+  assert.deepEqual(diffSnapshots(snap(17, [computed("$title")]), snap(18, [computed("_title")])), []);
+  // An authored `$title` that came out `_title` is still a real diff.
+  assert.equal(diffSnapshots(snap(17, [authored("$title")]), snap(18, [authored("_title")])).length, 2);
+  // Within one version nothing is folded — a key that moved is a diff.
+  assert.equal(diffSnapshots(snap(18, [computed("$title")]), snap(18, [computed("_title")])).length, 2);
 });
 
 test("diffSnapshots names every §7 step-4 invariant it finds broken, and nothing on identical snapshots", () => {
@@ -114,7 +139,7 @@ function v16Workspace(tmp) {
   return ws;
 }
 
-test("a 16.x database: copied, snapshotted schema-aware, migrated to 17, the maps and rows preserved, the pending rows kept, the FTS index clean, the fake hash named by legacy_bytes", async () => {
+test("a 16.x database: copied, snapshotted schema-aware, migrated to the current schema, the maps and rows preserved, the pending rows kept, the FTS index clean, the fake hash named by legacy_bytes", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "qualify-test-"));
   try {
     const ws = v16Workspace(tmp);
@@ -127,7 +152,7 @@ test("a 16.x database: copied, snapshotted schema-aware, migrated to 17, the map
     assert.equal(before.legacy_bytes, 0);
     const report = await qualify({ workspace: ws, compositions: false, keep: false }, quiet);
     assert.equal(report.before.version, 16);
-    assert.equal(report.after.ts.version, 17);
+    assert.equal(report.after.ts.version, SCHEMA_VERSION);
     assert.equal(report.after.ts.docs, 1);
     assert.equal(report.after.ts.blocks, 2);
     assert.equal(report.after.ts.tombstoned_blocks, 0, "17.3 (D2 step two): the migration leaves no tombstoned block row");
@@ -197,7 +222,7 @@ function harnessWorkspace(tmp) {
 
 const stat = (p) => { try { const s = statSync(p); return [s.size, s.mtimeMs]; } catch { return null; } };
 
-test("a 17.x workspace from the baseline harness: no diff, CAS and recovery hold, the four compositions read alike and are sized; the original is untouched", async () => {
+test("a current-schema workspace from the baseline harness: no diff, CAS and recovery hold, the four compositions read alike and are sized; the original is untouched", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "qualify-test-"));
   let kept = null;
   try {
@@ -209,8 +234,8 @@ test("a 17.x workspace from the baseline harness: no diff, CAS and recovery hold
     const out = join(tmp, "report.json");
     // The harness's source root lies outside the workspace: `--with-files` copies it beside the copied database and the copy's source is re-pointed at it.
     const report = await qualify({ workspace: h.ws, compositions: true, withFiles: true, keep: false, rustBin: RUST_BIN, out }, quiet);
-    assert.equal(report.before.version, 17);
-    assert.equal(report.after.ts.version, 17);
+    assert.equal(report.before.version, SCHEMA_VERSION);
+    assert.equal(report.after.ts.version, SCHEMA_VERSION);
     assert.ok(report.before.docs >= 24, `${report.before.docs} docs`);
     assert.equal(report.after.ts.docs, report.before.docs);
     assert.equal(report.after.ts.blocks, report.before.blocks);
@@ -272,7 +297,7 @@ test("a 17.x workspace from the baseline harness: no diff, CAS and recovery hold
   }
 });
 
-test("a legacy document in a 17.x workspace: the open names it, --repair restores its rows from the copied file, the report is green", async () => {
+test("a legacy document in a current-schema workspace: the open names it, --repair restores its rows from the copied file, the report is green", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "qualify-test-"));
   let kept = null;
   try {
