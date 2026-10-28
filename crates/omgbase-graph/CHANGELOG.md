@@ -4,6 +4,11 @@ All notable changes to `omgbase-graph` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [3.0.1] - 2026-10-27
+
+### Patch
+- Dependency pins moved: omgbase-properties 1.2.1 → 2.0.0.
+
 ## [3.0.0] - 2026-10-26
 
 ### Major
