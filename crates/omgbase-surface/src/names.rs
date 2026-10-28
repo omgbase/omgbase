@@ -175,7 +175,7 @@ fn head_seq(store: &Store, repo_id: &str) -> Result<i64> {
 /// The authored vocabulary of a kind: docs — every live frontmatter or inline
 /// key (the merged read a bare name performs); blocks and nodes — every key a
 /// live row's `attrs` holds (the bare-name read of those kinds). Computed keys
-/// (`$title`, `$tags`) are the attributes `_title`/`_tags`, not authored keys.
+/// (`_title`, `_tags`) are the attributes `_title`/`_tags`, not authored keys.
 fn authored_keys(store: &Store, repo_id: &str, target: Target) -> Result<Vec<String>> {
     let sql = match target {
         Target::Docs => "SELECT DISTINCT key FROM properties WHERE repo_id = ? AND source IN ('frontmatter', 'inline') ORDER BY key".to_owned(),

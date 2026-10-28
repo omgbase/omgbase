@@ -101,10 +101,9 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
 /// `_data` view), skipping every stored `$` key (the computed rows' storage
 /// spelling), then — when the document has computed rows — a `computed`
 /// section with the keys under their surface names (`_title`, `_tags`: the
-/// re-keyed `properties.computed` the `docs_read` payload carries,
-/// `spec/surface` §1.2, 5.0: the store's `$title`/`$tags` never reach the
-/// terminal, and a computed title never masquerades as authored), then the
-/// open edges.
+/// `properties.computed` group the `docs_read` payload carries — since
+/// `spec/properties` 2.0 the store's own keys, no re-keying between, so a
+/// computed title never masquerades as authored), then the open edges.
 fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, links: &Json) {
     let style = cli.style;
     cli.io.out(&style.wordmark(path));
@@ -117,9 +116,22 @@ fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, lin
             fmt_value(v)
         ));
     };
+    let computed = payload
+        .get("properties")
+        .and_then(|p| p.get("computed"))
+        .and_then(Json::as_object)
+        .filter(|m| !m.is_empty());
+    // The merged bag carries every source, so the computed keys are subtracted
+    // from it BY NAME rather than by sigil: through properties 1.2 a
+    // `!k.starts_with('$')` filter did this, and the 2.0 rename silently
+    // defeated it — `_title` appeared in both sections (caught by spec/cli).
     let authored: Vec<(&String, &Json)> = properties
         .as_object()
-        .map(|m| m.iter().filter(|(k, _)| !k.starts_with('$')).collect())
+        .map(|m| {
+            m.iter()
+                .filter(|(k, _)| computed.is_none_or(|c| !c.contains_key(k.as_str())))
+                .collect()
+        })
         .unwrap_or_default();
     if !authored.is_empty() {
         cli.io.out(&format!("  {}", style.dim("properties")));
@@ -127,11 +139,6 @@ fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, lin
             line(k, v);
         }
     }
-    let computed = payload
-        .get("properties")
-        .and_then(|p| p.get("computed"))
-        .and_then(Json::as_object)
-        .filter(|m| !m.is_empty());
     if let Some(m) = computed {
         cli.io.out(&format!("  {}", style.dim("computed")));
         for (k, v) in m {

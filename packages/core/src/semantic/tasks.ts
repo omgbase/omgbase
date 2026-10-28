@@ -231,8 +231,8 @@ export function buildDocEmbedTasks(store: Store, repoId: string, scope: TaskScop
     if (body === null) continue;
     const props = docPropertiesMerged(store.db, d.doc_id);
     const title =
-      (typeof props["$title"] === "string" && (props["$title"] as string).trim())
-        ? (props["$title"] as string)
+      (typeof props["_title"] === "string" && (props["_title"] as string).trim())
+        ? (props["_title"] as string)
         : (typeof props["title"] === "string" && (props["title"] as string).trim())
           ? (props["title"] as string)
           : d.path;

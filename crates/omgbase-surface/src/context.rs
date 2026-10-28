@@ -1030,7 +1030,7 @@ impl<'a> StoreContext<'a> {
     /// `_tags` on a document: authored ∪ hashtags, each list as the property
     /// rule reads it (a scalar-authored `tags: x` is one element), deduped by
     /// canonical JSON of each element, authored first in authored order, then
-    /// the computed `$tags` row (body hashtags, `spec/properties` §3.3) in
+    /// the computed `_tags` row (body hashtags, `spec/properties` §3.3) in
     /// document order; `Null` when both are absent.
     fn doc_tags(&self, doc_id: &str) -> oqx::Result<Value> {
         fn as_list(v: Value) -> Vec<Value> {
@@ -1041,7 +1041,7 @@ impl<'a> StoreContext<'a> {
             }
         }
         let authored = as_list(self.doc_prop(doc_id, "tags", None)?);
-        let hashtags = as_list(self.doc_prop(doc_id, "$tags", Some("computed"))?);
+        let hashtags = as_list(self.doc_prop(doc_id, "_tags", Some("computed"))?);
         if authored.is_empty() && hashtags.is_empty() {
             return Ok(Value::Null);
         }
@@ -1535,14 +1535,14 @@ impl<'a> StoreContext<'a> {
             }
             // `_title`: the computed title (`spec/properties` §3.3 — the
             // authored title, else the first H1, else absent → null); the
-            // store writes it under `$title`. The bare `title` is the authored
+            // store writes it under `_title`. The bare `title` is the authored
             // key alone.
             (Target::Docs, "_title") => Self::null_if_absent(self.doc_prop(
                 &col_str(row, "doc_id"),
-                "$title",
+                "_title",
                 Some("computed"),
             )?),
-            // `_tags`: authored tags ∪ body `#hashtags` (the computed `$tags`
+            // `_tags`: authored tags ∪ body `#hashtags` (the computed `_tags`
             // row); the bare `tags` is the authored list alone.
             (Target::Docs, "_tags") => self.doc_tags(&col_str(row, "doc_id"))?,
             (Target::Docs, "_format") => c("format"),

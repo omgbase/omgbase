@@ -1831,8 +1831,8 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
             (Source::Frontmatter, "tags", 1),
             (Source::Frontmatter, "qty", 0),
             (Source::Frontmatter, "weird", 0),
-            (Source::Computed, "$title", 0),
-            (Source::Computed, "$tags", 0),
+            (Source::Computed, "_title", 0),
+            (Source::Computed, "_tags", 0),
         ]
     );
     let find = |s: Source, k: &str, o: u32| {
@@ -1871,11 +1871,11 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
             .contains("\"__range\":true")
     );
     assert_eq!(
-        find(Source::Computed, "$title", 0).val_text.as_deref(),
+        find(Source::Computed, "_title", 0).val_text.as_deref(),
         Some("Title")
     );
     assert_eq!(
-        find(Source::Computed, "$tags", 0).val_text.as_deref(),
+        find(Source::Computed, "_tags", 0).val_text.as_deref(),
         Some("hot")
     );
     // NaN: type = number, val_num NULL in the table, NaN on read.
@@ -1911,7 +1911,7 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
         store.properties_merged(&doc).unwrap(),
         serde_json::json!({
             "element": "fire #hot", "layer": "canon", "tags": ["x", "y"], "qty": "1..5", "weird": null,
-            "$title": "Title", "$tags": ["hot"],
+            "_title": "Title", "_tags": ["hot"],
         })
     );
     assert_eq!(
@@ -1933,7 +1933,7 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
     let keys: Vec<(Source, &str)> = rows.iter().map(|r| (r.source, r.key.as_str())).collect();
     assert_eq!(
         keys,
-        [(Source::Frontmatter, "layer"), (Source::Computed, "$title")]
+        [(Source::Frontmatter, "layer"), (Source::Computed, "_title")]
     );
     assert_eq!(rows[0].val_text.as_deref(), Some("draft"));
     assert_eq!(count(&store, "properties"), 2);
@@ -5533,8 +5533,8 @@ fn yaml_and_json_documents_write_their_mapping_as_frontmatter_rows() {
     let md_props = store.properties_grouped(&md.doc_id).unwrap();
     assert_eq!(md_props["frontmatter"]["k"], "v");
     assert_eq!(md_props["inline"]["x"], 1);
-    assert_eq!(md_props["computed"]["$title"], "Plan");
-    assert_eq!(md_props["computed"]["$tags"], json!(["t"]));
+    assert_eq!(md_props["computed"]["_title"], "Plan");
+    assert_eq!(md_props["computed"]["_tags"], json!(["t"]));
 
     // The block trees are the formats' own (the reference adapters'), not a
     // Markdown reading of the bytes: 5 entries + 3 nested for the yaml, 4

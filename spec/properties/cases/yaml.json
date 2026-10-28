@@ -73,10 +73,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -96,7 +96,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -105,7 +105,7 @@
           "c": null,
           "d": null,
           "e": null,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -142,10 +142,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -162,13 +162,13 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
           "a": "",
           "b": "",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -257,10 +257,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -281,7 +281,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -291,7 +291,7 @@
           "d": false,
           "e": false,
           "f": false,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -406,10 +406,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -432,7 +432,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -444,7 +444,7 @@
           "f": "n",
           "g": "Yes",
           "h": "OFF",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -559,10 +559,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -585,7 +585,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -597,7 +597,7 @@
           "f": -7,
           "g": 0,
           "h": 0,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -673,10 +673,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -696,7 +696,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -705,7 +705,7 @@
           "c": "-0x1f",
           "d": "0o8",
           "e": "1__0",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -846,10 +846,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -874,7 +874,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -888,7 +888,7 @@
           "h": 6.02e+23,
           "i": 1e+21,
           "j": 150,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1003,10 +1003,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1029,7 +1029,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1041,7 +1041,7 @@
           "f": null,
           "g": "Infinity",
           "h": "-Infinity",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1117,10 +1117,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1140,7 +1140,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1149,7 +1149,7 @@
           "c": "inf",
           "d": "nan",
           "e": "-Infinity",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1212,10 +1212,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1234,7 +1234,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1242,7 +1242,7 @@
           "b": 9007199254740992,
           "c": 18446744073709552000,
           "d": -9007199254740992,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1318,10 +1318,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1341,7 +1341,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1350,7 +1350,7 @@
           "c": "2026-01-01 10:00:00",
           "d": "2026-01-01T10:00:00.123+02:00",
           "e": "2026-01-01T10:00",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1444,10 +1444,10 @@
             }
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1468,7 +1468,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1478,7 +1478,7 @@
           "d": "null",
           "e": "2026-01-01",
           "f": "1..5",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1554,10 +1554,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1577,7 +1577,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1586,7 +1586,7 @@
           "c": "2026-01-01",
           "d": "null",
           "e": "1.5",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1688,10 +1688,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1713,7 +1713,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1724,7 +1724,7 @@
           "e": 1,
           "f": 12,
           "g": null,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1800,10 +1800,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1823,7 +1823,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1832,7 +1832,7 @@
           "c": "1",
           "d": "x",
           "e": "abc",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -1895,10 +1895,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1917,7 +1917,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -1925,7 +1925,7 @@
           "b": "text",
           "c": "true",
           "d": "",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2040,10 +2040,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2070,7 +2070,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -2086,7 +2086,7 @@
           ],
           "n.k": "v",
           "o.k": "v",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2136,10 +2136,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2157,14 +2157,14 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
           "base.k": 1,
           "m.<<.k": 1,
           "m.j": 2,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2240,10 +2240,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2263,7 +2263,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -2272,7 +2272,7 @@
           "c": "strip",
           "d": "keep\n\n",
           "e": "f g",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2348,10 +2348,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2371,7 +2371,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -2380,7 +2380,7 @@
           "c": "esc\n",
           "d": "é",
           "e": "tab\t",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2469,10 +2469,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2497,7 +2497,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -2511,7 +2511,7 @@
             2,
             3
           ],
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2574,10 +2574,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2596,7 +2596,7 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
@@ -2604,7 +2604,7 @@
           "single": 2,
           "key with spaces": 3,
           "a.b": 4,
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2641,10 +2641,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2661,13 +2661,13 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
           "a": 1,
           "b": "two",
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2678,10 +2678,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2695,11 +2695,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2710,10 +2710,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2727,11 +2727,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2742,10 +2742,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2759,11 +2759,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2774,10 +2774,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2791,11 +2791,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2806,10 +2806,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2823,11 +2823,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2838,10 +2838,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2855,11 +2855,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
-          "$title": "T"
+          "_title": "T"
         }
       }
     },
@@ -2870,10 +2870,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -2887,11 +2887,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
-          "$title": "T"
+          "_title": "T"
         }
       }
     }

@@ -4,9 +4,8 @@ A document's **properties** are the typed, indexed rows the engine derives
 from three authored-or-computed sources — the document's **authored mapping**
 (a Markdown document's YAML frontmatter fence; a YAML or JSON document's whole
 top-level mapping, since 1.2), inline `key:: value` fields in a Markdown body,
-and engine-computed values stored under `$`-prefixed keys (`$title`, `$tags`;
-the surface reads them as the bare attributes `title`/`tags`, `spec/surface`
-§1.2) — and stores in the `properties` table (`spec/store` §3.1) so that
+and engine-computed values stored under `_`-prefixed keys (`_title`, `_tags`
+— since 2.0 the same names the surface reads them by, `spec/surface` §1.2) — and stores in the `properties` table (`spec/store` §3.1) so that
 filters, projections and `docs_read` see one uniform surface. This directory
 specifies the mapping from a document's bytes to those rows, and the two read
 shapes built from them, so that more than one implementation produces the
@@ -24,7 +23,7 @@ The spec is two artifacts, versioned together by `VERSION`:
 - `cases/*.json` — the executable fixtures. **When prose and fixtures
   disagree, the fixtures win**, and the prose gets fixed.
 
-The design rationale (why one table, why `card`, why the computed rows are `$`-keyed) is
+The design rationale (why one table, why `card`, why the computed rows are `_`-keyed) is
 `docs/properties-table.md`; this document is the as-built contract.
 
 ## Versioning
@@ -66,7 +65,7 @@ PropertyRow
   prop_id     "p_" + first 12 hex chars of sha256(doc_id + "|" + source + "|" + key + "|" + ord)
   block_id    the authoring block's id for inline rows; null for frontmatter and computed
   source      frontmatter | inline | computed
-  key         dotted, flattened key ("layer", "meta.owner"); computed keys carry "$" ("$title")
+  key         dotted, flattened key ("layer", "meta.owner"); computed keys carry "_" ("_title")
   card        scalar | list — the authored shape (§2.3)
   ord         position within a multi-value key, from 0; 0 for a scalar
   type        string | number | bool | null | json
@@ -145,8 +144,10 @@ a `null` key is `""`). Keys are not trimmed or case-folded.
 ### 2.4 Computed values (`flatten_computed`)
 
 Given the computed object (§3.3): an array value emits `card = list` rows
-per element (`ord` = index); anything else one `card = scalar` row. Keys
-are stored as given, `$` included.
+per element (`ord` = index); anything else one `card = scalar` row. Keys are
+stored as given — the computed object's own keys are `_`-prefixed (2.0), and
+an AUTHORED key is stored verbatim whatever it begins with, `$` and `_`
+included (§2.1).
 
 ## 3. Sources
 
@@ -240,11 +241,11 @@ octal or `0b`/`0B` binary integer; `Infinity` is not finite; `1_000`, `12px`,
 
 The Markdown adapter computes, over the body blocks:
 
-- **`$title`**: the `text` (visible text, `spec/format` §4.1) of the first
+- **`_title`**: the `text` (visible text, `spec/format` §4.1) of the first
   block in **pre-order** with `type = heading` and `attrs.level = 1` whose
   trimmed text is non-empty — nested headings (inside a blockquote or a list
   item) count, in document order. Absent when there is none. A scalar row.
-- **`$tags`**: walking blocks in pre-order, skipping `heading` and
+- **`_tags`**: walking blocks in pre-order, skipping `heading` and
   `code_fence` blocks (but **not** skipping containers, whose `raw` includes
   their children, nor `html_block`/`opaque`), collect every match of
   `(?:^|\s)#([a-zA-Z][\w/-]*)` over the block's **`raw`** (not `text`, not
@@ -380,14 +381,13 @@ as `Infinity`/`-Infinity`; NaN reads as `null` (its `val_num` is NULL).
 
 - **grouped** (`docs_read.properties`): `{ frontmatter: {key: shape}, inline:
   {…}, computed: {…} }` — each source's rows shaped separately (every
-  source present, possibly `{}`). The rows keep their stored keys here; the
-  surface re-keys the `computed` group's `$title`/`$tags` to `_title`/`_tags`
-  at the tool boundary (`spec/surface` §1.2, 5.0 — omgbase's surface has no `$`
-  names and its engine names are `_`-prefixed), leaving the authored groups
-  untouched.
+  source present, possibly `{}`). The rows keep their stored keys here, and
+  since 2.0 the stored key IS the surfaced name — the computed group is
+  `{ _title, _tags }` at the tool boundary with no translation (through 1.2
+  the stored keys were `$title`/`$tags` and the surface re-keyed them).
 - **merged** (the query layer's bag): `{ key: shape }` over **all** rows of
   the document, authored sources and computed alike, keyed by the stored key
-  (`$title` keeps its sigil).
+  (`_title` is the stored key).
 
 A range-shaped string decodes as its `val_text` in both shapes.
 
@@ -411,8 +411,8 @@ re-ingest, never by `rebuild_index`.
 `cases/<suite>.json`, `suite` = file stem; case ids `<suite>::<name>`.
 Suites: `frontmatter.json` (flattening, typing, ranges, collisions),
 `yaml.json` (§4 resolution and failures), `inline.json` (both forms,
-masking, card/ord, coercion, containers), `computed.json` (`$title`,
-`$tags`), `shapes.json` (grouped/merged), `whole-document.json` (§3.4: `yaml`
+masking, card/ord, coercion, containers), `computed.json` (`_title`,
+`_tags`), `shapes.json` (grouped/merged), `whole-document.json` (§3.4: `yaml`
 and `json` documents — flattening, typing, non-mapping roots, failures, the
 stream rule, authored `title`/`tags`, empty files), plus mixed cases as
 coverage grows.
@@ -430,10 +430,10 @@ coverage grows.
         "rows": [
           { "prop_id": "p_…12 hex…", "block_id": null,  "source": "frontmatter", "key": "layer",   "card": "scalar", "ord": 0, "type": "string", "val_text": "canon", "val_num": null, "val_bool": null, "val_json": null },
           { "prop_id": "p_…",        "block_id": "b_1", "source": "inline",      "key": "element", "card": "scalar", "ord": 0, "type": "string", "val_text": "fire",  "val_num": null, "val_bool": null, "val_json": null },
-          { "prop_id": "p_…",        "block_id": null,  "source": "computed",    "key": "$title",  "card": "scalar", "ord": 0, "type": "string", "val_text": "Title", "val_num": null, "val_bool": null, "val_json": null }
+          { "prop_id": "p_…",        "block_id": null,  "source": "computed",    "key": "_title",  "card": "scalar", "ord": 0, "type": "string", "val_text": "Title", "val_num": null, "val_bool": null, "val_json": null }
         ],
-        "grouped": { "frontmatter": { "layer": "canon" }, "inline": { "element": "fire" }, "computed": { "$title": "Title" } },
-        "merged":  { "layer": "canon", "element": "fire", "$title": "Title" }
+        "grouped": { "frontmatter": { "layer": "canon" }, "inline": { "element": "fire" }, "computed": { "_title": "Title" } },
+        "merged":  { "layer": "canon", "element": "fire", "_title": "Title" }
       }
     }
   ]
@@ -521,7 +521,7 @@ omgbase-properties --test spec`).
 - **Pinned — inline coercion is JavaScript `Number()`.** `0x10` → 16,
   `.5` → 0.5, `5.` → 5, `1e3` → 1000, `+5` → 5; `Infinity`/`NaN` and anything
   with letters or underscores stay strings.
-- **Pinned — `$tags` scans `raw`, not `text`, and skips only headings and
+- **Pinned — `_tags` scans `raw`, not `text`, and skips only headings and
   code fences.** A `#tag` inside an `html_block` or an `opaque` block counts,
   and so does one inside an inline code span when whitespace precedes it
   (`` `see #inl` ``); `` `#not` `` does not, because a backtick is not `\s`
@@ -579,7 +579,7 @@ omgbase-properties --test spec`).
   query needs — a reader that must tell the formats apart has `format`. A
   stream's first document is the mapping (a file may legitimately be a
   stream; a fence may not); an error is a failed parse, never a recovered
-  mapping. **No computed rows**: `$title`/`$tags` derive from body prose a
+  mapping. **No computed rows**: `_title`/`_tags` derive from body prose a
   mapping does not have, and the authored `title`/`tags` are reached as any
   key; the basename is `path`, and a fallback for one format would make the
   surface's `title` mean two things. **The write side is deferred**: `set`/
@@ -603,3 +603,18 @@ omgbase-properties --test spec`).
   and `docs/mcp-api.md` already describe. Nothing in *this* spec changed: the
   stored keys keep their `$` sigil (§3.3) and the `merged` bag is still keyed
   by them. Only the cross-reference was wrong.
+- 2026-10-27, **properties 2.0: the computed keys are `_title`/`_tags`, not
+  `$title`/`$tags`.** `$` is reserved for OQX's intrinsics, and storage was the
+  last place omgbase still spent it: both engines wrote computed rows under
+  `$title`/`$tags` and the surface re-keyed them to `_title`/`_tags` at the
+  tool boundary. Now the stored key is the surfaced name and that translation
+  is gone — one spelling from the row to the result, which is the whole point
+  of the surface 5.0 rule. A major rather than a minor because `prop_id`
+  hashes the key (§1), so every computed row's identity moves; the DDL does
+  not change (`key` carries no CHECK, and §9.2's fingerprint is
+  PRAGMA-derived, so its comment is outside it), but existing databases need
+  `spec/store` migration 18 to rewrite the rows. **Scoped to
+  `source = 'computed'`:** an AUTHORED key beginning with `$` or `_` is the
+  user's own and is stored verbatim (§2.1, §2.4) — a blanket rewrite of
+  `key LIKE '$%'` would corrupt it. Brendan's decision of 2026-10-27, who
+  accepted the storage major to put the surface and the storage in alignment.

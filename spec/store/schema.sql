@@ -232,7 +232,7 @@ CREATE TABLE IF NOT EXISTS properties (
   doc_id         TEXT NOT NULL,
   block_id       TEXT,                    -- NULL = document-scoped (frontmatter, computed)
   source         TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
-  key            TEXT NOT NULL,           -- dotted, flattened: "layer","meta.owner"; computed carry $: "$title"
+  key            TEXT NOT NULL,           -- dotted, flattened: "layer","meta.owner"; computed carry _: "_title"
   card           TEXT NOT NULL CHECK (card IN ('scalar','list')),
   ord            INTEGER NOT NULL DEFAULT 0,
   val_text       TEXT,

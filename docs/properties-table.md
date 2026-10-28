@@ -99,7 +99,7 @@ CREATE TABLE properties (
                                         -- set = where an inline prop was authored
   source     TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
   key        TEXT NOT NULL,             -- dotted path, flattened: "layer", "meta.owner"
-                                        -- (computed keys carry their $ sigil: "$title")
+                                        -- (computed keys carry the engine `_`: "_title")
   card       TEXT NOT NULL CHECK (card IN ('scalar','list')),  -- authored shape:
                                         -- scalar `k: v` vs list `k: [..]`. Governs
                                         -- whether ==/!=/< can match (scalar only);
@@ -155,10 +155,10 @@ CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key);
   with a cached normalized/epoch form).
 - **`source` is the provenance delineation.** `frontmatter` / `inline` /
   `computed` as a filterable column — no reserved keys in content-space. Bare
-  keys span the *authored* sources; computed values are stored under `$`-keyed
-  rows (`$title`/`$tags`) and surfaced as the engine attributes `_title`/`_tags`
-  (see §4), the authored `title:`/`tags:` being the bare `title` / `tags`
-  (surface 5.0: a bare name is always the author's).
+  keys span the *authored* sources; computed values are stored under `_`-keyed
+  rows (`_title`/`_tags`, `spec/properties` 2.0) and read by those same engine
+  attributes (see §4), the authored `title:`/`tags:` being the bare `title` /
+  `tags` (surface 5.0: a bare name is always the author's).
 - **Block scope retained.** Inline props keep their authoring `block_id`, so
   "which paragraph asserted `owner:: alice`" is still answerable, and computed
   props can be doc- or block-scoped.
@@ -247,14 +247,15 @@ and the one way to an authored key whose own name begins with `_`; since 5.0 no
 bare name is reserved, so an authored `title:`/`path:`/`id:` is simply the bare
 `title`/`path`/`id` (before 5.0 it had to be reached as `data.<k>`).
 
-### Computed properties are stored `$`-keyed and read as the `_title`/`_tags` attributes
+### Computed properties are stored `_`-keyed — the same name the query reads
 
-The rows are stored under `$`-prefixed keys (`source='computed'`, key `$title` /
-`$tags` — `spec/properties` §3.3, unchanged: the stored keys are storage, not
-surface spelling), so they never collide with an authored `title:`/`tags:` row
-in the table. **The query surface (spec/surface §1.2, 5.0) has no `$` names:**
-it reads them as the engine attributes `_title` and `_tags` — the `_` prefix
-marks every engine-provided field, and the bare `title`/`tags` are the author's:
+The rows are stored under `_`-prefixed keys (`source='computed'`, key `_title` /
+`_tags` — `spec/properties` §3.3), so they never collide with an authored
+`title:`/`tags:` row in the table. Since properties 2.0 **the stored key is the
+surfaced name**: `_title` and `_tags` are what the query reads, with no
+translation at the tool boundary (through 1.2 the rows were `$title`/`$tags` and
+the surface re-keyed them). The `_` prefix marks every engine-provided field,
+and the bare `title`/`tags` are the author's:
 
 ```
 _title                # the computed title: the first H1 (null when none); title is the authored key
@@ -267,7 +268,8 @@ list and the body hashtags, `"urgent" in list(tags)` the authored list alone.
 **[was, surface 3.0–4.11: the attributes were the bare `title`/`tags`, winning
 on collision, and the authored keys were reached as `data.title`/`data.tags`;
 before 3.0 the attributes were `$title`/`$tags`, bare `title`/`tags` read the
-authored keys, and `$tags` was the body hashtags alone.]**
+authored keys, and `$tags` was the body hashtags alone. The STORED keys kept the
+`$` sigil until properties 2.0 (2026-10-27), the surface re-keying them.]**
 
 ### `docs_read` and projection
 
@@ -281,7 +283,7 @@ vs. computed provenance:
   "properties": {
     "frontmatter": { "layer": "canon", "tags": ["a","b"] },   // scalar stays scalar; authored groups stay bare
     "inline":      { "job": ["janitor","salesman"] },
-    "computed":    { "_title": "Q3 Plan", "_tags": ["urgent"] } // the stored `$title`/`$tags` rows, under the attribute names the query reads (5.0)
+    "computed":    { "_title": "Q3 Plan", "_tags": ["urgent"] } // the stored keys verbatim — the names the query reads (properties 2.0)
   }
 }
 ```
@@ -448,9 +450,10 @@ not an index rebuild.
   earlier "scalar `==` matches any scalar-authored row" wording: multiplicity in
   scope, not just authored shape, gates scalar comparison.) YAML duplicate-key
   rules apply within a fence before storage.
-- **Computed props are stored `$`-keyed (`$title`, `$tags`) and surfaced as the
-  `_title`/`_tags` attributes** (surface 5.0, §4); the authored `title`/`tags`
-  rows are untouched in the table and read by their bare names.
+- **Computed props are stored `_`-keyed (`_title`, `_tags`) and read by those
+  same attributes** (properties 2.0, §4 — no re-keying between store and
+  surface); the authored `title`/`tags` rows are untouched in the table and read
+  by their bare names.
 - **Inline fields move fully to `properties`** (clean move, nothing deployed).
 
 ### Deterministic ordering (decided)
@@ -485,9 +488,8 @@ evaluation model, just parser + compiler desugaring. Deferred; noted so the
 grammar leaves room (the `*` suffix/prefix on relops is currently unused).
 
 **Still open:**
-- [ ] Which computed properties ship first — `$title` (first H1) and `$tags`
-  (body #hashtags) are the named two; `$word_count`/`$task_count` candidates
-  (each would surface as an engine attribute, `_word_count`).
+- [ ] Which computed properties ship first — `_title` (first H1) and `_tags`
+  (body #hashtags) are the named two; `_word_count`/`_task_count` candidates.
 - [x] Array-of-objects in frontmatter: straight to `val_json` — one
   `card='list'` row (`ord` 0, `type='json'`) carrying the whole array
   (spec/properties §2.3; note the read shape then wraps it in another array,

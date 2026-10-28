@@ -97,11 +97,11 @@ function probeFor(target: Target, path: readonly string[]): Probe | null {
   if (target !== "docs") return null;
   // A docs property: any BARE name (spec/surface §1.2, 5.0: the author's data —
   // `title`, `tags`, `layer`, …; an OQX `$` name is never a row read). Of the
-  // engine names only `_title` probes (the computed `$title` row, a scalar
+  // engine names only `_title` probes (the computed `_title` row, a scalar
   // property): `_raw`, `_hash`, `_updated_at`, `_created_at`, `_tags` (authored
   // ∪ hashtags), `_format` (an unindexed column), the handles and relations have
   // no index and are never property probes.
-  if (key === "_title") return { kind: "property", key: "$title", source: "computed" };
+  if (key === "_title") return { kind: "property", key: "_title", source: "computed" };
   if (key.startsWith("$") || key.startsWith("_")) return null;
   return { kind: "property", key, source: null };
 }

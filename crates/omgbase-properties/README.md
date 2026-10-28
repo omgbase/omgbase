@@ -4,7 +4,7 @@
 
 A document's properties are the typed, indexed rows the engine derives from
 three sources — the YAML frontmatter fence, inline `key:: value` fields in the
-body, and engine-computed `$`-intrinsics (`$title`, `$tags`) — and stores in
+body, and engine-computed `_`-keyed values (`_title`, `_tags`) — and stores in
 the `properties` table so that filters, projections and `docs_read` see one
 uniform surface. This crate is a pure library: a block tree (with ids) in,
 property rows and the two read shapes out. No SQLite; `omgbase-store` calls it
@@ -25,7 +25,7 @@ let blocks = DocBlock::from_blocks(body, &ids);
 let rows = doc_properties("d_0", frontmatter, &blocks);
 assert_eq!(rows.len(), 3);
 assert!(rows.iter().any(|r| r.source == Source::Inline && r.key == "element" && r.block_id.as_deref() == Some("b_1")));
-assert_eq!(merged(&rows)["$title"], "Title");
+assert_eq!(merged(&rows)["_title"], "Title");
 ```
 
 The reference is the TypeScript engine

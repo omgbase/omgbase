@@ -33,8 +33,8 @@
 //! assert_eq!(element.prop_id.len(), 14);
 //!
 //! assert_eq!(grouped(&rows)["frontmatter"]["tags"], serde_json::json!(["a", "b"]));
-//! assert_eq!(merged(&rows)["$title"], "Title");
-//! assert_eq!(merged(&rows)["$tags"], serde_json::json!(["x"]));
+//! assert_eq!(merged(&rows)["_title"], "Title");
+//! assert_eq!(merged(&rows)["_tags"], serde_json::json!(["x"]));
 //! ```
 
 #![forbid(unsafe_code)]
@@ -68,7 +68,7 @@ pub use whole::{document_mapping, document_properties};
 pub use yaml::{parse_document, parse_first_document, parse_frontmatter, resolve_plain};
 
 /// The `spec/properties/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.2";
+pub const SPEC_VERSION: &str = "2.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -272,15 +272,15 @@ mod tests {
         let element = &find(&rows, Source::Inline, "element")[0];
         assert_eq!(element.block_id.as_deref(), Some("b_1"));
         assert_eq!(element.val_text.as_deref(), Some("fire"));
-        let title = &find(&rows, Source::Computed, "$title")[0];
+        let title = &find(&rows, Source::Computed, "_title")[0];
         assert_eq!(title.val_text.as_deref(), Some("Title"));
         assert_eq!(
             grouped(&rows),
-            json!({"frontmatter": {"layer": "canon"}, "inline": {"element": "fire"}, "computed": {"$title": "Title"}})
+            json!({"frontmatter": {"layer": "canon"}, "inline": {"element": "fire"}, "computed": {"_title": "Title"}})
         );
         assert_eq!(
             merged(&rows),
-            json!({"layer": "canon", "element": "fire", "$title": "Title"})
+            json!({"layer": "canon", "element": "fire", "_title": "Title"})
         );
     }
 

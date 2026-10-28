@@ -301,7 +301,7 @@ fn doc_embed_tasks(
             continue;
         };
         let props = omgbase_properties::merged(&properties::read_doc_properties(conn, &doc_id)?);
-        let title = nonblank_string(&props, "$title")
+        let title = nonblank_string(&props, "_title")
             .or_else(|| nonblank_string(&props, "title"))
             .unwrap_or_else(|| path.clone());
         let header = doc_header(

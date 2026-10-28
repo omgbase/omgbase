@@ -122,7 +122,7 @@ mod tests {
             text(Source::Frontmatter, "one", Card::List, 0, "x"),
             text(Source::Inline, "element", Card::Scalar, 0, "fire"),
             text(Source::Inline, "layer", Card::Scalar, 0, "inline-canon"),
-            text(Source::Computed, "$title", Card::Scalar, 0, "Title"),
+            text(Source::Computed, "_title", Card::Scalar, 0, "Title"),
             PropertyRow {
                 val_num: Some(3.0),
                 ..row(Source::Frontmatter, "n", Card::Scalar, 0, ValueType::Number)
@@ -147,13 +147,13 @@ mod tests {
             json!({
                 "frontmatter": {"layer": "canon", "one": ["x"], "n": 3, "b": true, "z": null, "j": [[{"a": 1}]], "w": "1..5"},
                 "inline": {"element": "fire", "layer": "inline-canon"},
-                "computed": {"$title": "Title"},
+                "computed": {"_title": "Title"},
             })
         );
         assert_eq!(
             merged(&rows),
             json!({
-                "layer": ["canon", "inline-canon"], "one": ["x"], "element": "fire", "$title": "Title",
+                "layer": ["canon", "inline-canon"], "one": ["x"], "element": "fire", "_title": "Title",
                 "n": 3, "b": true, "z": null, "j": [[{"a": 1}]], "w": "1..5",
             })
         );

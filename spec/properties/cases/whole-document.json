@@ -1161,10 +1161,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -1180,12 +1180,12 @@
           },
           "inline": {},
           "computed": {
-            "$title": "T"
+            "_title": "T"
           }
         },
         "merged": {
           "layer": "canon",
-          "$title": "T"
+          "_title": "T"
         }
       }
     }

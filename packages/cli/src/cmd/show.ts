@@ -28,12 +28,17 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
     const res = docsRead(ws.store, resolved.docId);
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
-    // The authored keys, merged (frontmatter + inline — the `_data` view); the
-    // computed rows are rendered under their surface names (`_title`/`_tags`,
-    // spec/surface §1.2, 5.0 — the store's `$title`/`$tags` keys never reach the
-    // terminal) from the re-keyed `properties.computed` the read carries.
-    const properties = Object.fromEntries(Object.entries(docPropertiesMerged(ws.store.db, resolved.docId)).filter(([k]) => !k.startsWith("$")));
+    // The authored keys, merged (frontmatter + inline — the `_data` view), then
+    // the computed rows under their own heading from `properties.computed`
+    // (`_title`/`_tags`, `spec/properties` 2.0 — the store's own keys now).
+    // The merged bag carries every source, so the computed keys are subtracted
+    // from it BY NAME rather than by sigil: through properties 1.2 a
+    // `!k.startsWith("$")` filter did this, and the 2.0 rename silently
+    // defeated it — `_title` appeared in both sections (caught by spec/cli).
     const computed = res.properties.computed ?? {};
+    const properties = Object.fromEntries(
+      Object.entries(docPropertiesMerged(ws.store.db, resolved.docId)).filter(([k]) => !(k in computed)),
+    );
     const payload = { kind: "document", ...res };
     return { payload, render: () => renderDocCard(cli, res._path, properties, computed, links) };
   }

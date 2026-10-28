@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
 import { findDoc, findDocByRef, loadDocBlocks, type BlockNode } from "./reader.js";
-import { docPropertiesGrouped, type PropertySource } from "../store/properties.js";
+import { docPropertiesGrouped } from "../store/properties.js";
 import { referencePath } from "../paths.js";
 import { historyReaderForDoc } from "../store/manifest.js";
 
@@ -120,21 +120,6 @@ export function reconstructContent(db: Database, docId: string): string | null {
   return out.join("");
 }
 
-/**
- * The surface's `properties` (spec/surface §2, 5.0): the `spec/properties` §5
- * grouped shape with the computed group's keys spelled as the attributes that
- * read them — the store writes the computed rows under `$title`/`$tags`
- * (spec/properties §3.3, unchanged), the surface has no `$` names and its
- * engine names are `_`-prefixed, so `properties.computed` is `{ _title, _tags }`.
- * Authored groups are untouched (bare keys; an authored `$x:` key keeps its
- * sigil, as `_frontmatter.$x` reads it).
- */
-export function surfaceProperties(grouped: Record<PropertySource, Record<string, unknown>>): Record<string, Record<string, unknown>> {
-  const computed: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(grouped.computed)) computed[k.startsWith("$") ? `_${k.slice(1)}` : k] = v;
-  return { frontmatter: grouped.frontmatter, inline: grouped.inline, computed };
-}
-
 /** Read a whole document by id: full file bytes + properties. Null if missing. */
 export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}): DocsReadResult | null {
   const info = findDoc(store, { docId });
@@ -146,7 +131,13 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
     _id: info.docId,
     _path: referencePath(info.path),
     rev: info.currentRev,
-    properties: surfaceProperties(docPropertiesGrouped(store.db, docId)),
+    // The surface's `properties` (spec/surface §2) is the `spec/properties` §5
+    // grouped shape verbatim: since properties 2.0 the store writes the computed
+    // rows under `_title`/`_tags`, the names the surface reads them by, so there
+    // is nothing to re-key at the boundary (through 1.2 a `surfaceProperties`
+    // here turned `$title` into `_title`). Authored groups are bare keys; an
+    // authored `$x:`/`_x:` key is stored verbatim and `_frontmatter.$x` reads it.
+    properties: docPropertiesGrouped(store.db, docId),
     _raw: content,
   };
   if (opts.includeIds) {

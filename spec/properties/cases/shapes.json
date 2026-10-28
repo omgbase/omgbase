@@ -89,7 +89,7 @@
     },
     {
       "name": "computed-title-beside-authored-title",
-      "notes": "§5: the sigil keeps `$title` and `title` apart in merged.",
+      "notes": "§5: the prefix keeps `_title` (computed) and `title` (authored) apart in merged.",
       "source": "---\ntitle: Authored\n---\n\n# Heading\n",
       "expect": {
         "rows": [
@@ -107,10 +107,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -126,12 +126,12 @@
           },
           "inline": {},
           "computed": {
-            "$title": "Heading"
+            "_title": "Heading"
           }
         },
         "merged": {
           "title": "Authored",
-          "$title": "Heading"
+          "_title": "Heading"
         }
       }
     },
@@ -572,7 +572,7 @@
     },
     {
       "name": "authored-tags-and-computed-tags-are-distinct-keys",
-      "notes": "§5: `tags` (authored) and `$tags` (computed) never merge.",
+      "notes": "§5: `tags` (authored) and `_tags` (computed) never merge.",
       "source": "---\ntags: [x]\n---\n\n#y\n",
       "expect": {
         "rows": [
@@ -590,10 +590,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -611,7 +611,7 @@
           },
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "y"
             ]
           }
@@ -620,7 +620,7 @@
           "tags": [
             "x"
           ],
-          "$tags": [
+          "_tags": [
             "y"
           ]
         }

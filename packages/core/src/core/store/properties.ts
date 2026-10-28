@@ -2,7 +2,7 @@ import type { Database } from "better-sqlite3";
 import { hashHex } from "../hash.js";
 
 // Properties store (properties-table). Flattens document properties —
-// frontmatter, inline (key:: value), computed ($title/$tags) — into typed,
+// frontmatter, inline (key:: value), computed (_title/_tags) — into typed,
 // indexed rows. `card` records the authored shape so scalar comparisons match
 // only scalar-authored rows while list() sees all. Deterministic ordering:
 // source rank, then authored order (ord), then key — see docs/properties-table.md §9.
@@ -26,7 +26,7 @@ export interface PropertyRow {
 
 // Deterministic id: a property row is identified by its document, source, key,
 // and ordinal position within that (source,key). Same bytes ⇒ same id.
-function propId(docId: string, source: string, key: string, ord: number): string {
+export function propId(docId: string, source: string, key: string, ord: number): string {
   return "p_" + hashHex(`${docId}|${source}|${key}|${ord}`).slice(0, 12);
 }
 
@@ -116,7 +116,7 @@ export function flattenFrontmatter(obj: Record<string, unknown>): Omit<PropertyR
 }
 
 // Flatten computed properties (adapter computeProperties output) into rows.
-// Keys are already $-prefixed intrinsics ($title, $tags); a value is a scalar
+// Keys are already the engine's `_` names (_title, _tags); a value is a scalar
 // (one scalar row) or an array of scalars (ord-indexed list rows).
 export function flattenComputed(obj: Record<string, unknown>): Omit<PropertyRow, "source" | "blockId">[] {
   const rows: Omit<PropertyRow, "source" | "blockId">[] = [];

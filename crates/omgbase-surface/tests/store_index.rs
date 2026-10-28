@@ -110,7 +110,7 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
     assert!(ctx.index_for(&docs, &p("_path")).is_some());
     assert!(ctx.index_for(&docs, &p("_id")).is_some());
     assert!(ctx.index_for(&docs, &p("type")).is_some()); // a property
-    assert!(ctx.index_for(&docs, &p("_title")).is_some()); // the computed scalar (the `$title` property row)
+    assert!(ctx.index_for(&docs, &p("_title")).is_some()); // the computed scalar (the `_title` property row)
     assert!(ctx.index_for(&docs, &p("title")).is_some()); // a bare name is an authored-property probe (5.0: nothing is reserved)
     assert!(ctx.index_for(&docs, &p("_format")).is_none()); // a column without an index
     assert!(ctx.index_for(&docs, &p("_tags")).is_none()); // list-valued

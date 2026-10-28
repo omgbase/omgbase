@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS file_stats (
 
 // properties (properties-table). One indexed row per property value: the
 // unified query surface for frontmatter, inline (key:: value), and computed
-// ($title/$tags) document properties, superseding the docs.metadata JSON
+// (_title/_tags) document properties, superseding the docs.metadata JSON
 // blob. `card` records the authored shape (scalar vs list) so scalar ==/!=/<
 // match only scalar-authored rows while list() sees all — reproducing the
 // json_extract scalar-vs-array distinction. Current-state, maintained
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS properties (
   doc_id         TEXT NOT NULL,
   block_id       TEXT,                    -- NULL = document-scoped (frontmatter, computed)
   source         TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
-  key            TEXT NOT NULL,           -- dotted, flattened: "layer","meta.owner"; computed carry $: "$title"
+  key            TEXT NOT NULL,           -- dotted, flattened: "layer","meta.owner"; computed carry _: "_title"
   card           TEXT NOT NULL CHECK (card IN ('scalar','list')),
   ord            INTEGER NOT NULL DEFAULT 0,
   val_text       TEXT,
@@ -330,7 +330,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
-// Migrations 3, 4, 6, 7, 9, 11, 13, 15, 17 are programmatic — see store.ts.
+// Migrations 3, 4, 6, 7, 9, 11, 13, 15, 17, 18 are programmatic — see store.ts.
 export const MIGRATIONS: Record<number, string> = {
   2: FILE_STATS_DDL,
   3: "",  // handled programmatically in store.ts
@@ -348,6 +348,7 @@ export const MIGRATIONS: Record<number, string> = {
   15: "",  // revisions.root_tree/frontmatter_blob nullable + `archive`, create `archives` (spec/store §7 "Retention"), handled programmatically in store.ts
   16: "",  // no DDL: delta tree nodes (spec/store §4.1 "Delta nodes", §3.4 step 16) — every 15.x node is already a valid checkpoint, so the step only moves user_version; handled in store.ts
   17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, the `id_claims` table backfilled from every id the current rows and the history still name, the self-contained `pending_materializations` row (`head`, `prior_hash`, `created_at`; the two foreign keys gone), (3d) the repository epoch, the `feed`/`feed_entries` tables backfilled from the 16.x `commits`/`revisions`, the recorder's `commits` row (`epoch`, `batch_id`; `checkpoint_id` gone), the `sync_state` status row and the dropped `checkpoints`, and (3e-i) the open-only `edges` (the closed rows and the interval columns moved to the history bundle's `edge_transitions`, `idx_edges_temporal` gone), `properties` without `created_commit`/`deleted_commit`, the dropped `collections`/`inferred_edges`, and (3e-ii) the `capabilities` manifest (a `history` row `enabled` with coverage from the repo's first commit, a `semantic` row `enabled` iff a provider is configured) and the empty `alerts` table — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
+  18: "",  // the computed property keys lose the `$` sigil (`$title`/`$tags` → `_title`/`_tags`, scoped to source='computed'; `prop_id` re-derived from the new key) — spec/store §3.4 step 18, spec/properties 2.0; handled programmatically in store.ts
 };
 
 // The CORE bundle (spec/store §3.1, 17.0 — `schema.sql`): the current state

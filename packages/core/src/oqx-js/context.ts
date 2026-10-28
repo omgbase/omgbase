@@ -541,9 +541,9 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       // `_title`: the computed title (spec/properties §3.3 — the authored
       // title, else the first H1, else absent → null). The bare `title` is the
       // authored key alone.
-      case "_title": return docProp(String(row.doc_id), "$title", "computed") ?? null;
+      case "_title": return docProp(String(row.doc_id), "_title", "computed") ?? null;
       // `_tags`: the union of the authored tags (frontmatter + inline, by the
-      // property rule) and the body `#hashtags` (the computed `$tags` row,
+      // property rule) and the body `#hashtags` (the computed `_tags` row,
       // spec/properties §3.3), deduped, authored first in authored order, then
       // the hashtags in document order; null when both are absent. The bare
       // `tags` is the authored list alone.
@@ -622,7 +622,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   const docTags = (docId: string): unknown => {
     const asList = (v: unknown): unknown[] => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
     const authored = asList(docProp(docId, "tags"));
-    const hashtags = asList(docProp(docId, "$tags", "computed"));
+    const hashtags = asList(docProp(docId, "_tags", "computed"));
     if (authored.length === 0 && hashtags.length === 0) return null;
     const seen = new Set<string>();
     const out: unknown[] = [];

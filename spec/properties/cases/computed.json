@@ -8,10 +8,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -25,17 +25,17 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "First"
+            "_title": "First"
           }
         },
         "merged": {
-          "$title": "First"
+          "_title": "First"
         }
       }
     },
     {
       "name": "title-absent-without-h1",
-      "notes": "§3.3: no level-1 heading → no $title row (and no tags → no computed rows at all).",
+      "notes": "§3.3: no level-1 heading → no _title row (and no tags → no computed rows at all).",
       "source": "## Only H2\n\npara\n",
       "expect": {
         "rows": [],
@@ -54,10 +54,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -71,11 +71,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "Quoted"
+            "_title": "Quoted"
           }
         },
         "merged": {
-          "$title": "Quoted"
+          "_title": "Quoted"
         }
       }
     },
@@ -86,10 +86,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -103,11 +103,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "In item"
+            "_title": "In item"
           }
         },
         "merged": {
-          "$title": "In item"
+          "_title": "In item"
         }
       }
     },
@@ -118,10 +118,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -135,25 +135,25 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "Real"
+            "_title": "Real"
           }
         },
         "merged": {
-          "$title": "Real"
+          "_title": "Real"
         }
       }
     },
     {
       "name": "title-is-visible-text",
-      "notes": "§3.3: $title is the heading's `text` per spec/format §4.1, not its raw.",
+      "notes": "§3.3: _title is the heading's `text` per spec/format §4.1, not its raw.",
       "source": "# Hello *world* [link](x) `code` ##\n",
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -167,11 +167,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "Hello *world* [link](x) `code`"
+            "_title": "Hello *world* [link](x) `code`"
           }
         },
         "merged": {
-          "$title": "Hello *world* [link](x) `code`"
+          "_title": "Hello *world* [link](x) `code`"
         }
       }
     },
@@ -182,10 +182,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -199,17 +199,17 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "Title"
+            "_title": "Title"
           }
         },
         "merged": {
-          "$title": "Title"
+          "_title": "Title"
         }
       }
     },
     {
       "name": "no-computed-rows-for-plain-paragraph",
-      "notes": "§3.3: `# tags` is not a tag (`#` followed by space); no $title, no $tags → zero rows.",
+      "notes": "§3.3: `# tags` is not a tag (`#` followed by space); no _title, no _tags → zero rows.",
       "source": "just a paragraph, no # tags here.\n",
       "expect": {
         "rows": [],
@@ -228,10 +228,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -241,10 +241,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_12f9a7517743",
+            "prop_id": "p_553632e567b3",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 1,
             "type": "string",
@@ -254,10 +254,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_f0c5f121385b",
+            "prop_id": "p_e5ea99454015",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 2,
             "type": "string",
@@ -271,7 +271,7 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "a",
               "b",
               "c"
@@ -279,7 +279,7 @@
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "a",
             "b",
             "c"
@@ -294,10 +294,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -307,10 +307,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -324,15 +324,15 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "Heading #h1tag",
-            "$tags": [
+            "_title": "Heading #h1tag",
+            "_tags": [
               "body"
             ]
           }
         },
         "merged": {
-          "$title": "Heading #h1tag",
-          "$tags": [
+          "_title": "Heading #h1tag",
+          "_tags": [
             "body"
           ]
         }
@@ -345,10 +345,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -362,13 +362,13 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "real"
             ]
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "real"
           ]
         }
@@ -376,15 +376,15 @@
     },
     {
       "name": "tags-inline-code-after-whitespace-counts",
-      "notes": "§3.3 / §8: $tags scans raw, not code-masked — a tag inside a code span counts when preceded by whitespace.",
+      "notes": "§3.3 / §8: _tags scans raw, not code-masked — a tag inside a code span counts when preceded by whitespace.",
       "source": "text `see #inl` after\n",
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -398,13 +398,13 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "inl"
             ]
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "inl"
           ]
         }
@@ -445,10 +445,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -458,10 +458,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_12f9a7517743",
+            "prop_id": "p_553632e567b3",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 1,
             "type": "string",
@@ -475,14 +475,14 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "start",
               "second"
             ]
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "start",
             "second"
           ]
@@ -496,10 +496,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -509,10 +509,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_12f9a7517743",
+            "prop_id": "p_553632e567b3",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 1,
             "type": "string",
@@ -522,10 +522,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_f0c5f121385b",
+            "prop_id": "p_e5ea99454015",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 2,
             "type": "string",
@@ -535,10 +535,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_6770b4e1b829",
+            "prop_id": "p_2dfd3d98dce1",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 3,
             "type": "string",
@@ -552,7 +552,7 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "a/b-c_d9",
               "x/",
               "caf",
@@ -561,7 +561,7 @@
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "a/b-c_d9",
             "x/",
             "caf",
@@ -577,10 +577,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -590,10 +590,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_12f9a7517743",
+            "prop_id": "p_553632e567b3",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 1,
             "type": "string",
@@ -603,10 +603,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_f0c5f121385b",
+            "prop_id": "p_e5ea99454015",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 2,
             "type": "string",
@@ -620,7 +620,7 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "a",
               "b",
               "c"
@@ -628,7 +628,7 @@
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "a",
             "b",
             "c"
@@ -643,10 +643,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -660,13 +660,13 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "html"
             ]
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "html"
           ]
         }
@@ -679,10 +679,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -692,10 +692,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_12f9a7517743",
+            "prop_id": "p_553632e567b3",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 1,
             "type": "string",
@@ -705,10 +705,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_f0c5f121385b",
+            "prop_id": "p_e5ea99454015",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 2,
             "type": "string",
@@ -718,10 +718,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_6770b4e1b829",
+            "prop_id": "p_2dfd3d98dce1",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 3,
             "type": "string",
@@ -735,7 +735,7 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "tab",
               "newline",
               "nbsp",
@@ -744,7 +744,7 @@
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "tab",
             "newline",
             "nbsp",
@@ -760,10 +760,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -773,10 +773,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_12f9a7517743",
+            "prop_id": "p_553632e567b3",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 1,
             "type": "string",
@@ -790,14 +790,14 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$tags": [
+            "_tags": [
               "t",
               "u"
             ]
           }
         },
         "merged": {
-          "$tags": [
+          "_tags": [
             "t",
             "u"
           ]
@@ -811,10 +811,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_7dc0d8c52309",
+            "prop_id": "p_a9b8ab259719",
             "block_id": null,
             "source": "computed",
-            "key": "$tags",
+            "key": "_tags",
             "card": "list",
             "ord": 0,
             "type": "string",
@@ -824,10 +824,10 @@
             "val_json": null
           },
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -841,15 +841,15 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "T #notatag",
-            "$tags": [
+            "_title": "T #notatag",
+            "_tags": [
               "tag"
             ]
           }
         },
         "merged": {
-          "$title": "T #notatag",
-          "$tags": [
+          "_title": "T #notatag",
+          "_tags": [
             "tag"
           ]
         }
@@ -862,10 +862,10 @@
       "expect": {
         "rows": [
           {
-            "prop_id": "p_fbf6b2bef0dd",
+            "prop_id": "p_1989c3f86560",
             "block_id": null,
             "source": "computed",
-            "key": "$title",
+            "key": "_title",
             "card": "scalar",
             "ord": 0,
             "type": "string",
@@ -879,11 +879,11 @@
           "frontmatter": {},
           "inline": {},
           "computed": {
-            "$title": "Deep"
+            "_title": "Deep"
           }
         },
         "merged": {
-          "$title": "Deep"
+          "_title": "Deep"
         }
       }
     }

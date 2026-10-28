@@ -18,7 +18,7 @@
         "archives"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "adapters": [
             "name",
@@ -233,7 +233,7 @@
         "repos"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "adapters": [
             "name",
@@ -445,7 +445,7 @@
         "repos"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "adapters": [
             "name",
@@ -652,7 +652,7 @@
         "repos"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "adapters": [
             "name",
@@ -858,7 +858,7 @@
         "pending_materializations"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "alerts": [
             "repo_id",
@@ -1168,7 +1168,7 @@
         "alerts"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "alerts": [
             "repo_id",
@@ -1994,12 +1994,12 @@
               "type": "string"
             },
             {
-              "prop_id": "p_000000000002",
+              "prop_id": "p_3093cf97d43a",
               "repo_id": "rp_1",
               "doc_id": "d_1",
               "block_id": null,
               "source": "computed",
-              "key": "$title",
+              "key": "_title",
               "card": "scalar",
               "ord": 0,
               "val_text": "A",
@@ -2096,7 +2096,7 @@
         "alerts"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "alerts": [
             "repo_id",
@@ -2378,6 +2378,128 @@
       }
     },
     {
+      "name": "v17-to-v18-computed-keys-lose-the-sigil",
+      "notes": "§3.4 step 18 / spec/properties 2.0: a 17 database's computed rows are re-keyed `$title`→`_title`, `$tags`→`_tags`, and `prop_id` is re-derived from the NEW key (spec/properties §1), so a computed row's identity moves with it. The scope is `source = 'computed'` ALONE: the authored `$title` and `_title` frontmatter keys here are the user's own, stored verbatim (spec/properties §2.1), and must come through untouched — key AND prop_id — which a blanket `key LIKE '$%'` rewrite would not do. No DDL changes.",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}')",
+        "INSERT INTO repos (repo_id, slug) VALUES ('r_0', 'notes')",
+        "CREATE TABLE properties (prop_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL, block_id TEXT, source TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')), key TEXT NOT NULL, card TEXT NOT NULL CHECK (card IN ('scalar','list')), ord INTEGER NOT NULL DEFAULT 0, val_text TEXT, val_num REAL, val_bool INTEGER, val_json TEXT, type TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json')))",
+        "INSERT INTO properties (prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, type) VALUES ('p_computedttl', 'r_0', 'd_0', NULL, 'computed', '$title', 'scalar', 0, 'The Title', 'string')",
+        "INSERT INTO properties (prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, type) VALUES ('p_computedtag', 'r_0', 'd_0', NULL, 'computed', '$tags', 'scalar', 0, 'alpha', 'string')",
+        "INSERT INTO properties (prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, type) VALUES ('p_authored$ttl', 'r_0', 'd_0', NULL, 'frontmatter', '$title', 'scalar', 0, 'authored dollar', 'string')",
+        "INSERT INTO properties (prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, type) VALUES ('p_authored_ttl', 'r_0', 'd_0', NULL, 'frontmatter', '_title', 'scalar', 0, 'authored underscore', 'string')",
+        "INSERT INTO properties (prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, type) VALUES ('p_authoredplain', 'r_0', 'd_0', NULL, 'frontmatter', 'title', 'scalar', 0, 'authored bare', 'string')"
+      ],
+      "user_version": 17,
+      "rows": [
+        "properties"
+      ],
+      "expect": {
+        "user_version": 18,
+        "tables": {
+          "properties": [
+            "prop_id",
+            "repo_id",
+            "doc_id",
+            "block_id",
+            "source",
+            "key",
+            "card",
+            "ord",
+            "val_text",
+            "val_num",
+            "val_bool",
+            "val_json",
+            "type"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings"
+          ]
+        },
+        "rows": {
+          "properties": [
+            {
+              "prop_id": "p_1989c3f86560",
+              "repo_id": "r_0",
+              "doc_id": "d_0",
+              "block_id": null,
+              "source": "computed",
+              "key": "_title",
+              "card": "scalar",
+              "ord": 0,
+              "val_text": "The Title",
+              "val_num": null,
+              "val_bool": null,
+              "val_json": null,
+              "type": "string"
+            },
+            {
+              "prop_id": "p_a9b8ab259719",
+              "repo_id": "r_0",
+              "doc_id": "d_0",
+              "block_id": null,
+              "source": "computed",
+              "key": "_tags",
+              "card": "scalar",
+              "ord": 0,
+              "val_text": "alpha",
+              "val_num": null,
+              "val_bool": null,
+              "val_json": null,
+              "type": "string"
+            },
+            {
+              "prop_id": "p_authored$ttl",
+              "repo_id": "r_0",
+              "doc_id": "d_0",
+              "block_id": null,
+              "source": "frontmatter",
+              "key": "$title",
+              "card": "scalar",
+              "ord": 0,
+              "val_text": "authored dollar",
+              "val_num": null,
+              "val_bool": null,
+              "val_json": null,
+              "type": "string"
+            },
+            {
+              "prop_id": "p_authored_ttl",
+              "repo_id": "r_0",
+              "doc_id": "d_0",
+              "block_id": null,
+              "source": "frontmatter",
+              "key": "_title",
+              "card": "scalar",
+              "ord": 0,
+              "val_text": "authored underscore",
+              "val_num": null,
+              "val_bool": null,
+              "val_json": null,
+              "type": "string"
+            },
+            {
+              "prop_id": "p_authoredplain",
+              "repo_id": "r_0",
+              "doc_id": "d_0",
+              "block_id": null,
+              "source": "frontmatter",
+              "key": "title",
+              "card": "scalar",
+              "ord": 0,
+              "val_text": "authored bare",
+              "val_num": null,
+              "val_bool": null,
+              "val_json": null,
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "already-current-is-untouched",
       "notes": "README §1 step 2: a database already at the schema version is opened without executing the DDL — the odd table is all there is afterwards.",
       "setup": [
@@ -2389,7 +2511,7 @@
         "only_this"
       ],
       "expect": {
-        "user_version": 17,
+        "user_version": 18,
         "tables": {
           "id_claims": [
             "id",
@@ -2415,10 +2537,10 @@
       "name": "newer-version-is-refused",
       "notes": "README §1 step 3: a database from a newer build is refused with the exact message; nothing is read or written.",
       "setup": [],
-      "user_version": 18,
+      "user_version": 19,
       "rows": [],
       "expect": {
-        "error": "database schema (v18) is newer than this build (v17); upgrade omgbase"
+        "error": "database schema (v19) is newer than this build (v18); upgrade omgbase"
       }
     }
   ]

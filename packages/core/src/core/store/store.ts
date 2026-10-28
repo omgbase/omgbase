@@ -7,6 +7,7 @@ import { mintId, registerIdOracle } from "../ids.js";
 import { FEED_DDL } from "./schema.js";
 import { pruneFeed, remintEpoch } from "./feed.js";
 import { ftsRebuild } from "./fts.js";
+import { propId } from "./properties.js";
 import { legacyBytesSuspected, refreshLegacyBytesAlert } from "./legacy-bytes.js";
 import type { Capabilities, CapabilitiesFactory } from "../capabilities/types.js";
 import { bindCapabilities } from "../capabilities/registry.js";
@@ -90,28 +91,31 @@ export class Store {
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
       return;
     }
-    if (current === SCHEMA_VERSION) {
-      // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b →
-      // 3c → 3d): a database a 3a build already moved to 17 has `docs` but no
-      // `id_claims` and the pool's `deleted_commit`; a 3a/3b build's still has
-      // `pending_materializations.rev_id`; a 3a–3c build's has no `feed`, a
-      // `checkpoints` table and `commits.checkpoint_id`; a 3a–3d build's has
-      // `edges.from_commit`/`to_commit`, `properties.created_commit` and the
-      // `collections`/`inferred_edges` tables. Each part of the step is
-      // idempotent, so finish it here rather than spend a schema version on a
-      // dev-only state. (A 17 database with no `docs` table — the
-      // `already-current-is-untouched` fixture — is left exactly as it is.)
-      if (this.tableExists("docs")) {
-        this.migrateV17Claims();
-        this.migrateV17Pending();
-        this.migrateV17Feed();
-        this.migrateV17Edges();
-        this.migrateV17Manifest();
-        this.migrateV17Tombstones();
-        this.migrateV17LegacyBytes(false);
-      }
-      return;
+    // 17.0 grew in slices (modular-core Phase 3a → 3b → 3c → 3d): a database a
+    // 3a build already moved to 17 has `docs` but no `id_claims` and the pool's
+    // `deleted_commit`; a 3a/3b build's still has
+    // `pending_materializations.rev_id`; a 3a–3c build's has no `feed`, a
+    // `checkpoints` table and `commits.checkpoint_id`; a 3a–3d build's has
+    // `edges.from_commit`/`to_commit`, `properties.created_commit` and the
+    // `collections`/`inferred_edges` tables. Each part of the step is
+    // idempotent, so finish it here rather than spend a schema version on a
+    // dev-only state. `>= 17`, not `=== SCHEMA_VERSION`: these steps are also
+    // the SELF-HEAL on every open at the current version (a database whose
+    // `capabilities`/`alerts` another engine never wrote, or that lost them),
+    // so 18 must keep running them — and a database AT 17 needs them too, since
+    // it now goes on through the loop to 18 and the `for` below only enters its
+    // v === 17 branch when upgrading from BELOW 17. (A database with no `docs`
+    // table — the `already-current-is-untouched` fixture — is left as it is.)
+    if (current >= 17 && this.tableExists("docs")) {
+      this.migrateV17Claims();
+      this.migrateV17Pending();
+      this.migrateV17Feed();
+      this.migrateV17Edges();
+      this.migrateV17Manifest();
+      this.migrateV17Tombstones();
+      this.migrateV17LegacyBytes(false);
     }
+    if (current === SCHEMA_VERSION) return;
     if (current > SCHEMA_VERSION) {
       throw new Error(
         `database schema (v${current}) is newer than this build (v${SCHEMA_VERSION}); upgrade omgbase`,
@@ -133,6 +137,7 @@ export class Store {
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
       // is a checkpoint; deltas appear with the next commit. The major exists
       // because a 15.x engine cannot read a `{`-form node (§1 step 3 keeps it out).
+      if (v === 18) { this.migrateV18(); continue; }
       if (v === 16) continue;
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
@@ -266,6 +271,36 @@ export class Store {
   // table, copy every row with `archive = NULL`, drop the old, rename, check.
   // Idempotent: a `revisions` table that already carries `archive` is left alone
   // (a fresh database never reaches here); `archives` is `CREATE … IF NOT EXISTS`.
+  /**
+   * Migration 18 (spec/store §3.4 step 18; spec/properties 2.0): the computed
+   * property keys lose the `$` sigil — `$title`/`$tags` become `_title`/`_tags`,
+   * the names the surface already read them by, so the stored key IS the
+   * surfaced name and the boundary re-keying is gone.
+   *
+   * `prop_id` hashes the key (`spec/properties` §1), so it is re-derived from
+   * the new key; that is why this is programmatic rather than one UPDATE —
+   * stock SQLite has no `sha256`. No DDL changes.
+   *
+   * SCOPED TO `source = 'computed'`. An authored key beginning with `$` is the
+   * user's own and is stored verbatim (`spec/properties` §2.1, reached as
+   * `_frontmatter.$x`); a blanket `key LIKE '$%'` rewrite would corrupt it.
+   * Idempotent: a row already `_`-keyed matches nothing.
+   */
+  private migrateV18(): void {
+    if (!this.tableExists("properties")) return;
+    const rows = this.db
+      .prepare("SELECT prop_id, doc_id, key, ord FROM properties WHERE source = 'computed' AND key LIKE '$%'")
+      .all() as { prop_id: string; doc_id: string; key: string; ord: number }[];
+    if (rows.length === 0) return;
+    const update = this.db.prepare("UPDATE properties SET key = ?, prop_id = ? WHERE prop_id = ?");
+    this.db.transaction(() => {
+      for (const r of rows) {
+        const key = `_${r.key.slice(1)}`;
+        update.run(key, propId(r.doc_id, "computed", key, r.ord), r.prop_id);
+      }
+    })();
+  }
+
   private migrateV15(): void {
     const cols = this.db.pragma("table_info(revisions)") as { name: string }[];
     if (cols.length > 0 && !cols.some((c) => c.name === "archive")) {

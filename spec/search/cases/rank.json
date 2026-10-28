@@ -1549,7 +1549,7 @@
     },
     {
       "name": "boost-title",
-      "notes": "The merged `title` property (lower-cased) contains a term → ×1.25; `$title` (an H1) is not consulted.",
+      "notes": "The merged `title` property (lower-cased) contains a term → ×1.25; `_title` (an H1) is not consulted.",
       "steps": [
         {
           "observe": {

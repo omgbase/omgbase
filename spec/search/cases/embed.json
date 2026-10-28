@@ -212,7 +212,7 @@
     },
     {
       "name": "ctx-title-from-frontmatter",
-      "notes": "§2.2: `doc_title` is the frontmatter `title` (a scalar string); the doc header (§2.4) prefers `$title`, the H1.",
+      "notes": "§2.2: `doc_title` is the frontmatter `title` (a scalar string); the doc header (§2.4) prefers `_title`, the H1.",
       "steps": [
         {
           "observe": {
@@ -2027,7 +2027,7 @@
     },
     {
       "name": "doc-header-title-precedence",
-      "notes": "§8: the block ctx uses the frontmatter `title` (`FM`); the doc header uses `$title` (`H1`) — pinned by `input_hash` and the whole-doc vector.",
+      "notes": "§8: the block ctx uses the frontmatter `title` (`FM`); the doc header uses `_title` (`H1`) — pinned by `input_hash` and the whole-doc vector.",
       "steps": [
         {
           "observe": {

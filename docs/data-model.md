@@ -69,7 +69,7 @@ CREATE TABLE docs (
   deleted_at    TEXT,                      -- tombstone; NULL = live (`deleted_commit` through v16)
   UNIQUE (repo_id, path)
 );
--- Adapter-extracted properties (frontmatter, inline key:: value, computed $title/$tags)
+-- Adapter-extracted properties (frontmatter, inline key:: value, computed _title/_tags)
 -- live in the separate `properties` table below, superseding the former docs.metadata JSON blob.
 
 -- Current-state block table (the hot table; fully rebuildable from current revisions,
@@ -340,7 +340,7 @@ CREATE TABLE resurrection_pool (
 );
 
 -- Property index (properties-table). One row per property value; the unified
--- query surface for frontmatter, inline (key:: value), and computed ($title/$tags)
+-- query surface for frontmatter, inline (key:: value), and computed (_title/_tags)
 -- document properties, superseding the former docs.metadata blob. Current-state,
 -- maintained transactionally at ingest alongside blocks (repopulated by re-ingest,
 -- NOT by rebuild-index — see docs/properties-table.md §6), hence durable rather than derived.
@@ -350,7 +350,7 @@ CREATE TABLE properties (
   doc_id         TEXT NOT NULL,
   block_id       TEXT,                     -- NULL = document-scoped (frontmatter, computed)
   source         TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
-  key            TEXT NOT NULL,            -- dotted, flattened: 'layer','meta.owner'; computed carry '$title'
+  key            TEXT NOT NULL,            -- dotted, flattened: 'layer','meta.owner'; computed carry '_title'
   card           TEXT NOT NULL CHECK (card IN ('scalar','list')), -- authored shape (scalar ==/</> vs list())
   ord            INTEGER NOT NULL DEFAULT 0,
   val_text       TEXT,

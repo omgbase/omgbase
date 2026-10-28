@@ -240,7 +240,7 @@ pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "17.6";
+pub const SPEC_VERSION: &str = "18.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

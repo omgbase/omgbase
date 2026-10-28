@@ -172,10 +172,12 @@ export const markdownAdapter: FormatAdapter = {
     },
   } as NodeEditors,
 
-  // Computed properties surfaced as $-intrinsics (12 §4). These are engine-
-  // derived and never claim the authored `title`/`tags` keys.
-  //   $title — text of the first level-1 heading
-  //   $tags  — distinct #hashtags found in body text (order-preserving)
+  // Computed properties, keyed as the engine names that read them (spec/
+  // properties 2.0: `_`-prefixed in storage too, so the stored key IS the
+  // surfaced name). Engine-derived; they never claim the authored
+  // `title`/`tags` keys, which stay bare and the author's.
+  //   _title — text of the first level-1 heading
+  //   _tags  — distinct #hashtags found in body text (order-preserving)
   computeProperties(blocks: RawBlock[]): Record<string, unknown> {
     const out: Record<string, unknown> = {};
 
@@ -188,7 +190,7 @@ export const markdownAdapter: FormatAdapter = {
       return undefined;
     };
     const title = findH1(blocks);
-    if (title) out.$title = title;
+    if (title) out._title = title;
 
     const tags: string[] = [];
     const seen = new Set<string>();
@@ -206,7 +208,7 @@ export const markdownAdapter: FormatAdapter = {
       }
     };
     scan(blocks);
-    if (tags.length > 0) out.$tags = tags;
+    if (tags.length > 0) out._tags = tags;
 
     return out;
   },

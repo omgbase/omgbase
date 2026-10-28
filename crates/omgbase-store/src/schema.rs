@@ -41,7 +41,7 @@ pub const ALL_SQL_FILES: [&str; 3] = [SCHEMA_SQL, HISTORY_SQL, SEMANTIC_SQL];
 pub const ARCHIVE_SQL: &str = include_str!("../archive.sql");
 
 /// The `PRAGMA user_version` this crate writes: the spec major.
-pub const SCHEMA_VERSION: i64 = 17;
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// Split the three DDL files into statements (core, then history, then
 /// semantic) at every `;` outside a `--` comment or a string literal, keeping
@@ -214,28 +214,32 @@ pub(crate) fn migrate(
         tx.commit()?;
         return Ok(());
     }
+    // 17.0 grew in slices (modular-core Phase 3a → 3b → 3c → 3d → 3e): a
+    // database a 3a build already moved to 17 has `docs` but no `id_claims` and
+    // the pool's `deleted_commit`; a 3a/3b build's still has
+    // `pending_materializations.rev_id`; a 3a–3c build's has no `feed`, a
+    // `checkpoints` table and `commits.checkpoint_id`; a 3a–3d build's has
+    // `edges.from_commit`/`to_commit`, `properties.created_commit` and the
+    // `collections`/`inferred_edges` tables; a 3a–3e-i build's has no
+    // `capabilities`/`alerts`. Each part of the step is idempotent, so finish it
+    // here rather than spend a schema version on a dev-only state. `>= 17`, not
+    // `== SCHEMA_VERSION`: these steps are also the SELF-HEAL on every open at
+    // the current version (a database whose `capabilities`/`alerts` another
+    // engine never wrote, or that lost them), so 18 must keep running them — and
+    // a database AT 17 needs them too, since it now goes on through the loop to
+    // 18 and the loop only enters its v == 17 branch when upgrading from BELOW
+    // 17. (A database with no `docs` table — the
+    // `already-current-is-untouched` fixture — is left exactly as it is.)
+    if current >= 17 && table_exists(conn, "docs")? {
+        migrate_v17_claims(conn, now)?;
+        migrate_v17_pending(conn, now)?;
+        migrate_v17_feed(conn, ids, now)?;
+        migrate_v17_edges(conn)?;
+        migrate_v17_manifest(conn, history.is_some(), now)?;
+        migrate_v17_tombstones(conn)?;
+        migrate_v17_legacy_bytes(conn, false, now)?;
+    }
     if current == SCHEMA_VERSION {
-        // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b
-        // → 3c → 3d → 3e): a database a 3a build already moved to 17 has
-        // `docs` but no `id_claims` and the pool's `deleted_commit`; a 3a/3b
-        // build's still has `pending_materializations.rev_id`; a 3a–3c
-        // build's has no `feed`, a `checkpoints` table and
-        // `commits.checkpoint_id`; a 3a–3d build's has
-        // `edges.from_commit`/`to_commit`, `properties.created_commit` and the
-        // `collections`/`inferred_edges` tables; a 3a–3e-i build's has no
-        // `capabilities`/`alerts`. Each part of the step is idempotent, so
-        // finish it here rather than spend a schema version on a dev-only
-        // state. (A 17 database with no `docs` table — the
-        // `already-current-is-untouched` fixture — is left exactly as it is.)
-        if table_exists(conn, "docs")? {
-            migrate_v17_claims(conn, now)?;
-            migrate_v17_pending(conn, now)?;
-            migrate_v17_feed(conn, ids, now)?;
-            migrate_v17_edges(conn)?;
-            migrate_v17_manifest(conn, history.is_some(), now)?;
-            migrate_v17_tombstones(conn)?;
-            migrate_v17_legacy_bytes(conn, false, now)?;
-        }
         return Ok(());
     }
     if current > SCHEMA_VERSION {
@@ -343,7 +347,49 @@ fn migrate_step(conn: &Connection, to: i64, minter: &mut Mint<'_>) -> Result<()>
         // major exists because a 15.x engine cannot read a `{`-form node (§1
         // step 3 keeps it out). The opener moves `user_version` after the loop.
         16 => {}
+        18 => migrate_v18(conn)?,
         other => return Err(Error::Other(format!("no migration to schema v{other}"))),
+    }
+    Ok(())
+}
+
+/// Migration 18 (§3.4 step 18; `spec/properties` 2.0): the computed property
+/// keys lose the `$` sigil — `$title`/`$tags` become `_title`/`_tags`, the names
+/// the surface already read them by, so the stored key IS the surfaced name and
+/// the boundary re-keying is gone.
+///
+/// `prop_id` hashes the key (`spec/properties` §1), so it is re-derived from the
+/// new key; that is why this is a pass rather than one UPDATE — SQLite has no
+/// `sha256`. No DDL changes.
+///
+/// SCOPED TO `source = 'computed'`. An authored key beginning with `$` is the
+/// user's own and is stored verbatim (`spec/properties` §2.1, reached as
+/// `_frontmatter.$x`); a blanket `key LIKE '$%'` rewrite would corrupt it.
+/// Idempotent: a row already `_`-keyed matches nothing. The reference's
+/// `migrateV18`.
+fn migrate_v18(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "properties")? {
+        return Ok(());
+    }
+    let rows: Vec<(String, String, String, u32)> = conn
+        .prepare(
+            "SELECT prop_id, doc_id, key, ord FROM properties \
+             WHERE source = 'computed' AND key LIKE '$%'",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    for (old_id, doc_id, key, ord) in rows {
+        let new_key = format!("_{}", &key[1..]);
+        let new_id = omgbase_properties::prop_id(
+            &doc_id,
+            omgbase_properties::Source::Computed,
+            &new_key,
+            ord,
+        );
+        conn.execute(
+            "UPDATE properties SET key = ?1, prop_id = ?2 WHERE prop_id = ?3",
+            params![new_key, new_id, old_id],
+        )?;
     }
     Ok(())
 }

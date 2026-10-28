@@ -50,27 +50,27 @@ fn collect_tags(blocks: &[DocBlock<'_>], tags: &mut Vec<String>) {
 }
 
 /// §3.3: the Markdown adapter's computed object over the body blocks —
-/// `$title` (the first level-1 heading's text in pre-order, when non-empty)
-/// and `$tags` (distinct `#tags` over every non-heading, non-code `raw`, in
+/// `_title` (the first level-1 heading's text in pre-order, when non-empty)
+/// and `_tags` (distinct `#tags` over every non-heading, non-code `raw`, in
 /// encounter order, when any). Absent keys are simply not present.
 #[must_use]
 pub fn compute_markdown(blocks: &[DocBlock<'_>]) -> Mapping {
     let mut out = Mapping::new();
     if let Some(title) = find_h1(blocks) {
-        out.insert("$title".to_owned(), Value::String(title.to_owned()));
+        out.insert("_title".to_owned(), Value::String(title.to_owned()));
     }
     let mut tags = Vec::new();
     collect_tags(blocks, &mut tags);
     if !tags.is_empty() {
         out.insert(
-            "$tags".to_owned(),
+            "_tags".to_owned(),
             Value::Array(tags.into_iter().map(Value::String).collect()),
         );
     }
     out
 }
 
-/// The `$tags` of one raw text (the §3.3 scan on its own; the JavaScript
+/// The `_tags` of one raw text (the §3.3 scan on its own; the JavaScript
 /// whitespace set gates a tag, so a tag after `(` or `,` does not count).
 #[must_use]
 pub fn tags_in(raw: &str) -> Vec<String> {
@@ -143,81 +143,81 @@ mod tests {
     #[test]
     fn title_is_the_first_nonempty_h1_in_preorder() {
         assert_eq!(
-            computed("# Title\n\n# Second\n").get("$title"),
+            computed("# Title\n\n# Second\n").get("_title"),
             Some(&Value::String("Title".into()))
         );
-        assert_eq!(computed("## Not h1\n\ntext\n").get("$title"), None);
+        assert_eq!(computed("## Not h1\n\ntext\n").get("_title"), None);
         assert_eq!(
-            computed("#\n\n# Real\n").get("$title"),
+            computed("#\n\n# Real\n").get("_title"),
             Some(&Value::String("Real".into()))
         );
         assert_eq!(
-            computed("> # Quoted\n").get("$title"),
+            computed("> # Quoted\n").get("_title"),
             Some(&Value::String("Quoted".into()))
         );
         assert_eq!(
-            computed("- item\n\n  # Nested\n").get("$title"),
+            computed("- item\n\n  # Nested\n").get("_title"),
             Some(&Value::String("Nested".into()))
         );
         assert_eq!(
-            computed("Setext\n======\n").get("$title"),
+            computed("Setext\n======\n").get("_title"),
             Some(&Value::String("Setext".into()))
         );
-        assert_eq!(computed("text\n").get("$title"), None);
+        assert_eq!(computed("text\n").get("_title"), None);
         assert!(computed("text\n").is_empty());
     }
 
     #[test]
     fn tags_scan_raw_skip_headings_and_fences() {
         assert_eq!(
-            strs(computed("#start and #two_2 and #a/b-c\n").get("$tags")),
+            strs(computed("#start and #two_2 and #a/b-c\n").get("_tags")),
             ["start", "two_2", "a/b-c"]
         );
         assert_eq!(
-            strs(computed("# #heading\n\nbody #tag\n").get("$tags")),
+            strs(computed("# #heading\n\nbody #tag\n").get("_tags")),
             ["tag"]
         );
         assert_eq!(
-            strs(computed("```\n#code\n```\n").get("$tags")),
+            strs(computed("```\n#code\n```\n").get("_tags")),
             Vec::<String>::new()
         );
         assert_eq!(
-            strs(computed("see `#not`\n").get("$tags")),
+            strs(computed("see `#not`\n").get("_tags")),
             Vec::<String>::new(),
             "a backtick is not whitespace"
         );
         assert_eq!(
-            strs(computed("see `x #inl`\n").get("$tags")),
+            strs(computed("see `x #inl`\n").get("_tags")),
             ["inl"],
             "inline code counts (raw, not masked)"
         );
         assert_eq!(
-            strs(computed("<div>\n#html\n</div>\n").get("$tags")),
+            strs(computed("<div>\n#html\n</div>\n").get("_tags")),
             ["html"]
         );
         assert_eq!(
-            strs(computed("(#paren) x,#comma #ok\n").get("$tags")),
+            strs(computed("(#paren) x,#comma #ok\n").get("_tags")),
             ["ok"]
         );
         assert_eq!(
-            strs(computed("#dup #dup #Dup\n").get("$tags")),
+            strs(computed("#dup #dup #Dup\n").get("_tags")),
             ["dup", "Dup"]
         );
         assert_eq!(
-            strs(computed("#1st #_x\n").get("$tags")),
+            strs(computed("#1st #_x\n").get("_tags")),
             Vec::<String>::new()
         );
-        assert_eq!(strs(computed("#a#b\n").get("$tags")), ["a"]);
+        assert_eq!(strs(computed("#a#b\n").get("_tags")), ["a"]);
         assert_eq!(
-            strs(computed("- #in_list\n- #second\n").get("$tags")),
+            strs(computed("- #in_list\n- #second\n").get("_tags")),
             ["in_list", "second"]
         );
         assert_eq!(
-            strs(computed("x\u{00A0}#nbsp\u{2003}#em\n").get("$tags")),
+            strs(computed("x\u{00A0}#nbsp\u{2003}#em\n").get("_tags")),
             ["nbsp", "em"]
         );
         assert_eq!(
-            strs(computed("x\u{0085}#nel\n").get("$tags")),
+            strs(computed("x\u{0085}#nel\n").get("_tags")),
             Vec::<String>::new(),
             "NEL is not JS whitespace"
         );
@@ -227,9 +227,9 @@ mod tests {
     #[test]
     fn flattening() {
         let mut m = Mapping::new();
-        m.insert("$title".into(), Value::String("T".into()));
+        m.insert("_title".into(), Value::String("T".into()));
         m.insert(
-            "$tags".into(),
+            "_tags".into(),
             Value::Array(vec![Value::String("a".into()), Value::String("b".into())]),
         );
         let rows = flatten_computed(&m);
@@ -240,9 +240,9 @@ mod tests {
         assert_eq!(
             view,
             vec![
-                ("$title", Card::Scalar, 0, Some("T")),
-                ("$tags", Card::List, 0, Some("a")),
-                ("$tags", Card::List, 1, Some("b"))
+                ("_title", Card::Scalar, 0, Some("T")),
+                ("_tags", Card::List, 0, Some("a")),
+                ("_tags", Card::List, 1, Some("b"))
             ]
         );
     }

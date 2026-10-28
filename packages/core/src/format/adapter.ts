@@ -93,10 +93,12 @@ export interface FormatAdapter {
   projectNodes?(blocks: RawBlock[]): ProjectedNode[];
   extractMetadata?(source: string): Record<string, unknown> | null;
   /**
-   * Computed properties (properties-table §4): engine-derived facts surfaced
-   * as `$`-intrinsics ($title, $tags, ...), distinct from authored frontmatter/
-   * inline keys. Each entry is a $-prefixed key mapped to a scalar or a list of
-   * scalars. Stored as source='computed' property rows.
+   * Computed properties (properties-table §4): engine-derived facts keyed as
+   * the engine names that read them (`_title`, `_tags`, …), distinct from
+   * authored frontmatter/inline keys, which stay bare. Each entry is a
+   * `_`-prefixed key mapped to a scalar or a list of scalars. Stored as
+   * source='computed' property rows — since spec/properties 2.0 the stored key
+   * is the surfaced name, so an adapter adding a computed key spells it `_x`.
    */
   computeProperties?(blocks: RawBlock[], metadata: Record<string, unknown>): Record<string, unknown>;
   reconcileHints?(): ReconcileHints;

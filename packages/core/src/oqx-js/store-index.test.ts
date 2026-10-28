@@ -66,7 +66,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(ctx.get(repo, "docs")).toBe(docs); // one handle per target per context
     expect(ctx.indexFor!(docs, ["_id"])).toBeDefined();
     expect(ctx.indexFor!(docs, ["type"])).toBeDefined(); // a property
-    expect(ctx.indexFor!(docs, ["_title"])).toBeDefined(); // the computed scalar (the `$title` property row)
+    expect(ctx.indexFor!(docs, ["_title"])).toBeDefined(); // the computed scalar (the `_title` property row)
     expect(ctx.indexFor!(docs, ["title"])).toBeDefined(); // a bare name is an authored-property probe (5.0: nothing is reserved)
     expect(ctx.indexFor!(docs, ["_format"])).toBeUndefined(); // a column without an index
     expect(ctx.indexFor!(docs, ["_tags"])).toBeUndefined(); // list-valued

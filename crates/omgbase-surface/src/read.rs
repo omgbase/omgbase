@@ -286,30 +286,6 @@ pub fn block_raw(conn: &Connection, block_id: &str) -> Result<String> {
 
 // ---- docs_read ---------------------------------------------------------------------------
 
-/// The surface's `properties` (§2, 5.0): the `spec/properties` §5 grouped
-/// shape with the computed group's keys spelled as the attributes that read
-/// them — the store writes the computed rows under `$title`/`$tags`
-/// (`spec/properties` §3.3, unchanged), the surface has no `$` names and its
-/// engine names are `_`-prefixed, so `properties.computed` is `{ _title,
-/// _tags }`. Authored groups are untouched (bare keys; an authored `$x:` key
-/// keeps its sigil, as `_frontmatter.$x` reads it). The reference's
-/// `surfaceProperties`.
-fn surface_properties(mut grouped: Json) -> Json {
-    if let Some(computed) = grouped.get_mut("computed").and_then(Json::as_object_mut) {
-        let rekeyed: Map<String, Json> = std::mem::take(computed)
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    k.strip_prefix('$').map_or(k.clone(), |r| format!("_{r}")),
-                    v,
-                )
-            })
-            .collect();
-        *computed = rekeyed;
-    }
-    grouped
-}
-
 /// §2 `docs_read`: `{ _id, _path, rev, properties, _raw }` (+ `ids`,
 /// `hashes`, `parents` with ids) — the document's row attributes under the
 /// surface's names (§1.2, 5.0); `None` for a missing doc.
@@ -325,10 +301,13 @@ pub fn docs_read(store: &Store, doc_id: &str, include_ids: bool) -> Result<Optio
     m.insert("_id".to_owned(), json!(info.doc_id));
     m.insert("_path".to_owned(), json!(reference_path(&info.path)));
     m.insert("rev".to_owned(), json!(info.current_rev));
-    m.insert(
-        "properties".to_owned(),
-        surface_properties(store.properties_grouped(doc_id)?),
-    );
+    // The surface's `properties` (§2) is the `spec/properties` §5 grouped shape
+    // verbatim: since properties 2.0 the store writes the computed rows under
+    // `_title`/`_tags`, the names the surface reads them by, so there is nothing
+    // to re-key at the boundary (through 1.2 a `surface_properties` here turned
+    // `$title` into `_title`). Authored groups are bare keys; an authored
+    // `$x:`/`_x:` key is stored verbatim and `_frontmatter.$x` reads it.
+    m.insert("properties".to_owned(), store.properties_grouped(doc_id)?);
     m.insert("_raw".to_owned(), json!(content));
     if include_ids {
         let mut ids = Vec::new();

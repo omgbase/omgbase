@@ -524,7 +524,7 @@ export function ingestInto(
   }
 
   // Computed → property rows (source=computed). Engine-derived $-intrinsics
-  // ($title, $tags) from the adapter; never claim authored keys. Only the
+  // (_title, _tags) from the adapter; never claim authored keys. Only the
   // Markdown adapter computes (spec/properties §3.3): a `yaml`/`json` document
   // has no body prose to derive a heading or a hashtag from, and its authored
   // `title`/`tags` are reached as any other key of its mapping (§3.4), so it
