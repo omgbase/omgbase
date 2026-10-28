@@ -347,27 +347,32 @@ fn migrates_v12_to_v13_root_path_into_an_fs_source() {
     assert_eq!(adapter, "omgbase-fs-adapter");
 }
 
-/// Spec §1 step 3 — the mixed-version guarantee of a major cut: an opener
-/// that meets a database one major ahead (a v15 engine opening the v16 file
-/// this build writes; simulated here as this build meeting v17) refuses with
-/// the exact message, and neither migrates nor touches it.
+/// Spec §1 step 3 — the mixed-version guarantee of a major cut: an opener that
+/// meets a database one major ahead refuses with the exact message, and neither
+/// migrates nor touches it. Expressed in terms of `SCHEMA_VERSION` rather than
+/// the literal of the day (as the reference's twin is), so a major bump does not
+/// quietly turn "one ahead" into "current" and the case into a no-op — which is
+/// what the 17→18 bump did to the hardcoded form, and to `spec/store`'s
+/// `newer-version-is-refused` fixture alongside it.
 #[test]
 fn refuses_a_newer_database_with_the_exact_message() {
+    let ahead = SCHEMA_VERSION + 1;
     let conn = Connection::open_in_memory().unwrap();
-    conn.execute_batch("PRAGMA user_version = 18").unwrap();
+    conn.execute_batch(&format!("PRAGMA user_version = {ahead}"))
+        .unwrap();
     let err = Store::from_connection(conn, Box::new(RandomMinter))
         .err()
         .unwrap();
     assert_eq!(
         err.to_string(),
-        "database schema (v18) is newer than this build (v17); upgrade omgbase"
+        format!(
+            "database schema (v{ahead}) is newer than this build (v{SCHEMA_VERSION}); upgrade omgbase"
+        )
     );
     assert!(matches!(
         err,
-        Error::SchemaTooNew {
-            found: 18,
-            supported: 17
-        }
+        Error::SchemaTooNew { found, supported }
+            if found == ahead && supported == SCHEMA_VERSION
     ));
 }
 
