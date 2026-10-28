@@ -8,6 +8,7 @@ Ordinary files stay the human representation (editable in any editor, Obsidian, 
 
 - **stable block identity** — every paragraph, heading, YAML mapping entry, JSON property, etc. gets a durable id that survives edits and moves;
 - **block-grain history** — who/what changed each block, across commits;
+- **pluggable history strategies** — keep it in the store (block lineage, a retention ladder) or in a **bare Git repository** the engine checkpoints from the change feed and pushes to a remote;
 - **a typed knowledge graph** — links, `$ref`s, `extends`, frontmatter relations, and inline fields become queryable, temporal edges that cross format boundaries;
 - **semantic node projection** — links, tasks, anchors, environment variables, schema references, and other features are projected as queryable nodes anchored to their source blocks;
 - **hybrid retrieval** — full-text (FTS5) + vector search fused with reciprocal-rank fusion;
@@ -160,7 +161,7 @@ Four concepts, and getting them straight makes everything else obvious:
 
 - A **workspace** is the `.omgbase/` directory + its SQLite database. It is *not* the content — it can live in a project root, a notes directory, or `$HOME`. Commands find it by walking **up** from the cwd (like `git`). One `omg init` creates one.
 - A **repo** is a named scope *inside* a workspace that owns **identity + history** for a set of documents. One workspace can hold many repos; each has a `slug`. A repo does **not** intrinsically own a filesystem — it owns the versioned graph.
-- A **source** is *where a repo's bytes come from*: a filesystem directory today (via the built-in `fs` adapter), git/S3/others later. A repo can have zero, one, or several attached sources — managed with `omg source`. (A repo with no source is **headless**: it lives entirely in the DB. See [Remote / headless](#remote--headless-servers).)
+- A **source** is *where a repo's bytes come from*: a filesystem directory today (via the built-in `fs` adapter), git/S3/others later. (Git reaches omgbase as a **history** strategy rather than a source — see [History strategies](#history-strategies).) A repo can have zero, one, or several attached sources — managed with `omg source`. (A repo with no source is **headless**: it lives entirely in the DB. See [Remote / headless](#remote--headless-servers).)
 - **Config** is one settings schema at **two layers**: values set at the **workspace** layer are *defaults* every repo inherits; a repo can *override* any key. That's why an embedder is set once workspace-wide (so every repo shares one vector space) while something like `gc.enabled` is set per repo.
 
 > There is no separate "attach/ingest/load" verb: `omg source add <dir>` is how content enters — it creates the repo if needed, registers the filesystem source, and runs the initial sync. The initial ingest is just that source's first sync (the same reconcile every later sync uses).
@@ -300,6 +301,67 @@ Cursor (`.cursor/mcp.json`, project- or user-level) takes the same shape:
 ```
 
 Add `--repo <slug>` to `args` when the workspace holds several repos, and `--no-watch` to skip the in-process watcher (it is auto-off when another live watcher holds the lease).
+
+## History strategies
+
+A repository's history is kept by **one provider**, chosen per repository, and capture is **optional** — `omg history enable` turns it on (one baseline commit records every live document's current head, a coverage interval opens, every later write is captured), `omg history disable` turns it off and leaves what was captured readable. Which provider keeps it is the strategy:
+
+| | **`native`** (default) | **`git`** |
+|---|---|---|
+| Where it lives | the store's own history tables | a bare Git repository at `<workspace>/.omgbase/git` |
+| When it is written | inside every commit, synchronously | by a **checkpoint worker** reading the change feed, asynchronously |
+| Grain | **block lineage** — every block's biography | whole documents |
+| Shared with others | `omgbase-sync`, or the `--server` tools above | **a git remote** — push/fetch, clone it with plain `git` |
+| Retention | the ladder: `history plan`/`export`/`attach`/`detach`/`list` | managed with git |
+
+Note the trade: the git provider keeps whole documents, so `blocks_history` and the block-grain `docs_diff` answer `capability_unavailable` naming the tool that does work (`docs_history`, `docs_diff_unified`), and the retention ladder does not apply. Pick `native` when you want a block's biography; pick `git` when you want the history to be an ordinary repository other tools and people can read. One provider per repository — switching is `history disable` then `history enable --provider <other>` — and the git provider needs `git` on `PATH` (if it is missing, history **reads** fail loudly with the `history_provider_unavailable` alert while writes carry on; the next checkpoint catches up).
+
+### Git-backed history
+
+```bash
+omg history enable --provider git           # bare repo at .omgbase/git, branch `omgbase`
+                                            #   --branch <b>, --cadence every|<ms>
+omg history checkpoint                      # run the worker once: feed rows since the tip become commits
+omg history disable                         # stop capturing (switch providers with enable --provider)
+```
+
+Commits are built **from the database rows, never from the vault's files** — each touched document's accepted bytes are hashed into a blob and the tree is the previous commit's plus the adds and removes. `--cadence every` is one commit per feed row; `--cadence <ms>` folds a burst into one. Under `omg mcp` a mutation hook runs the worker for you: at cadence `every` it runs synchronously after each successful write tool, so the git history is complete without anyone running `omg sync`; under a debounce it re-arms one timer and a pending timer still runs at shutdown. Every commit carries `omgbase-*` trailers (the feed position, the originating commit ids, origin/actor, one `omgbase-doc` line per touched document) — the replay record. Alongside the content branch the worker keeps `refs/omgbase/ids`, one blob per live document holding its block identities; the content branch itself is a plain notes repository anyone can clone.
+
+### Pushing and fetching
+
+Nothing touches the network until a remote is bound, and both policies default to `off`:
+
+```bash
+omg history remote set --url git@github.com:me/notes.git \
+    [--name origin] [--branch <b>] \
+    [--push off|on-checkpoint|periodic] [--fetch off|periodic|webhook]
+omg history remote status                   # local refs only, no network:
+                                            #   in-sync | ahead | behind | diverged | unknown
+omg history push                            # the branch + the ids ref — never --force
+omg history fetch                           # fast-forward, or a tree-level three-way merge
+```
+
+`push: on-checkpoint` pushes after every checkpoint that committed, `periodic` on every freshness sweep; `fetch: periodic` fetches on every sweep, and `webhook` is **reserved** — an external caller runs `omg history fetch`, the engine fetches nothing on its own. **Credentials never enter omgbase**: a URL carrying a user or password is refused, and `git` resolves access through the host (ssh keys, a credential helper, a deploy key).
+
+`fetch` is how a remote's changes become *content*: the remote's tree changes are written into the vault **through the source boundary** — as ordinary external edits, ingested by the same observe path a human save takes, so identities are matched by the reconcile. When both sides moved, the merge is at the tree level against git's common ancestor; a path both sides changed differently is a **conflict**, and both versions are kept — yours at the path, theirs beside it as `<stem>.remote-<sha>.md` — until you settle each one:
+
+```bash
+omg history remote resolve <path> --ours|--theirs     # the last resolution writes the merge commit
+```
+
+If the remote was **rewritten** (rebased or force-pushed, so its tip no longer descends from the one you knew), push and fetch pause, the `git_remote_diverged` alert names the old tip, local checkpointing continues, and you choose the remediation:
+
+```bash
+omg history remote reconcile --rebase   # replay your unpushed checkpoints onto the new head
+                                        #   --merge  one merge commit, both histories kept
+                                        #   --adopt  the remote's head becomes truth (your edits kept
+                                        #            beside as <stem>.local-<sha>.md, old tip backed up)
+                                        #   --fork   push your branch as <branch>-omgbase-<ts>
+```
+
+Never a force-push, never an unpushed commit dropped without a backup ref, never a silent last-write-wins. Full reference: [`packages/git-adapter/README.md`](https://github.com/omgbase/omgbase/blob/main/packages/git-adapter/README.md), `spec/store` §5.12.
+
+> **Git history is not a git *source*.** These two are different axes: a **source** is where a repo's *bytes* come from (a filesystem directory today — see [Sources & syncing](#sources--syncing)), while a history provider is where the *version history* lives and how it is shared. There is no git source adapter yet; `omg source add` takes a directory.
 
 ## Quickstart (library)
 

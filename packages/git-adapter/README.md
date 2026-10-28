@@ -9,7 +9,7 @@ import { gitHistoryProvider } from "@omgbase/git-adapter";
 registerHistoryProvider("git", gitHistoryProvider());
 ```
 
-Private to the monorepo (like `@omgbase/elements`): the `omgbase` CLI depends on it and is what ships it.
+Published on npm (`@omgbase/git-adapter`); the `omgbase` CLI depends on it and `packages/cli/src/seams.ts` is what registers it.
 
 ## What it does
 
