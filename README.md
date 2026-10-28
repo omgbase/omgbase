@@ -123,11 +123,11 @@ Format is auto-detected from file extension. Each format adapter declares progre
 
 | Format | Extensions | Parse | Render | Edges | Nodes | Mutation | Properties |
 |--------|-----------|-------|--------|-------|-------|----------|------------|
-| **Markdown** | `.md` `.markdown` | yes | yes | links, wikilinks, frontmatter, inline fields | `md:link` `md:wikilink` `md:task` `md:anchor` `md:inline_field` | yes | frontmatter + inline (`key:: value`) + computed (`title`, `tags`) |
+| **Markdown** | `.md` `.markdown` | yes | yes | links, wikilinks, frontmatter, inline fields | `md:link` `md:wikilink` `md:task` `md:anchor` `md:inline_field` | yes | frontmatter + inline (`key:: value`) + computed (`_title`, `_tags`) |
 | **YAML** | `.yaml` `.yml` | yes | yes | `$ref` `extends` `$schema` path values | `yaml:ref` `yaml:schema` `yaml:anchor` `yaml:alias` `yaml:env_var` | yes | full structure |
 | **JSON** | `.json` | yes | yes | `$ref` `$schema` path values | `json:ref` `json:schema` | yes | full object |
 
-Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that one OQX `follow out_links { from dst }` query (or the `graph` MCP tool, which compiles to it) walks in one call.
+Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that one OQX `follow _out_links { from _dst }` query (or the `graph` MCP tool, which compiles to it) walks in one call.
 
 Block kinds use a colon-separated format qualifier for non-markdown formats: `yaml:mapping_entry`, `json:property`, `yaml:scalar`. Markdown block types remain unqualified for backward compatibility: `heading`, `paragraph`, `task`, `code_fence`, etc.
 
@@ -137,9 +137,9 @@ Document-level properties live in one indexed `properties` table (design in `doc
 
 - **frontmatter** — the parsed YAML fence (markdown), or the whole parsed object (YAML/JSON files);
 - **inline** — dataview-style `key:: value` fields in body text, accumulating across occurrences;
-- **computed** — engine-derived values stored under `$title` (the first H1) and `$tags` (body `#hashtags`); the surface reads them as the `title` / `tags` attributes.
+- **computed** — engine-derived values stored under `$title` (the first H1) and `$tags` (body `#hashtags`); the surface reads them as the `_title` / `_tags` attributes.
 
-An OQX bare key (`docs { layer == "canon" }`) queries the authored union (frontmatter + inline) as an indexed seek; `frontmatter.<k>` / `inline.<k>` narrow to one source and `data.<k>` is the union by name; the engine attributes `title` (the computed title) and `tags` (authored ∪ hashtags) win over an authored key of the same name, which is then `data.title` / `data.tags`. A per-value `card` flag records the authored scalar-vs-list shape, so scalar `==`/`!=`/`<` match scalar-authored values while `list()` spans all — the `@omgbase/oqx` scalar semantics hold across the row-backed store (see `docs/query-language.md`).
+An OQX bare key (`docs { layer == "canon" }`) queries the authored union (frontmatter + inline) as an indexed seek; `_frontmatter.<k>` / `_inline.<k>` narrow to one source and `_data.<k>` is the union by name; the engine attributes carry the underscore — `_title` (the computed title) and `_tags` (authored ∪ hashtags) — so nothing collides: a bare `title` or `tags` is the authored key whatever the engine also derives, and `_data.<k>` is the one way to an authored key that itself begins with `_` (`spec/surface` §1.2, 5.0). A per-value `card` flag records the authored scalar-vs-list shape, so scalar `==`/`!=`/`<` match scalar-authored values while `list()` spans all — the `@omgbase/oqx` scalar semantics hold across the row-backed store (see `docs/query-language.md`).
 
 ### Structural query functions
 
@@ -191,7 +191,7 @@ Reads are **current by default**: before each command a freshness sweep re-inges
 omg outline notes/hub.md                       # compact orientation outline (stable wire format)
 omg cat notes/hub.md                            # exact file bytes, reconstructed from the DB
 omg query 'docs { layer == "canon" }'           # query documents by frontmatter
-omg q 'nodes { kind == "md:task" && !attrs.checked }' --ids | omg cat -   # pipe ids as fuel
+omg q 'nodes { _kind == "md:task" && !checked }' --ids | omg cat -   # pipe ids as fuel
 omg find "stable identity rationale" -1         # top hybrid-search hit's id alone
 omg log --since 24h                             # one commit digest per line
 ```
@@ -201,7 +201,7 @@ omg log --since 24h                             # one commit digest per line
 Every mutation renders by splice, writes the file atomically, and records a revision; conflicts are typed and carry current truth.
 
 ```bash
-omg q 'blocks { type == "task" && !attrs.checked && under_heading("Launch") }' --ids | omg done -
+omg q 'blocks { _type == "task" && !checked && under_heading("Launch") }' --ids | omg done -
 echo '# New idea' | omg new notes/idea.md -     # create a document from bytes on stdin (or: -f file.md)
 omg edit b_k7z2p9q                              # $EDITOR round-trip on one block, CAS-pinned
 omg retarget old.md new.md                      # rewrite links; plan by default, --apply to commit
@@ -271,7 +271,7 @@ d_194c  projects/bar.md
 omg> show @1                       # @N = row N of the last displayed collection (1-based)
 omg> let canon = query 'docs { layer == "canon" }'   # let binds a snapshot, not a live query
 omg> show @canon[1]                # @name[i] / @name.field — shallow addressing only
-omg> query 'nodes { kind == "md:task" && !attrs.checked }'
+omg> query 'nodes { _kind == "md:task" && !checked }'
 omg> done @1                       # references substitute into any command's args
 ```
 
@@ -319,13 +319,13 @@ const { repoId } = ingestDirectory(store, "my-vault", "/path/to/vault");
 
 // OQX is the one query + traversal language (see docs/query-language.md).
 // Blocks under a heading:
-const tasks = oqxRun(store, repoId, 'blocks { type == "task" && !attrs.checked && under_heading("Launch") }', { limit: 50 });
+const tasks = oqxRun(store, repoId, 'blocks { _type == "task" && !checked && under_heading("Launch") }', { limit: 50 });
 
 // Across formats — YAML configs referencing a specific host:
-const configs = oqxRun(store, repoId, 'docs { format == "yaml" && database.host == "localhost" }');
+const configs = oqxRun(store, repoId, 'docs { _format == "yaml" && database.host == "localhost" }');
 
 // Nodes — unchecked tasks across all markdown files:
-const openTasks = oqxRun(store, repoId, 'nodes { kind == "md:task" && attrs.checked == false }');
+const openTasks = oqxRun(store, repoId, 'nodes { _kind == "md:task" && checked == false }');
 console.log(tasks.hits, configs.hits, openTasks.hits);
 
 // Compact orientation outline of one document.
@@ -391,7 +391,7 @@ const server = buildServer({ store, repoId, rootPath: "/path/to/vault" });
 // Connect `server` to any MCP transport (stdio, in-memory, …).
 ```
 
-Tools exposed (44; the authoritative list is the `registerTool` calls in `packages/core/src/mcp/server.ts`; a tool's prefix names the row kind it addresses — `docs_`, `blocks_`, `nodes_`, `links_` — and the repo-level operations carry none): reads — `docs_outline`, `docs_read`, `docs_read_many`, `blocks_read`, `blocks_read_many`, `docs_tree`, `docs_list`; search — `query`, `query_syntax`, `graph`, `blocks_search`, `blocks_resolve`; writes — `apply`, the block-level sugar `blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/`blocks_split`/`blocks_merge`, the macros `blocks_check`/`nodes_set`/`blocks_append`/`docs_append`/`links_retarget`/`links_repair` (+ the read-only `links_stale`), and the doc-level `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`/`docs_update` (`dry_run: true` is the plan-only call); sync — `observe`, `observe_many`, `observe_delete`; history — `blocks_history`, `docs_diff`, `docs_diff_unified`, `docs_read_at`, `docs_history`, `changes_since`; admin — `repos`, `repos_status`, `sync_status`, `version`. Every repo-scoped tool takes an optional `repo` slug; every list result carries `truncated` + a cursor. `docs_read` returns a whole document in one call — full file bytes (byte-exact) plus properties grouped by source. `observe`/`observe_many`/`observe_delete` are the sync-ingest surface (file→DB, observed-origin, echo-suppressed) that `@omgbase/sync` drives; `changes_since` digests carry per-revision `hash` for the export direction. Every tool spells a row the way the query language does (`spec/surface` §1.2, 3.0): `id`/`path` for identity, `raw`/`hash`/`updated_at` for a doc's or block's bytes, hash and time, plain `doc_id`/`block_id`/`parent_id` for foreign keys.
+Tools exposed (44; the authoritative list is the `registerTool` calls in `packages/core/src/mcp/server.ts`; a tool's prefix names the row kind it addresses — `docs_`, `blocks_`, `nodes_`, `links_` — and the repo-level operations carry none): reads — `docs_outline`, `docs_read`, `docs_read_many`, `blocks_read`, `blocks_read_many`, `docs_tree`, `docs_list`; search — `query`, `query_syntax`, `graph`, `blocks_search`, `blocks_resolve`; writes — `apply`, the block-level sugar `blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/`blocks_split`/`blocks_merge`, the macros `blocks_check`/`nodes_set`/`blocks_append`/`docs_append`/`links_retarget`/`links_repair` (+ the read-only `links_stale`), and the doc-level `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`/`docs_update` (`dry_run: true` is the plan-only call); sync — `observe`, `observe_many`, `observe_delete`; history — `blocks_history`, `docs_diff`, `docs_diff_unified`, `docs_read_at`, `docs_history`, `changes_since`; admin — `repos`, `repos_status`, `sync_status`, `version`. Every repo-scoped tool takes an optional `repo` slug; every list result carries `truncated` + a cursor. `docs_read` returns a whole document in one call — full file bytes (byte-exact) plus properties grouped by source. `observe`/`observe_many`/`observe_delete` are the sync-ingest surface (file→DB, observed-origin, echo-suppressed) that `@omgbase/sync` drives; `changes_since` digests carry per-revision `_hash` for the export direction. Every tool spells a row the way the query language does (`spec/surface` §1.2, 5.0 — "underscore = engine"): `_id`/`_path` for identity, `_raw`/`_hash`/`_updated_at` for a doc's or block's bytes, hash and time, and `_doc_id`/`_block_id` for foreign keys; a key naming a role rather than a row attribute stays bare (`rev`, `cursor`, `locator`, `parent_id`, `plan_id`, `commit`).
 
 ### Synchronize a source into a repo (library)
 

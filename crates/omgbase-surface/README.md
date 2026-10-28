@@ -45,8 +45,8 @@ let mut store = Store::open_in_memory()?;
 let repo = store.create_repo("notes")?;
 let mut surface = Surface::new(store, &repo, None);
 surface.call("observe", json!({ "path": "a.md", "content": "# Title\n\nFirst.\n" }));
-let res = surface.call("query", json!({ "query": "docs { select title }" }));
-assert_eq!(res.body["hits"][0]["title"], "Title");
+let res = surface.call("query", json!({ "query": "docs { select _title }" }));
+assert_eq!(res.body["hits"][0]["_title"], "Title");
 # Ok::<(), omgbase_store::Error>(())
 ```
 

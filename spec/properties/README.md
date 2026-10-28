@@ -381,9 +381,10 @@ as `Infinity`/`-Infinity`; NaN reads as `null` (its `val_num` is NULL).
 - **grouped** (`docs_read.properties`): `{ frontmatter: {key: shape}, inline:
   {…}, computed: {…} }` — each source's rows shaped separately (every
   source present, possibly `{}`). The rows keep their stored keys here; the
-  surface re-keys the `computed` group's `$title`/`$tags` to `title`/`tags` at
-  the tool boundary (`spec/surface` §1.2, 3.0 — omgbase's surface has no `$`
-  names), leaving the authored groups untouched.
+  surface re-keys the `computed` group's `$title`/`$tags` to `_title`/`_tags`
+  at the tool boundary (`spec/surface` §1.2, 5.0 — omgbase's surface has no `$`
+  names and its engine names are `_`-prefixed), leaving the authored groups
+  untouched.
 - **merged** (the query layer's bag): `{ key: shape }` over **all** rows of
   the document, authored sources and computed alike, keyed by the stored key
   (`$title` keeps its sigil).
@@ -592,3 +593,13 @@ omgbase-properties --test spec`).
   properties step (take the mapping from `crates/omgbase-format`'s YAML/JSON
   adapters: first document, errors → none, root must be a mapping), and the
   surface's frontmatter-effect refusal.
+- 2026-10-27, no version change: **§5's note on the surface boundary was two
+  majors stale.** It said the surface re-keys the `computed` group's stored
+  `$title`/`$tags` to the bare `title`/`tags` (`spec/surface` §1.2, 3.0). The
+  surface 5.0 "underscore = engine" rule made them `_title`/`_tags`, which is
+  what both engines have emitted since (`surfaceProperties` in
+  `packages/core/src/core/read/document.ts`, `surface_properties` in
+  `crates/omgbase-surface/src/read.rs`) and what `docs/properties-table.md`
+  and `docs/mcp-api.md` already describe. Nothing in *this* spec changed: the
+  stored keys keep their `$` sigil (§3.3) and the `merged` bag is still keyed
+  by them. Only the cross-reference was wrong.

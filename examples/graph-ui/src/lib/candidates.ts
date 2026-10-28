@@ -175,8 +175,9 @@ export function pairName(pair: Pick<InversePair, "forward" | "backward">): strin
 const PAIR_NAME_ORDER: readonly [string, string][] = [["before", "after"], ["prev", "next"], ["previous", "next"], ["predecessor", "successor"]];
 const TIMELINE_WORDS = /^(before|after|next|prev(ious)?|follows?|precedes?|succeeds?|then|parent|child(ren)?)$/i;
 // The hit envelope (`_id`/`_path`, and 4.x's `id`/`path` — lib/paths.ts
-// `HIT_ENVELOPE_KEYS`) plus the walk intrinsics.
-const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
+// `HIT_ENVELOPE_KEYS`), the walk intrinsics, and a row's document foreign key
+// (`_doc_id`; `doc_id` on a 4.x server — `$doc_id` was its pre-3.0 spelling).
+const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "_doc_id", "doc_id"]);
 
 /** Is `name` an engine attribute rather than an authored field — a `$`-name
  * (OQX's own: `$it`, `$depth`, `$ordinal`, …), a `_`-name (spec/surface 5.0

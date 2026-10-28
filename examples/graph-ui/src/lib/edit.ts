@@ -167,8 +167,9 @@ export function inferShape(values: readonly unknown[]): Shape | null {
 }
 
 // The hit envelope (`_id`/`_path`, and 4.x's `id`/`path` — lib/paths.ts
-// `HIT_ENVELOPE_KEYS`) plus the walk intrinsics.
-const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
+// `HIT_ENVELOPE_KEYS`), the walk intrinsics, and a row's document foreign key
+// (`_doc_id`; `doc_id` on a 4.x server — `$doc_id` was its pre-3.0 spelling).
+const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "_doc_id", "doc_id"]);
 
 /** Row fields whose values are all document references (scalar or list). */
 export function refValuedFields(rows: readonly Row[]): string[] {

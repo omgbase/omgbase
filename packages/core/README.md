@@ -51,15 +51,15 @@ const repoId = ensureRepo(ws.store, "notes", root);   // repo row + an `fs` sour
 const sweep = freshnessSweep(ws.store, repoId, root); // ingest new/changed *.md as one checkpoint
 sweep.ingested;                                       // ["todo.md"]
 
-// Query with OQX. Nodes are projections of blocks; block_id is the anchor block.
+// Query with OQX. Nodes are projections of blocks; `_block_id` is the anchor block.
 const open = oqxRun(ws.store, repoId,
-  'nodes { select block: block_id where kind == "md:task" && !attrs.checked }');
-open.hits;  // [{ id: "n_…", path: "/todo.md", block: "b_…" }]
+  'nodes { select block: _block_id where _kind == "md:task" && !checked }');
+open.hits;  // [{ _id: "n_…", _path: "/todo.md", block: "b_…" }]
 
 // Read a whole document back byte-exact, with block ids + CAS hashes.
 const doc = findDoc(ws.store, { repoId, path: "todo.md" });
 const read = docsRead(ws.store, doc.docId, { includeIds: true });
-read.raw;     // "# Todo\n\n- [ ] write the README\n- [x] ship 0.1\n"
+read._raw;    // "# Todo\n\n- [ ] write the README\n- [x] ship 0.1\n"
 read.ids;      // ["b_…", "b_…", "b_…", "b_…"]   read.hashes[id] → the block's hash (the expect.content_hash value)
 
 // Mutate. The macro expands to kernel `update` ops pinned by content_hash;
@@ -71,7 +71,7 @@ const result = apply(ws.store, {
   ops: tasksComplete(ws.store, open.hits.map((h) => h.block)),
   origin: { actor: "agent:quickstart", reason: "demo" },
 });
-result;  // { results: [{ ids: ["b_…"] }], revisions: [{ id: "d_…", path: "todo.md", hash: "…" }], committed: true }
+result;  // { results: [{ ids: ["b_…"] }], revisions: [{ _id: "d_…", _path: "/todo.md", _hash: "…" }], committed: true }
 // todo.md on disk now reads "- [x] write the README"
 
 historyNode(ws.store, open.hits[0].block);  // [{ origin: "import", kind: "edited", … }, { origin: "observed", kind: "inserted", … }]
@@ -106,7 +106,7 @@ the `Store` first and are synchronous unless noted.
 | Read | Byte-exact document read, outlines, block/node hydration, listings, ref resolution, cursors | `docsRead`, `docsOutline`, `nodesGet/nodesGetMany`, `findDoc`, `loadDocBlocks`, `blockRaw`, `docsList`, `docsTree`, `resolveRef`, `encodeCursor/decodeCursor` |
 | Mutate — kernel | The six ops (`insert/update/move/remove/split/merge`) applied atomically as one changeset with CAS; write target is pluggable | `apply`, `Op`, `ApplyRequest`, `Expect`, `To`, `DocStore`, `FsDocStore`, `NullDocStore`, `MutationError` |
 | Mutate — macros + doc ops | Op builders for common intents; whole-document create/move/delete/frontmatter; whole-document update planner | `tasksComplete`, `sectionsAppend`, `sectionsRename`, `sectionsMove`, `listsInsertItem`, `nodeSet`, `linksRetarget`, `docsCreate`, `docsMove`, `docsDelete`, `docsSetMeta`, `planUpdate`, `applyOpset`, `docsUpdate` |
-| OQX | Run an OQX query over the store (`docs`/`blocks`/`nodes`/`edges`); async variant embeds `semantic("…")` phrases first | `oqxRun`, `oqxRunAsync`, `parseOqx`, `collectSemanticPhrases`, `OqxResult`, `FilterInvalid` |
+| OQX | Run an OQX query over the store (`docs`/`blocks`/`nodes`/`links`/`revisions`); async variant embeds `semantic("…")` phrases first | `oqxRun`, `oqxRunAsync`, `parseOqx`, `collectSemanticPhrases`, `OqxResult`, `FilterInvalid` |
 | Graph / history | Block history, unified diffs between revisions, commit digests since a cursor, link edges | `historyNode`, `diffUnified`, `changesSince`, `docLinks`, `inboundLinksTo` |
 | Search | Ranked "what does the caller mean" resolution; RRF fusion of FTS + vectors; raw vector search | `resolve`, `hybridSearch`, `vectorSearch`, `docVectorSearch` |
 | Embeddings | Out-of-process embedder client, batching worker, post-mutation drainer, task builders | `createExternalProvider`, `EmbeddingWorker`, `EmbedDrainer`, `buildEmbedTasks`, `embeddingSettings`, `SemanticUnavailable` |
@@ -136,7 +136,7 @@ server in your own process with `buildServer(ctx)` and any MCP SDK transport.
 
 OQX is the standalone [`@omgbase/oqx`](https://www.npmjs.com/package/@omgbase/oqx)
 engine bound to the store (`src/oqx-js/`): omgbase supplies a `DataContext` over
-`docs`/`blocks`/`nodes`/`edges` and a SQLite pushdown planner, and the library
+`docs`/`blocks`/`nodes`/`links`/`revisions` and a SQLite pushdown planner, and the library
 supplies the language (`<collection> { select … where … follow … order by … limit … offset … }` — the collection heads the body, the clauses inside it in that fixed order —
 consumers `collect/count/exists/none/first/single`, nested blocks, `^` outer
 references, `entries()`, `values`). Row-scoped predicates like `text("…")` (FTS)
@@ -145,12 +145,12 @@ and `semantic("…")` (embedding score) are omgbase additions.
 ```js
 oqxRun(ws.store, repoId, `
   docs {
-    select path, title, open: nodes { select block_id where kind == "md:task" && !attrs.checked }
-    where nodes count { kind == "md:task" && !attrs.checked } >= 2
-    order by path limit 10
+    select _path, _title, open: _nodes { select _block_id where _kind == "md:task" && !checked }
+    where _nodes count { _kind == "md:task" && !checked } >= 2
+    order by _path limit 10
   }
 `);
-// hits: [{ id: "d_…", path: "/more.md", title: "More", open: [{ block_id: "b_…" }, …] }]
+// hits: [{ _id: "d_…", _path: "/more.md", _title: "More", open: [{ _block_id: "b_…" }, …] }]
 ```
 
 See [`docs/query-language.md`](https://github.com/omgbase/omgbase/blob/main/docs/query-language.md)
