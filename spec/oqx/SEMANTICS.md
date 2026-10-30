@@ -234,6 +234,17 @@ present, absent when absent — so at a row scope `weapon?` is `weapon` and
 `weapon?!` is `weapon!`: transparent, never a second meaning. Over a
 **collection** it keeps the present elements and drops the absent ones, and it
 is **always a collection** — the empty one when nothing survives, never absent.
+Over **absent** it is absent: there is nothing to filter, and `?` must not
+invent a collection. This case is **forced, not chosen** — absent carries no
+type, so `?` cannot tell a missing list from a missing scalar (`_tags?` and
+`weapon?` see the same bare absent), and coercing to `[]` would turn a missing
+scalar into an empty list. So the three cases separate: a collection with some
+absent elements filters to the present ones; a collection whose elements are all
+absent filters to `[]`; an absent value stays absent. `x?!` is loud for the last
+two alike. (Note that `size` DOES read absent as empty — `size(x)` is `0` on an
+absent `x` — because it returns a number and cannot corrupt a shape; `?` returns
+the thing itself and can.)
+
 A filter yields a collection: that keeps its shape a property of the QUERY and
 never of the data, so `size(x?)` is `0` rather than absent, `sum(x?)` is the
 additive identity, and `x? distinct` is always well-formed. It is also the shape
@@ -245,8 +256,9 @@ an aggregation of nothing is empty, not missing. `?` binds in `!`'s
 slot, tightest (`a.b?` is `a.(b?)`).
 
 **`x?!`** (0.29) is a **single operator**, not the composition of `?` and `!`:
-it is `x?`, raising the `!` eval error when the result is **absent or has no
-present elements**. "Shout when there is nothing here", with *here* scaling to
+it is `x?`, raising the `!` eval error when the result is **absent or is a
+collection with no present elements** — so it is loud both for a list filtered
+down to nothing and for a property that was never there. "Shout when there is nothing here", with *here* scaling to
 the scope — at a row scope it coincides with `x!` (a present scalar is the
 value, an absent one raises); at a group scope it raises exactly when no row of
 the group carries the property.

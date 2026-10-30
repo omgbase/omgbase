@@ -44,7 +44,7 @@ guess the default of.
 | `call` | `name(args)` (`recv: null`) or `recv.name(args)` | expressions |
 | `unary` | `!x`, `-x` (also what `is x` ≡ `!!x` and `not x` ≡ `!x` parse to) | expressions |
 | `required` | `x!` — the value, or an eval error when absent (since 0.17) | expressions |
-| `present` | `x?` — the present value: a scalar unchanged, a collection's surviving elements (**always a collection**, `[]` when none survive) (since 0.29; SEMANTICS §5b) | expressions |
+| `present` | `x?` — the present value: a scalar unchanged, **absent unchanged**, a collection's surviving elements (`[]` when none survive) (since 0.29; SEMANTICS §5b) | expressions |
 | `present_required` | `x?!` — ONE operator, not `present` wrapped in `required`: `x?`, raising when the result is absent or has no present elements (since 0.29; SEMANTICS §5b). `x!?` is a parse error | expressions |
 | `binary` | arithmetic, comparison, identity (`is`, `is not`), or a regex match (`~`, `~*`, `!~`, `!~*` — since 0.22), `op` the source operator | expressions |
 | `logical` | `&&`, `||` in value position | expressions |
