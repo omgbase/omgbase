@@ -20,14 +20,14 @@
 // fall-through from an inner scope to an outer one — see `resolveIn`.
 
 import type {
-  Query, Where, Expr, OpNode, SelectItem, OrderSpec, Follow, Subquery,
+  Query, Where, Expr, OpNode, SelectItem, OrderSpec, Follow, Subquery, ReductionName,
 } from "./ast.ts";
-import { isRegexOp, REGEX_OPS } from "./ast.ts";
+import { isRegexOp, REGEX_OPS, isReductionName } from "./ast.ts";
 import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
 import { OqxError } from "./errors.ts";
 import {
-  relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange, stringForm,
+  relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange, stringForm, toList,
 } from "./semantics.ts";
 import type { BlockPlan, Correlation, Rule, RowIndex } from "./optimize/index.ts";
 import { printTemplate } from "./print.ts";
@@ -405,33 +405,20 @@ export class InMemoryEngine implements Engine {
     return body.having ? out.filter((gs) => this.evalWhere(body.having!, gs)) : out;
   }
 
-  // An aggregate (§24) over the group of the scope it is read in. The argument
-  // is read on each row's scope in group order; every value aggregate sees the
-  // PRESENT values only (`count()` alone counts rows), `distinct` dedups them by
-  // identity (§16), and `any`/`all` test truthiness (absent is false) and stop
-  // at the first row that decides, like `||` / `&&`.
-  private aggregate(e: Extract<Expr, { kind: "aggregate" }>, scope: Scope): unknown {
-    const g = scope.group;
-    if (!g) throw new OqxError(`\`${describe(e)}\` is an aggregate and is read on a group — it needs a \`group by\` in its body`, "eval");
-    if (e.arg === null) return g.rowScopes.length;
-    const arg = e.arg;
-    if (e.name === "any") return g.rowScopes.some((s) => truthy(this.evalExpr(arg, s)));
-    if (e.name === "all") return g.rowScopes.every((s) => truthy(this.evalExpr(arg, s)));
-    let values: unknown[] = [];
-    for (const s of g.rowScopes) {
-      const v = this.evalExpr(arg, s);
-      if (v != null) values.push(v);
-    }
-    if (e.distinct) {
-      const seen = new Set<string>();
-      values = values.filter((v) => {
-        const k = canonicalKey(this.hostIdentity(v));
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-    }
-    switch (e.name) {
+  // A reduction (§24): an ordinary collection function of ONE argument, legal
+  // wherever a call is. The argument is evaluated ONCE in the scope the call
+  // stands in — it is `$rows { … }` that re-enters row scopes, not the
+  // function — then coerced with `toList` (absent is empty, a lone value is one
+  // element). Every value reduction sees the PRESENT elements only; `any`/`all`
+  // test truthiness (absent is false) and stop at the first element that
+  // decides, like `||` / `&&`. No arity overload and no `distinct` modifier:
+  // dedupe with the collection's own `select distinct`.
+  private reduction(name: ReductionName, arg: Expr, scope: Scope): unknown {
+    const raw = toList(this.evalExpr(arg, scope));
+    if (name === "any") return raw.some((v: unknown) => truthy(v));
+    if (name === "all") return raw.every((v: unknown) => truthy(v));
+    const values = raw.filter((v: unknown) => v != null);
+    switch (name) {
       case "count": return values.length;
       case "collect": return values;
       case "first": return values.length > 0 ? values[0] : undefined;
@@ -440,11 +427,11 @@ export class InMemoryEngine implements Engine {
         let total = 0;
         for (const v of values) {
           if (typeof v !== "number") {
-            throw new OqxError(`cannot ${e.name === "sum" ? "sum" : "average"} \`${describe(arg)}\` over the group: it is ${describeValueKind(v)} — \`${e.name}\` takes numbers`, "eval");
+            throw new OqxError(`cannot ${name === "sum" ? "sum" : "average"} \`${describe(arg)}\`: it is ${describeValueKind(v)} — \`${name}\` takes numbers`, "eval");
           }
           total += v;
         }
-        if (e.name === "sum") return total;
+        if (name === "sum") return total;
         return values.length === 0 ? undefined : total / values.length;
       }
       case "min": case "max": {
@@ -452,7 +439,7 @@ export class InMemoryEngine implements Engine {
         let best = values[0];
         for (let i = 1; i < values.length; i++) {
           const c = compare(values[i], best);
-          if (c !== undefined && (e.name === "min" ? c < 0 : c > 0)) best = values[i];
+          if (c !== undefined && (name === "min" ? c < 0 : c > 0)) best = values[i];
         }
         return best;
       }
@@ -1099,7 +1086,6 @@ export class InMemoryEngine implements Engine {
         return absent ? undefined : out;
       }
       // An aggregate (SEMANTICS §24) over the group of the current scope.
-      case "aggregate": return this.aggregate(e, scope);
     }
   }
 
@@ -1149,6 +1135,12 @@ export class InMemoryEngine implements Engine {
   }
 
   private evalCall(e: Extract<Expr, { kind: "call" }>, scope: Scope): unknown {
+    // A reduction is reserved (§1) and handled here, before the host is asked:
+    // its argument is NOT pre-evaluated as an ordinary argument list, since the
+    // reduction coerces the one collection itself.
+    if (e.recv === null && isReductionName(e.name) && e.args.length === 1) {
+      return this.reduction(e.name, e.args[0]!, scope);
+    }
     const args = e.args.map((a) => this.evalExpr(a, scope));
     if (e.recv === null) {
       const r = this.ctx.callFunction?.(e.name, args);
@@ -1306,7 +1298,6 @@ function exprHasRecur(e: Expr): boolean {
     case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
     case "tuple": return e.items.some(exprHasRecur);
     case "template": return e.parts.some((p) => typeof p !== "string" && exprHasRecur(p));
-    case "aggregate": return e.arg !== null && exprHasRecur(e.arg);
     default: return false;
   }
 }

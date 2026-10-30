@@ -4,7 +4,7 @@
 // tree has the same shape as a parsed one and prints with `print`.
 
 import type {
-  AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode, OrderSpec,
+  ReductionName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode, OrderSpec,
   Query, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
 } from "./ast.ts";
 
@@ -31,8 +31,12 @@ export const tuple = (items: Expr[]): Expr => ({ kind: "tuple", span: span(), it
 /** `` `text ${expr} …` `` — a template literal (SEMANTICS §7b); `parts` alternates
  * text, expression, text, … (odd length, text first and last). */
 export const template = (parts: TemplatePart[]): Expr => ({ kind: "template", span: span(), parts });
-/** `name(arg)` / `name(distinct arg)` / `count()` — an aggregate over the group's rows (SEMANTICS §24). */
-export const aggregate = (name: AggregateName, arg: Expr | null = null, distinct = false): Expr => ({ kind: "aggregate", span: span(), name, arg, distinct });
+/** `name(collection)` — a reduction (SEMANTICS §24). Since 0.29 an ordinary
+ * `call` of one argument: there is no `aggregate` node, no null arg and no
+ * `distinct` flag (dedupe with the collection's own `select distinct`). */
+export const reduction = (name: ReductionName, arg: Expr): Expr => ({ kind: "call", span: span(), recv: null, name, args: [arg] })
+/** @deprecated 0.29 renamed this to {@link reduction}; a reduction needs its collection. */
+export const aggregate = reduction;
 
 export const scalar = (expr: Expr): Where => ({ kind: "scalar", span: span(), expr });
 export const and = (parts: Where[]): Where => ({ kind: "and", span: span(), parts });

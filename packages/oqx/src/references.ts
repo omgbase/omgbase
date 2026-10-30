@@ -289,10 +289,13 @@ function atGroupScope(body: Query | Subquery, path: readonly AstNode[], i: numbe
   const child = path[i + 1] ?? node;
   const post = body.select.includes(child as SelectItem) || child === body.having || (body.orderBy?.includes(child as never) ?? false);
   if (!post) return false;
+  // 0.29: a reduction's argument is an ordinary expression of the group scope
+  // (a non-key bare name there reads its per-row list), so nothing between the
+  // body and the position demotes a group read to a row read. Through 0.28 an
+  // `aggregate` node on the path did exactly that.
   for (let j = i + 1; j < path.length; j++) {
     const a = path[j]!;
     if (a.kind === "query" || a.kind === "subquery") break;
-    if (a.kind === "aggregate") return false;
   }
   return true;
 }

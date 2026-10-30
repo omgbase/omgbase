@@ -37,8 +37,6 @@ export function exprReadsScopeIn(e: Expr, at: number, upTo: number): boolean {
     case "range": return (e.lo !== null && exprReadsScopeIn(e.lo, at, upTo)) || (e.hi !== null && exprReadsScopeIn(e.hi, at, upTo));
     case "tuple": return e.items.some((x) => exprReadsScopeIn(x, at, upTo));
     case "template": return e.parts.some((p) => typeof p !== "string" && exprReadsScopeIn(p, at, upTo));
-    // The argument is read on the group's rows, which sit at the group's depth.
-    case "aggregate": return e.arg !== null && exprReadsScopeIn(e.arg, at, upTo);
   }
 }
 
@@ -116,9 +114,6 @@ export function exprRaiseFree(e: Expr, ctx: RuleContext): boolean {
     // A template literal raises on a list or record interpolation (§7b), which
     // only the data decides: with an interpolation it is never raise-free.
     case "template": return e.parts.every((p) => typeof p === "string");
-    // `sum`/`avg` raise on a non-number (§24), which only the data decides;
-    // and an aggregate outside a group scope raises.
-    case "aggregate": return false;
   }
 }
 

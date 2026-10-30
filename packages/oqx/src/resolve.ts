@@ -314,10 +314,6 @@ function mapExpr(e: Expr, f: (e: Expr) => Expr | null): Expr {
       const parts = mapSame(e.parts, (p) => (typeof p === "string" ? p : go(p)));
       return parts === e.parts ? e : { ...e, parts };
     }
-    case "aggregate": {
-      const arg = e.arg ? go(e.arg) : null;
-      return arg === e.arg ? e : { ...e, arg };
-    }
     case "op": { // the receiver is read in this scope; the block is its own scope
       const receiver = go(e.receiver);
       return receiver === e.receiver ? e : { ...e, receiver };

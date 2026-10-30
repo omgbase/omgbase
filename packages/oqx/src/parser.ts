@@ -93,9 +93,9 @@ import { lexTemplate, lexString } from "./lexer.ts";
 import { OqxError } from "./errors.ts";
 import type {
   Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, FollowDestination, Consumer, RelOp,
-  BinaryOp, Span, TemplatePart, Flatten, GroupBy, GroupKey, AggregateName,
+  BinaryOp, Span, TemplatePart, Flatten, GroupBy, GroupKey, ReductionName,
 } from "./ast.ts";
-import { AGGREGATE_NAMES, isAggregateName } from "./ast.ts";
+import { REDUCTION_NAMES, isReductionName } from "./ast.ts";
 import { readKeys, resolveRowClauses, resolveSelect, resolveWhere } from "./resolve.ts";
 import { visit } from "./walk.ts";
 import { printTemplate } from "./print.ts";
@@ -127,7 +127,7 @@ const CLAUSE_WORDS = new Set<string>([
 ]);
 // The names a group scope resolves besides its keys (SEMANTICS §24): the
 // group's rows, the key record itself, and its identity.
-const GROUP_SCOPE_NAMES: ReadonlySet<string> = new Set(["rows", "$it", "$key"]);
+const GROUP_SCOPE_NAMES: ReadonlySet<string> = new Set(["$rows", "$it", "$key"]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 // The comparison level (GRAMMAR §4): the six relational operators and, since
 // 0.22, the four regex operators — sugar over `matches`, non-associative like
@@ -512,17 +512,16 @@ class Parser {
     if (frontier && !follow && !ctx.destination) {
       this.fail("`frontier` needs a `follow` — a body's `frontier <expr>` marks which of its rows (the walk's seeds) are frontiers; a destination block's marks the occurrences reached through it");
     }
-    // Grouping (0.24): `having` needs a `group by`; `distinct` is redundant with
-    // one; aggregates may stand only in the post-group clauses; and every bare
-    // name read at the group scope must be a key, an alias, or the group's rows.
+    // Grouping (0.24; 0.29): `having` needs a `group by`, `distinct` is redundant
+    // with one, and a grouped body's staging is checked (§24). A body WITHOUT
+    // `group by` needs no check at all since 0.29 — a reduction is an ordinary
+    // call, legal anywhere, because `$rows` is total (`[$it]`).
     if (having && !groupBy) {
       this.failAt(having.span[0], "`having` needs a `group by` — `having <pred>` filters the groups a body yields; a per-row filter is `where`");
     }
     if (groupBy) {
       if (distinct) this.failAt(groupBy.span[0], DISTINCT_WITH_GROUP);
-      this.checkGroupedBody({ select, resolvedSelect, having, resolvedHaving, orderBy: rc.orderBy, froms, where: resolvedWhere, frontier: rc.frontier, flatten: rc.flatten, limit, offset, groupBy: rc.groupBy });
-    } else {
-      this.rejectAggregates({ select, resolvedSelect, having: null, resolvedHaving: null, orderBy: rc.orderBy, froms, where: resolvedWhere, frontier: rc.frontier, flatten: rc.flatten, limit, offset, groupBy: null });
+      this.checkGroupedBody({ select, resolvedSelect, having, resolvedHaving, orderBy: rc.orderBy, froms, where: resolvedWhere, rawWhere: where, frontier: rc.frontier, flatten: rc.flatten, limit, offset, groupBy: rc.groupBy });
     }
     return { froms, where, select, orderBy, follow, frontier, depth, flatten, groupBy, having, distinct, values, limit, offset };
   }
@@ -536,7 +535,7 @@ class Parser {
     const nx = this.peekAt(1);
     // A value start — or an aggregate call whose name is a consumer word
     // (`flatten collect(x)`), admitted so the aggregate check can name it.
-    return this.startsValue(nx) || (nx?.type === "ident" && isAggregateName(nx.value) && this.peekAt(2)?.type === "lparen");
+    return this.startsValue(nx) || (nx?.type === "ident" && isReductionName(nx.value) && this.peekAt(2)?.type === "lparen");
   }
 
   // `flatten <expr> [as <name>]`. The expression is any value — a block after a
@@ -584,7 +583,7 @@ class Parser {
   private atHaving(): boolean {
     if (!this.at("ident", "having")) return false;
     const nx = this.peekAt(1);
-    return this.startsValue(nx) || (nx?.type === "ident" && isAggregateName(nx.value) && this.peekAt(2)?.type === "lparen");
+    return this.startsValue(nx) || (nx?.type === "ident" && isReductionName(nx.value) && this.peekAt(2)?.type === "lparen");
   }
 
   private parseGroupBy(): GroupBy {
@@ -620,80 +619,57 @@ class Parser {
     return { kind: "key", span: this.sp(start), name, expr };
   }
 
-  // `name(` where `name` is an aggregate: `count()`, `sum(e)`, `collect(distinct
-  // e)`. The cursor is at the `(`. Arity and the `distinct` modifier are checked
-  // here; WHERE the aggregate may stand is the body's business (`checkGroupedBody`).
-  private parseAggregate(name: AggregateName, start: number): Expr {
-    this.next(); // '('
-    let distinct = false;
-    if (this.at("ident", "distinct") && this.startsValue(this.peekAt(1))) { this.next(); distinct = true; }
-    let arg: Expr | null = null;
-    if (!this.at("rparen")) {
-      arg = this.parseValueExpr();
-      if (this.at("comma")) this.fail(`\`${name}(…)\` takes one argument — an aggregate reduces one expression over the group's rows`);
+  // `name(` where `name` is a reduction: `count($rows)`, `sum(e)`. The cursor is
+  // at the `(`. Since 0.29 a reduction is an ordinary `call` of ONE argument —
+  // the collection — so only its arity is checked here, and WHERE it may stand
+  // is no longer a question of what it is (SEMANTICS §24 "Staging" governs what
+  // its collection may be, not what the function is called).
+  private parseReduction(name: ReductionName, start: number): Expr {
+    const args = this.parseArgs();
+    if (args.length === 0) {
+      this.failAt(start, `\`${name}()\` needs its collection — the group's rows are \`${name}($rows)\`, a property's per-row values \`${name}(<name>)\``);
     }
-    if (!this.at("rparen")) this.fail(`expected ')' to close \`${name}(…)\``);
-    this.next();
-    if (arg === null && name !== "count") this.fail(`\`${name}()\` needs an argument (\`${name}(<expr>)\`) — only \`count()\` counts the group's rows without one`);
-    if (distinct && (name === "any" || name === "all")) {
-      this.fail(`\`${name}(distinct …)\`: \`distinct\` applies to a value aggregate (count, sum, min, max, avg, collect, first, last), not to a predicate aggregate`);
-    }
-    return { kind: "aggregate", span: [start, this.end()], name, arg, distinct };
+    if (args.length > 1) this.failAt(start, `\`${name}(…)\` takes one argument, the collection it reduces`);
+    return { kind: "call", span: this.sp(start), recv: null, name, args };
   }
 
-  // A free call: an aggregate node for an aggregate name (reserved since 0.24),
-  // an ordinary `call` otherwise. The cursor is at the `(`.
+  // A free call. A reduction name is reserved (§1) and arity-checked; every
+  // other name is an ordinary host call. Both are `call` nodes since 0.29.
+  // The cursor is at the `(`.
   private parseFreeCall(name: string, start: number): Expr {
-    if (isAggregateName(name)) return this.parseAggregate(name, start);
+    if (isReductionName(name)) return this.parseReduction(name, start);
     const args = this.parseArgs();
     return { kind: "call", span: this.sp(start), recv: null, name, args };
   }
 
-  // The clauses an aggregate may NOT stand in — every clause read before the
-  // rows are grouped (`from`, `where`, `frontier`, the keys, the bound) — and,
-  // in a body without `group by`, every clause. The `where` is the alias-resolved
-  // one, so an aggregate reached through a select alias is caught too.
-  private rejectAggregates(b: GroupCheck): void {
-    const found: [Expr, string][] = [];
-    const collect = (exprs: (Expr | null)[], clause: string): void => {
-      const out: Expr[] = [];
-      for (const e of exprs) if (e) aggregatesIn(e, out);
-      for (const a of out) found.push([a, clause]);
-    };
-    const where: Expr[] = [];
-    if (b.where) whereAggregates(b.where, where);
-    for (const a of where) found.push([a, "`where`"]);
-    collect(b.froms, "`from`");
-    collect([b.frontier], "`frontier`");
-    collect(b.flatten.map((f) => f.expr), "`flatten`");
-    collect([b.limit], "`limit`");
-    collect([b.offset], "`offset`");
-    if (b.groupBy) collect(b.groupBy.keys.map((k) => k.expr), "a `group by` key");
-    if (!b.groupBy) {
-      collect(b.resolvedSelect.filter((it) => it.kind === "field").map((it) => (it as Extract<SelectItem, { kind: "field" }>).expr), "a select item");
-      if (b.orderBy) collect(b.orderBy.map((o) => o.expr), "`order by`");
+  // SEMANTICS §24 "Staging". `$rows` itself is legal in every clause — `[$it]`
+  // before `group by`, the group's rows after — so the token is never refused.
+  // What is refused is the ALIAS INDIRECTION: `where` is the one pre-group
+  // clause §14 inlines aliases into, so a `select` alias whose definition reads
+  // `$rows` would be evaluated pre-group there, reducing a one-element
+  // collection and answering the same thing for every row. The alias is judged,
+  // never the function: the same text written directly in `where` is accepted.
+  private rejectStagedRows(b: GroupCheck): void {
+    if (!b.rawWhere || !b.groupBy) return;
+    const grouped = new Set<string>();
+    for (const it of b.resolvedSelect) {
+      if (it.kind !== "field" || it.name === "" || it.lift !== 0) continue;
+      if (exprReadsRows(it.expr)) grouped.add(it.name);
     }
-    const hit = found[0];
-    if (!hit) return;
-    const [agg, clause] = hit;
-    if (!b.groupBy) {
-      this.failAt(agg.span[0], `\`${describe(agg)}\` is an aggregate: it is read after grouping and may stand only in a select item, \`having\` or \`order by\` of a body with \`group by\` — this body has none`);
+    if (grouped.size === 0) return;
+    const named: Expr[] = [];
+    whereIdents(b.rawWhere, named);
+    for (const e of named) {
+      if (e.kind === "ident" && grouped.has(e.name)) {
+        this.failAt(e.span[0], `\`${e.name}\` reads \`$rows\` after grouping, but \`where\` runs before \`group by\` — move it to \`having\``);
+      }
     }
-    this.failAt(agg.span[0], `\`${describe(agg)}\` is an aggregate and cannot be read in ${clause}${clause === "`where`" ? " (a select alias standing for one included)" : ""} — the rows are not grouped yet there; aggregates stand in a select item, \`having\` or \`order by\``);
   }
 
   // A grouped body: aggregates only after the grouping (and never nested), and
   // every bare name at the group scope a key, an alias, or the group's rows.
   private checkGroupedBody(b: GroupCheck): void {
-    this.rejectAggregates(b);
-    // An aggregate's argument is read on the group's rows, where there is no
-    // group to aggregate: `sum(count())` is an error, not a double reduction.
-    const post: Expr[] = [];
-    for (const it of b.resolvedSelect) if (it.kind === "field") aggregatesIn(it.expr, post);
-    if (b.resolvedHaving) whereAggregates(b.resolvedHaving, post);
-    if (b.orderBy) for (const o of b.orderBy) aggregatesIn(o.expr, post);
-    const nested = nestedAggregate(post);
-    if (nested) this.failAt(nested.span[0], `\`${describe(nested)}\`: an aggregate cannot nest — its argument is read on each of the group's rows, where there is no group to reduce`);
+    this.rejectStagedRows(b);
     const keys = new Set(b.groupBy!.keys.map((k) => k.name));
     const valid = (aliases: Iterable<string>): ReadonlySet<string> => new Set([...keys, ...GROUP_SCOPE_NAMES, ...aliases]);
     const aliases: string[] = [];
@@ -718,19 +694,20 @@ class Parser {
     }
   }
 
-  // Every bare name `e` reads at the group scope (an aggregate's argument reads
-  // the group's rows and is not checked; a nested block is its own scope, only
-  // its receiver is read here). `inCall` names the enclosing non-aggregate free
-  // call, for the "not an aggregate" hint.
+  // A name read at the group scope (§24). Since 0.29 a BARE name is always the
+  // host's — a key reads the key, any other property reads its per-row list — so
+  // nothing bare is refused here. Only a `$`-name that is not one of the group
+  // scope's three intrinsics is, since `$` is the language's namespace and the
+  // walk intrinsics belong to rows. A nested block is its own scope; only its
+  // receiver is read here.
   private checkGroupExpr(e: Expr, valid: ReadonlySet<string>, where: string, inCall: string | null = null): void {
     switch (e.kind) {
       case "ident":
-        if (!valid.has(e.name)) {
-          const hint = inCall === null ? "" : `; \`${inCall}(…)\` is not an aggregate — the aggregates are ${[...AGGREGATE_NAMES].join(", ")}`;
-          this.failAt(e.span[0], `\`${e.name}\` is not a group key or aggregate — ${where} of a grouped body reads the group: a key (\`group by ${e.name}\`), an aggregate over its rows (\`collect(${e.name})\`), or the rows themselves (\`rows collect { select ${e.name} }\`)${hint}`);
+        if (e.name.startsWith("$") && !GROUP_SCOPE_NAMES.has(e.name)) {
+          this.failAt(e.span[0], `\`${e.name}\` is not read at a group scope — ${where} of a grouped body has \`$it\` (the key record), \`$key\` (its identity) and \`$rows\` (the group's rows); a row's own intrinsics are read inside \`$rows { … }\``);
         }
         return;
-      case "lit": case "binding": case "outer": case "aggregate": return;
+      case "lit": case "binding": case "outer": return;
       case "member": this.checkGroupExpr(e.recv, valid, where, inCall); return;
       case "call":
         if (e.recv) this.checkGroupExpr(e.recv, valid, where, inCall);
@@ -1761,6 +1738,8 @@ interface GroupCheck {
   orderBy: OrderSpec[] | null;
   froms: Expr[];
   where: Where | null;
+  /** The `where` BEFORE alias substitution — the staging check reads aliases by name. */
+  rawWhere: Where | null;
   frontier: Expr | null;
   flatten: readonly Flatten[];
   limit: Expr | null;
@@ -1774,49 +1753,54 @@ interface GroupCheck {
 // nodes carry the empty span (they did not come from source).
 function defaultGroupProjection(groupBy: GroupBy, fail: (msg: string) => never): SelectItem[] {
   if (groupBy.keys.some((k) => k.name === "count")) {
-    fail("a group key named `count` needs an explicit `select` — the default projection of a grouped body is its keys plus `count: count()`");
+    fail("a group key named `count` needs an explicit `select` — the default projection of a grouped body is its keys plus `count: count($rows)`");
   }
   const items: SelectItem[] = groupBy.keys.map((k) => ({ kind: "field", span: [0, 0], name: k.name, expr: { kind: "ident", span: [0, 0], name: k.name }, lift: 0 }));
-  items.push({ kind: "field", span: [0, 0], name: "count", expr: { kind: "aggregate", span: [0, 0], name: "count", arg: null, distinct: false }, lift: 0 });
+  items.push({ kind: "field", span: [0, 0], name: "count", lift: 0,
+    expr: { kind: "call", span: [0, 0], recv: null, name: "count", args: [{ kind: "ident", span: [0, 0], name: "$rows" }] } });
   return items;
 }
 
-// Every aggregate node in `e` read at THIS scope (a nested block's body is its
-// own scope and is not entered; a block's receiver is). An aggregate's argument
-// is entered too, so a nested aggregate is found by `nestedAggregate`.
-function aggregatesIn(e: Expr, out: Expr[]): void {
+// Does `e` read `$rows` at THIS scope? (A nested block's body is its own scope
+// and is not entered; a block's receiver is.) The staging check (§24) uses it to
+// tell a group-scope projection from a per-row one.
+function exprReadsRows(e: Expr): boolean {
   switch (e.kind) {
-    case "aggregate": out.push(e); if (e.arg) aggregatesIn(e.arg, out); return;
-    case "lit": case "ident": case "outer": case "binding": return;
-    case "member": aggregatesIn(e.recv, out); return;
-    case "call": if (e.recv) aggregatesIn(e.recv, out); e.args.forEach((a) => aggregatesIn(a, out)); return;
-    case "unary": case "required": aggregatesIn(e.expr, out); return;
-    case "binary": case "logical": case "in": aggregatesIn(e.left, out); aggregatesIn(e.right, out); return;
-    case "range": if (e.lo) aggregatesIn(e.lo, out); if (e.hi) aggregatesIn(e.hi, out); return;
-    case "tuple": e.items.forEach((x) => aggregatesIn(x, out)); return;
-    case "template": e.parts.forEach((p) => { if (typeof p !== "string") aggregatesIn(p, out); }); return;
-    case "op": aggregatesIn(e.receiver, out); return;
+    case "ident": return e.name === "$rows";
+    case "lit": case "outer": case "binding": return false;
+    case "member": return exprReadsRows(e.recv);
+    case "call": return (e.recv ? exprReadsRows(e.recv) : false) || e.args.some(exprReadsRows);
+    case "unary": case "required": return exprReadsRows(e.expr);
+    case "binary": case "logical": case "in": return exprReadsRows(e.left) || exprReadsRows(e.right);
+    case "range": return (e.lo !== null && exprReadsRows(e.lo)) || (e.hi !== null && exprReadsRows(e.hi));
+    case "tuple": return e.items.some(exprReadsRows);
+    case "template": return e.parts.some((p) => typeof p !== "string" && exprReadsRows(p));
+    case "op": return exprReadsRows(e.receiver);
   }
 }
 
-function whereAggregates(w: Where, out: Expr[]): void {
+// Every bare identifier a where tree reads at THIS scope, for the staging check.
+function whereIdents(w: Where, out: Expr[]): void {
+  const walk = (e: Expr): void => {
+    switch (e.kind) {
+      case "ident": out.push(e); return;
+      case "lit": case "outer": case "binding": return;
+      case "member": walk(e.recv); return;
+      case "call": if (e.recv) walk(e.recv); e.args.forEach(walk); return;
+      case "unary": case "required": walk(e.expr); return;
+      case "binary": case "logical": case "in": walk(e.left); walk(e.right); return;
+      case "range": if (e.lo) walk(e.lo); if (e.hi) walk(e.hi); return;
+      case "tuple": e.items.forEach(walk); return;
+      case "template": e.parts.forEach((p) => { if (typeof p !== "string") walk(p); }); return;
+      case "op": walk(e.receiver); return;
+    }
+  };
   switch (w.kind) {
-    case "and": case "or": w.parts.forEach((p) => whereAggregates(p, out)); return;
-    case "not": whereAggregates(w.expr, out); return;
-    case "scalar": aggregatesIn(w.expr, out); return;
-    case "op": aggregatesIn(w.receiver, out); return;
+    case "and": case "or": w.parts.forEach((p) => whereIdents(p, out)); return;
+    case "not": whereIdents(w.expr, out); return;
+    case "scalar": walk(w.expr); return;
+    case "op": walk(w.receiver); return;
   }
-}
-
-// The first aggregate whose argument holds another (`sum(count())`), if any.
-function nestedAggregate(found: readonly Expr[]): Expr | null {
-  for (const a of found) {
-    if (a.kind !== "aggregate" || !a.arg) continue;
-    const inner: Expr[] = [];
-    aggregatesIn(a.arg, inner);
-    if (inner.length > 0) return a;
-  }
-  return null;
 }
 
 // The default key of an unaliased projection item: the last segment of a bare /

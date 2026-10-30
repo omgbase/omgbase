@@ -115,7 +115,6 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
   // The interpolations; the text parts between them are strings, not nodes.
   template: [{ key: "parts" }],
   // The argument is read on each of the group's rows (0.24); `null` for `count()`.
-  aggregate: [{ key: "arg" }],
 };
 
 /** A child slot's value: a node, a list of nodes (a template's `parts` also

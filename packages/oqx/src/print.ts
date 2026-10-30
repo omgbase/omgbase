@@ -69,7 +69,7 @@ const OR = 1, AND = 2, CMP = 3, RANGE = 4, ADD = 5, MUL = 6, UNARY = 7, POSTFIX 
 function prec(e: Expr): number {
   switch (e.kind) {
     case "lit": case "ident": case "outer": case "binding": case "tuple": case "template": return PRIMARY;
-    case "member": case "call": case "aggregate": case "required": case "op": return POSTFIX;
+    case "member": case "call": case "required": case "op": return POSTFIX;
     case "unary": return UNARY;
     // Comparison, identity and the regex operators (0.22) share the cmp level.
     case "binary": return e.op === "+" || e.op === "-" ? ADD : e.op === "*" || e.op === "/" || e.op === "%" ? MUL : CMP;
@@ -287,8 +287,6 @@ function expr(e: Expr): Out {
       const args = cat("(", join(e.args.map(expr), ", "), ")");
       return e.recv === null ? cat(e.name, args) : cat(receiver(e.recv), `.${e.name}`, args);
     }
-    // An aggregate prints as the call it is written as (`count()`, `sum(distinct x)`).
-    case "aggregate": return cat(e.name, "(", e.distinct ? "distinct " : "", e.arg ? expr(e.arg) : "", ")");
     case "unary": return cat(e.op, operand(e.expr, UNARY));
     // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
     case "required": return cat(operand(e.expr, POSTFIX), "!");

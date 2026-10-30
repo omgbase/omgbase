@@ -53,18 +53,27 @@ export type UnaryOp = "!" | "-";
 /** The operator of a `logical` expression. */
 export type LogicalOp = "&&" | "||";
 
-/** The aggregate functions (SEMANTICS §24, since 0.24): reserved free-function
- * names that reduce a group's rows. `count` takes zero or one argument, every
- * other exactly one; `any`/`all` take a predicate and admit no `distinct`. */
-export type AggregateName = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last" | "any" | "all";
+/** The reductions (SEMANTICS §24; ordinary collection functions since 0.29):
+ * reserved free-function names, each taking ONE argument — the collection — and
+ * reducing it to one value. They are ordinary `call` nodes: there is no
+ * syntactic category, no clause restriction, no arity overload and no
+ * `distinct` modifier (dedupe with the collection's own `select distinct`).
+ * Reserved so a host cannot serve a function under one of these names. */
+export type ReductionName = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last" | "any" | "all";
 
-export const AGGREGATE_NAMES: ReadonlySet<string> = new Set<AggregateName>([
+export const REDUCTION_NAMES: ReadonlySet<string> = new Set<ReductionName>([
   "count", "sum", "min", "max", "avg", "collect", "first", "last", "any", "all",
 ]);
 
-export function isAggregateName(name: string): name is AggregateName {
-  return AGGREGATE_NAMES.has(name);
+export function isReductionName(name: string): name is ReductionName {
+  return REDUCTION_NAMES.has(name);
 }
+
+/** @deprecated 0.29 renamed these: a reduction is an ordinary `call`, not an
+ * `aggregate` node. Kept as aliases for one minor so a consumer can migrate. */
+export const AGGREGATE_NAMES = REDUCTION_NAMES;
+/** @deprecated use {@link isReductionName}. */
+export const isAggregateName = isReductionName;
 
 /** One part of a template literal (since 0.21): a decoded text run, or an
  * interpolated expression. The strings are not nodes (no `kind`, no span). */
@@ -99,11 +108,9 @@ export type Expr =
   // GRAMMAR §1 escapes resolved). Evaluates to the concatenation of the text and
   // the interpolated values' string forms (SEMANTICS §7b).
   | { kind: "template"; span: Span; parts: TemplatePart[] }
-  // An aggregate call `sum(e)`, `count()`, `collect(distinct e)` (since 0.24):
-  // reduces the rows of the group it is read in (SEMANTICS §24). `arg` is null
-  // for the bare `count()`; `distinct` is the `(distinct e)` modifier. Legal
-  // only in the post-group clauses of a body with `group by`.
-  | { kind: "aggregate"; span: Span; name: AggregateName; arg: Expr | null; distinct: boolean }
+  // (0.29: the `aggregate` node is gone. `sum(e)`, `count($rows)` and the rest
+  // are ordinary `call` nodes — reserved names (§1), one argument, legal
+  // wherever a call is. SEMANTICS §24.)
   // A value-position directive (since 0.17): `recv first { … }.pay`, and what a
   // bracket lookup `x[…]` desugars to. `isExpr` is false for it — an op is an
   // expression only by position; discriminate on `kind === "op"`.
@@ -282,7 +289,7 @@ export type AstKind = AstNode["kind"];
 
 /** The expression kinds (`Expr["kind"]`), for `isExpr`. */
 const EXPR_KINDS: ReadonlySet<string> = new Set([
-  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple", "template", "aggregate",
+  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple", "template",
 ]);
 
 /** Whether a node is a scalar `Expr` (an `op` in expression position is not: it
