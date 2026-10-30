@@ -244,12 +244,29 @@ discontinuity. A reader of a grouped projection is thinking in aggregations, and
 an aggregation of nothing is empty, not missing. `?` binds in `!`'s
 slot, tightest (`a.b?` is `a.(b?)`).
 
-**`x?!` is a parse error**, since `?` always yields a present collection and the
-`!` could therefore never fire: `` `x?!` is vacuous — `?` yields a collection,
-which is present even when empty; to shout when nothing survives write
-`first(x?)!` or `x?[0]!` ``. Both of those are built from operators that already
-exist — `first` over no elements is absent (the table below) and `x[n]!`
-requires the positional row (above) — so the loud form costs no new rule.
+**`x?!`** (0.29) is a **single operator**, not the composition of `?` and `!`:
+it is `x?`, raising the `!` eval error when the result is **absent or has no
+present elements**. "Shout when there is nothing here", with *here* scaling to
+the scope — at a row scope it coincides with `x!` (a present scalar is the
+value, an absent one raises); at a group scope it raises exactly when no row of
+the group carries the property.
+
+It is **atomic by design, and that costs the reader something**, so the reason is
+worth stating: as a composition `x?!` would be vacuous — `?` always yields a
+present collection, so the `!` could never fire — which means the glyph pair
+carries no useful compositional meaning to displace. Nobody writes `?!` wanting a
+filter that cannot fail; they would write `?`. Adding the `!` *is* the request
+for loudness, so the atom does what its author meant. The lexer must munch `?!`
+before `?`. `x!?` is **not** an atom and is a parse error (`x!` is present or has
+already raised, so the `?` is noise).
+
+"Empty" in this rule means **an empty collection, never a falsy scalar**: `0?!`,
+`""?!` and `false?!` are the values, exactly as `0!`, `""!` and `false!` are.
+`?!` therefore introduces no truthiness and no coercion, and
+`sugar::required-is-not-a-coercion` holds unchanged. The composed forms
+`first(x?)!` and `x?[0]!` remain available and mean the same thing; `?!` is the
+terse spelling, not a new capability.
+
 *Rejected alternative:* making `x?` absent when nothing survives, which would
 have let `x?!` carry that meaning directly. It was dropped because it makes the
 operator's result type depend on the data, which is strictly worse than the
@@ -269,12 +286,12 @@ lookup found **nothing to return**, not because what it returned was empty.
 
 **The row/group asymmetry is real and deliberate.** At a row scope `x!` and
 `x?!` coincide. At a group scope they diverge: `weapon!` tests the **list**,
-which is present whenever the group has rows, so it does not shout. Loudness
-over a group is composed, not a glyph: `first(weapon?)!` shouts when every row of
-the group lacks the property, and `$rows { weapon! values }` shouts when **any**
-row does — the elementwise assertion is not a third operator but a matter of
-where the `!` is written. Outside `$rows` the question is about the group;
-inside it, about each row.
+which is present whenever the group has rows, so it does not shout. `weapon?!`
+is the form that shouts over a group, and it does so when **every** row lacks the
+property; `$rows { weapon! values }` shouts when **any** row does — the
+elementwise assertion is not a third operator but a matter of where the `!` is
+written. Outside `$rows` the question is about the group; inside it, about each
+row.
 
 ## 6. Ordering comparisons (`<`, `<=`, `>`, `>=`)
 
