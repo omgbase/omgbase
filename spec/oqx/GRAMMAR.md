@@ -301,12 +301,6 @@ scoperef   = "^" { "^" }                                  ; relative: one scope 
   rows**, in input order, one element per row (`product` over a two-row group is
   `["baseball", "mitt"]`). A property that is itself list-valued therefore reads
   as a list of lists — each row contributes its value, whatever shape it has.
-  The list is subject to the ordinary postfix operators: **`weapon?`** keeps the
-  present elements (always a collection — `[]` when none survive, SEMANTICS
-  §5b), and
-  **`weapon? distinct`** dedupes what is left by identity (§16 — so the absents,
-  being one identity, collapse to a single `null` under a bare
-  `weapon distinct`), first occurrence kept.
   Through 0.28 a non-key bare name was instead the parse error `` `title` is not
   a group key or aggregate ``; a grouped body could not read a row field at all,
   and the group's rows were reached only through an aggregate's argument or the
@@ -591,7 +585,7 @@ grammar; the collection before a body is a receiver (§5), not a value. Preceden
 | add | `+ -` | left-assoc |
 | mul | `* / %` | left-assoc |
 | unary | `!` `-` `is` `not` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3). `is x` ≡ `!!x`, `not x` ≡ `!x` — pure sugar, desugared in the parser (since 0.17) |
-| postfix | `.name` `.name(args)` `name(args)` `x!` `x?` `x?!` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call (a reduction is one of these since 0.29 — `count($rows)`, `sum(e)`; below, since 0.24), the required operator, the **present** operator (`x?`) and the atomic **present-or-raise** (`x?!`; `x!?` is an error) (0.29 — SEMANTICS §5b), a bracket lookup, a value-position directive (`collect`/`first`/`single`, and since 0.24 `count`; the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
+| postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call (or an **aggregate** call when the name is an aggregate's — `count()`, `sum(e)`, `collect(distinct e)`; below, since 0.24), the required operator, a bracket lookup, a value-position directive (`collect`/`first`/`single`, and since 0.24 `count`; the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
 | primary | literal, template literal, identifier, `^…name`, `N^name`, binding, `( expr )`, `( expr, expr, … )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18); two or more comma-separated expressions in parentheses are a **tuple** (below; since 0.20), one is grouping; a template literal `` `…${expr}…` `` is a string value (below; since 0.21) |
 
 ```
@@ -613,8 +607,6 @@ redname  = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last
                                                             ; reserved (§1); one argument, the collection
 suffix   = "." ident [ "(" args ")" ]                       ; navigation, method call
          | "!"                                               ; required (0.17)
-         | "?"                                                ; present (0.29)
-         | "?!"                                               ; present-or-raise — ONE operator, munched before "?" (0.29)
          | bracket                                           ; lookup (0.17)
          | ("collect" | "first" | "single" | "count") [ "distinct" ] [ "{" body "}" ]   ; value-position directive (0.17; `count` 0.24; the block omitted ≡ `{ }`, 0.26: `jobs first.pay`, `n: jobs count`)
          | [ "distinct" ] "{" body "}"                        ; ≡ collect [distinct] { body }   (0.20)

@@ -195,7 +195,7 @@ Equality between two arrays or two objects is **not specified** (the reference
 uses host reference identity; fixtures do not rely on it) — compare them with
 `is` (§5b). [`scalar-equality`]
 
-### 5b. Identity comparison (`is`, `is not`), the required value (`x!`) and the present value (`x?`)
+### 5b. Identity comparison (`is`, `is not`) and the required value (`x!`)
 
 (since 0.17) `x is y` is true iff the two operands have the **same identity**
 as §16 defines it — the notion `distinct` and `follow` already use: each side
@@ -226,84 +226,6 @@ tightest (`-a!` is `-(a!)`, `!a!` is `!(a!)`, `a!.b` requires `a`, `a.b!`
 requires `a.b`). Over a bracket lookup, `x[n]!` requires the positional row and
 `x[p]!` requires exactly one match (GRAMMAR §4): zero is this error over the
 `single` directive, many is the `single` error. [`sugar`, `errors-eval`]
-
-`x?` — the **present** value (0.29) — is `!`'s counterpart and its exact inverse
-of intent: where `x!` insists on presence and shouts, `x?` asks for whatever is
-present and stays quiet. Over a **scalar** it is the identity — `x` when
-present, absent when absent — so at a row scope `weapon?` is `weapon` and
-`weapon?!` is `weapon!`: transparent, never a second meaning. Over a
-**collection** it keeps the present elements and drops the absent ones, and it
-is **always a collection** — the empty one when nothing survives, never absent.
-Over **absent** it is absent: there is nothing to filter, and `?` must not
-invent a collection. This case is **forced, not chosen** — absent carries no
-type, so `?` cannot tell a missing list from a missing scalar (`_tags?` and
-`weapon?` see the same bare absent), and coercing to `[]` would turn a missing
-scalar into an empty list. So the three cases separate: a collection with some
-absent elements filters to the present ones; a collection whose elements are all
-absent filters to `[]`; an absent value stays absent. `x?!` is loud for the last
-two alike. (Note that `size` DOES read absent as empty — `size(x)` is `0` on an
-absent `x` — because it returns a number and cannot corrupt a shape; `?` returns
-the thing itself and can.)
-
-A filter yields a collection: that keeps its shape a property of the QUERY and
-never of the data, so `size(x?)` is `0` rather than absent, `sum(x?)` is the
-additive identity, and `x? distinct` is always well-formed. It is also the shape
-the rest of this section already implies — a reduction over nothing yields the
-**identity**, not absence (`sum` is `0`, `collect` is `[]`, `count` is `0`) — so
-`[]` is continuous with the table below and absent would be its one
-discontinuity. A reader of a grouped projection is thinking in aggregations, and
-an aggregation of nothing is empty, not missing. `?` binds in `!`'s
-slot, tightest (`a.b?` is `a.(b?)`).
-
-**`x?!`** (0.29) is a **single operator**, not the composition of `?` and `!`:
-it is `x?`, raising the `!` eval error when the result is **absent or is a
-collection with no present elements** — so it is loud both for a list filtered
-down to nothing and for a property that was never there. "Shout when there is nothing here", with *here* scaling to
-the scope — at a row scope it coincides with `x!` (a present scalar is the
-value, an absent one raises); at a group scope it raises exactly when no row of
-the group carries the property.
-
-It is **atomic by design, and that costs the reader something**, so the reason is
-worth stating: as a composition `x?!` would be vacuous — `?` always yields a
-present collection, so the `!` could never fire — which means the glyph pair
-carries no useful compositional meaning to displace. Nobody writes `?!` wanting a
-filter that cannot fail; they would write `?`. Adding the `!` *is* the request
-for loudness, so the atom does what its author meant. The lexer must munch `?!`
-before `?`. `x!?` is **not** an atom and is a parse error (`x!` is present or has
-already raised, so the `?` is noise).
-
-"Empty" in this rule means **an empty collection, never a falsy scalar**: `0?!`,
-`""?!` and `false?!` are the values, exactly as `0!`, `""!` and `false!` are.
-`?!` therefore introduces no truthiness and no coercion, and
-`sugar::required-is-not-a-coercion` holds unchanged. The composed forms
-`first(x?)!` and `x?[0]!` remain available and mean the same thing; `?!` is the
-terse spelling, not a new capability.
-
-*Rejected alternative:* making `x?` absent when nothing survives, which would
-have let `x?!` carry that meaning directly. It was dropped because it makes the
-operator's result type depend on the data, which is strictly worse than the
-clause-dependence of §24's per-row list, and because it breaks the composition
-above. Making **`!` raise on an empty collection** was likewise rejected, and it
-is the more tempting of the two — `[]!` does read as "the contents are absent",
-and `x[p]!` already raises when a lookup finds zero. But an empty collection is
-nearer to `null` than to a missing key: it is a present, empty value the author
-wrote, the collection's counterpart of `0`, `""` and `false`. `!` is a test of
-**presence**, not of emptiness or truth, and this section already commits to
-that — `0!`, `""!` and `false!` are the values, pinned by the fixture named
-`sugar::required-is-not-a-coercion`. Raising on `[]` would make `!` a presence
-test for scalars and a truthiness test for collections: a second meaning for the
-glyph, exactly what choosing `?` over an overloaded `!` was meant to avoid. The
-lookup precedent does not extend to it either — `x[p]!` raises because the
-lookup found **nothing to return**, not because what it returned was empty.
-
-**The row/group asymmetry is real and deliberate.** At a row scope `x!` and
-`x?!` coincide. At a group scope they diverge: `weapon!` tests the **list**,
-which is present whenever the group has rows, so it does not shout. `weapon?!`
-is the form that shouts over a group, and it does so when **every** row lacks the
-property; `$rows { weapon! values }` shouts when **any** row does — the
-elementwise assertion is not a third operator but a matter of where the `!` is
-written. Outside `$rows` the question is about the group; inside it, about each
-row.
 
 ## 6. Ordering comparisons (`<`, `<=`, `>`, `>=`)
 
@@ -981,12 +903,7 @@ rows**, in input order, one element per row — so a two-row group reads `produc
 as `["baseball", "mitt"]`. A property that is itself list-valued reads as a
 **list of lists**: each row contributes its value, whatever shape that value
 has, and nothing is flattened (`$rows { tags values }` is the same list of
-lists; use `flatten` to spread it). The list takes the postfix operators like
-any value: `weapon?` is the present elements — always a collection, `[]` when
-none survive (§5b) — and `weapon? distinct` dedupes them by identity (§16),
-first occurrence kept; a
-bare `weapon distinct` dedupes the absents too, and since two absent values are
-equal they collapse to one `null`. This is what makes a reduction an ordinary
+lists; use `flatten` to spread it). This is what makes a reduction an ordinary
 function — `sum(quantity)` works because `quantity` **is** the list — and it
 gives OQX a defined answer where SQL rejects the query: a non-aggregated column
 of a grouped select is neither an error nor an arbitrary row's value, it is all
