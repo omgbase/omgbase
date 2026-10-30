@@ -58,16 +58,21 @@ by <expr>`; `follow` alone → a relation; `limit x` → a number, binding, or
 … }] [as <name>]`)
 [`clause-order`, `limit-offset`, `follow`, `group-by`, `flatten`].
 
-**Reserved function names** (since 0.24): the aggregate names `count sum min
-max avg collect first last any all` are the language's wherever a free call is
-written (`count()`, `sum(pay)`, `collect(distinct tag)`): the call parses to an
-`aggregate` node (§4 "Aggregates"), never to an ordinary function call, so a host
-cannot serve a function by one of these names. The words are not reserved as
-field names (`select count from r` is a field; `rows count { … }` is still the
-consumer directive). **`rows`** is an ordinary identifier with an intrinsic
-meaning in one position — at the group scope of a body with `group by` it is the
-group's rows (SEMANTICS §24), exactly as `$it` is the row — and a plain field
-name everywhere else. [`group-by`]
+**Reserved function names** (since 0.24; **the reduction names since 0.29**):
+`count sum min max avg collect first last any all` are the language's wherever a
+free call is written (`count($rows)`, `sum(pay)`), so a host cannot serve a
+function by one of these names. Since 0.29 they are ordinary **collection
+functions** (§4 "Reductions") in the family of `size` and `list`, not a
+parse-time category of their own: they take a collection and reduce it, and they
+are legal wherever a call is. The words are not reserved as field names (`select
+count from r` is a field; `$rows count { … }` is still the consumer directive).
+**`$rows`** (0.29) is an intrinsic like `$it` and `$key`, not a bare name: at a
+group scope it is the group's rows, and **in an ungrouped body it is `[$it]`** —
+a row is a group of one (SEMANTICS §24). Through 0.28 it was spelled **`rows`**,
+a bare identifier with an intrinsic meaning in that one position; the host's own
+`rows` key and the intrinsic shared a slot, so `group by rows` was accepted with
+no diagnostic and the winner was unspecified. The sigil is what the rest of the
+language already uses to keep the two apart. [`group-by`]
 
 `true`, `false`, and `null` are **literals in every position**: a value, and
 never a receiver or relation (`true exists { … }`, `follow null` are parse
@@ -288,18 +293,20 @@ scoperef   = "^" { "^" }                                  ; relative: one scope 
   directive is the `collect` item kind (AST.md); a directive navigated or
   operated on further (`jobs[0].pay`, `jobs[0]!`) is an ordinary `field`.
 - In a body with **`group by`** (§`group by`, since 0.24) every item is read at
-  the **group scope**: a bare name must be a key, an alias of an item to its
-  left, or `rows` (`$it` and `$key` are the key record and its identity); an
-  aggregate's argument reads the group's rows instead, and a nested block's body
-  is its own scope. Any other bare name — a row field — is the parse error ``
-  `title` is not a group key or aggregate — a select item of a grouped body
-  reads the group: a key (`group by title`), an aggregate over its rows
-  (`collect(title)`), or the rows themselves (`rows collect { select title }`) ``
-  (the head of a dotted navigation is what is judged; inside a non-aggregate
-  free call the message adds `` `median(…)` is not an aggregate — the aggregates
-  are count, sum, … ``). A grouped body with **no `select`** projects its keys
-  by name and then `count: count()` (the parser synthesizes the items, AST.md
-  §2); a key named `count` therefore needs an explicit `select`. [`group-by`]
+  the **group scope**, where `$it` is the key record, `$key` its identity and
+  `$rows` the group's rows. **Since 0.29 a bare name is always the host's**, as
+  everywhere else in the language: a key name reads the key (one value — the
+  group is defined by it), an alias of an item to its left reads that item, and
+  **any other property name reads the LIST of its value across the group's
+  rows**, in input order, one element per row (`product` over a two-row group is
+  `["baseball", "mitt"]`). A property that is itself list-valued therefore reads
+  as a list of lists — each row contributes its value, whatever shape it has.
+  Through 0.28 a non-key bare name was instead the parse error `` `title` is not
+  a group key or aggregate ``; a grouped body could not read a row field at all,
+  and the group's rows were reached only through an aggregate's argument or the
+  bare `rows`. A grouped body with **no `select`** projects its keys by name and
+  then `count: count($rows)` (the parser synthesizes the items, AST.md §2); a key
+  named `count` therefore needs an explicit `select`. [`group-by`]
 - **Projection names are unique** within one `select`. `a: 1, a: 2`,
   `name, name`, and a dotted default colliding with an alias (`meta.slug, slug: x`)
   are parse errors `duplicate projection name '<name>'` — the record would
@@ -455,8 +462,8 @@ flatten  = "flatten" expr [ "as" ident ]       ; one or more, in writing order; 
 at that point — after `where` per row and after `follow` — each become one row
 per element of the value, the parent row with **`name`** bound beside its own
 properties. `flatten` is a clause when a value can follow the word (a value
-start, or an aggregate call whose name is a consumer word — so `flatten
-collect(x)` reaches the aggregate error below); otherwise it is a field name
+start, or a reduction whose name is a consumer word — so `flatten
+collect(x)` parses as the clause); otherwise it is a field name
 (`select flatten from r`). `as` is a clause word only after a flatten
 expression (`select as from r` is a field).
 
@@ -484,9 +491,11 @@ expression (`select as from r` is a field).
   `as`.
 - **Where it reads.** The expression is read in the row's scope exactly as
   `where` is; a later `flatten` reads the names earlier ones bound (`flatten
-  jobs as j flatten j.tags as t`). An aggregate in it is the parse error ``
-  `collect(tags)` is an aggregate and cannot be read in `flatten` `` — the rows
-  are not grouped yet there.
+  jobs as j flatten j.tags as t`). Since 0.29 a reduction is legal here —
+  `flatten collect(…)` splits the list it returns — unless it reads the
+  post-group `$rows`, which is the staging error (§4 "Reductions"): `flatten`
+  runs before `group by`. Through 0.28 any aggregate in it was the parse error ``
+  `collect(tags)` is an aggregate and cannot be read in `flatten` ``.
 - `flatten` with nothing after it is a stray field name: `` unexpected
   'flatten' after `from` — `flatten` takes a value to split into rows (`flatten
   <expr> [{ … }] [as <name>]`) ``.
@@ -509,14 +518,15 @@ last segment; any other expression needs an alias (`decade: (age - age % 10) /
 10`), because the alias is the name the post-group clauses read it by — an
 unaliased expression key is the parse error `` … needs an alias (`group by key:
 <expr>`) ``. Key names are unique (`duplicate group key 'city'`). A key is read
-on each row, like `where` (SEMANTICS §24); a key that contains an aggregate is an
-error. `group by` with nothing after it is `expected a group key`.
+on each row, like `where` (SEMANTICS §24); a key that reads the post-group
+`$rows` is the staging error (§4 "Reductions") — the key decides the grouping, so
+it cannot read the grouping's result. `group by` with nothing after it is `expected a group key`.
 
 `having` is a clause when a predicate can follow the word — anything that
-begins a value, or an aggregate call whose name is a consumer word (`having
-count() > 1`); otherwise it is a field name. Its body is the full `where`
-grammar read at the group scope (consumer tests over `rows` included: `having
-rows exists { where !active }`), and like `where` it may name the body's
+begins a value, or a reduction whose name is a consumer word (`having
+count($rows) > 1`); otherwise it is a field name. Its body is the full `where`
+grammar read at the group scope (consumer tests over `$rows` included: `having
+$rows exists { where !active }`), and like `where` it may name the body's
 `select` aliases (SEMANTICS §14). `having` without a `group by` is the parse
 error `` `having` needs a `group by` ``.
 
@@ -524,8 +534,9 @@ With `group by`, **`distinct`** on the body (`select distinct …`) or on its
 directive (`x collect distinct { group by k }`) is the parse error `` `distinct`
 is redundant with `group by` ``: a grouped body already yields one row per
 distinct key tuple. `order by`, `limit` and `offset` apply to the groups; `order
-by` reads the group scope (a key, an aggregate, `rows`) through the body's
-aliases (0.27): `order by n` with `n: count()` is `order by count()`, and a
+by` reads the group scope (a key, a reduction, `$rows`, or a non-key property as
+its per-row list) through the body's aliases (0.27): `order by n` with
+`n: count($rows)` is `order by count($rows)`, and a
 key that is a bare alias name (`group by kk` with `kk: kind`) is the alias's
 expression, which `having kk` and `order by kk` then read as the key
 (SEMANTICS §14). [`group-by`, `clause-order`, `alias-scope`]
@@ -591,9 +602,9 @@ add      = mul { ("+" | "-") mul }
 mul      = unary { ("*" | "/" | "%") unary }
 unary    = "!" unary | "-" unary | "is" unary | "not" unary | postfix
 postfix  = head { suffix }
-head     = primary | ident "(" args ")"                     ; a free-function call …
-         | aggname "(" [ "distinct" ] [ expr ] ")"           ; … or an aggregate call when the name is an aggregate's (0.24)
-aggname  = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last" | "any" | "all"
+head     = primary | ident "(" args ")"                     ; a free-function call, including a reduction (0.29)
+redname  = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last" | "any" | "all"
+                                                            ; reserved (§1); one argument, the collection
 suffix   = "." ident [ "(" args ")" ]                       ; navigation, method call
          | "!"                                               ; required (0.17)
          | bracket                                           ; lookup (0.17)
@@ -625,33 +636,42 @@ not begin a value, so `where age in 18.. order by name` parses as intended and
 There is no array or object literal; bound values (bindings), named roots and
 tuples are how collections enter a query.
 
-### Aggregates (since 0.24)
+### Reductions (since 0.24; ordinary collection functions since 0.29)
 
-An **aggregate call** is a free call whose name is one of `count sum min max avg
-collect first last any all` — ordinary call syntax, a reserved name (§1). It
-parses to an `aggregate` node (AST.md), never to a `call`, wherever it is
-written. Arity is fixed: `count` takes zero or one argument (`count()` counts
-the group's rows, `count(e)` the rows where `e` is present), every other name
-exactly one (`` `sum()` needs an argument ``; a second argument is `` `sum(…)`
-takes one argument ``). The **`distinct` modifier** stands directly after the
-opening parenthesis — `count(distinct e)`, `collect(distinct e)`, the SQL
-spelling — and is the contextual word only when a value follows it (`count(distinct)`
-reads the field named `distinct`); it is rejected on the predicate aggregates
-`any`/`all` (`` `any(distinct …)`: `distinct` applies to a value aggregate ``).
-Aggregates do not nest: `sum(count())` is the parse error `` an aggregate
-cannot nest ``, since the argument is read on each of the group's rows.
+A **reduction** is a free call whose name is one of `count sum min max avg
+collect first last any all` — ordinary call syntax, a reserved name (§1). Since
+0.29 it is an ordinary **collection function**, in the family of `size` and
+`list`: it takes a collection and reduces it to one value, and it is legal
+**wherever a call is legal**. There is no `aggregate` node and no clause
+restriction; `sum(…)` in a `where` of an ungrouped body is as well-formed as one
+in a `select` of a grouped body, because `$rows` is total (§1, SEMANTICS §24).
 
-An aggregate may stand only in the post-group clauses — a select item, `having`,
-`order by` — of a body that has a `group by`. Anywhere else it is a parse error
-naming the place: in a body without `group by`, `` `count()` is an aggregate: it
-is read after grouping and may stand only in a select item, `having` or `order
-by` of a body with `group by` — this body has none ``; in a grouped body's
-`where` (a select alias standing for one included), `from`, `frontier`, a group
-key or a bound, `` `count()` is an aggregate and cannot be read in `where` …
-aggregates stand in a select item, `having` or `order by` ``. The judgement is
-made over the alias-resolved `where` and `select`, so `select n: count() …
-where n > 1` is the `where` error and `n: count(), xs: collect(n)` the nesting
-error. Evaluation: SEMANTICS §24. [`group-by`]
+Arity is one argument, the collection: `count($rows)` counts rows,
+`count(quantity)` counts the present values of the list `quantity`, and
+`sum($rows { quantity * price values })` reduces a per-row expression. `count()`
+with no argument is the parse error `` `count()` needs its collection — the
+group's rows are `count($rows)` `` (through 0.28 the bare form counted rows); a
+second argument is `` `sum(…)` takes one argument ``. Reductions **nest**, since
+nothing about them is special: `sum(collect(…))` is well-formed, and through 0.28
+`sum(count())` was the parse error `an aggregate cannot nest`.
+
+`distinct` is **not** a call modifier (0.29). It belongs to the collection:
+`count($rows { select distinct e values })`, reusing the `distinct` the language
+already has (§`select`). Through 0.28 it stood after the opening parenthesis in
+the SQL spelling — `count(distinct e)` — and was rejected on `any`/`all`.
+
+**The staging rule.** A reduction over the **post-group** `$rows` is read after
+grouping, so it may not be read from a clause that runs **before** `group by`
+(`where`, `from`, `frontier`, a group key, a bound; SEMANTICS §24 "Staging"). It
+is not a circularity — `$rows` is `[$it]` before grouping and the group's rows
+after, each well-defined — but reading a post-group projection early would
+silently reduce a one-row collection, so it is the parse error `` `n` reads
+`$rows` after grouping, but `where` runs before `group by` — move it to
+`having` ``. The judgement is made over the alias-resolved `where` and `select`,
+so `select n: count($rows) … where n > 1` is that error through its alias. A
+reduction that reads no post-group `$rows` is unrestricted: `where sum($rows {
+quantity values }) > 500` is legal and **per-row**. Evaluation: SEMANTICS §24.
+[`group-by`]
 
 ### Template literals (since 0.21)
 
@@ -800,7 +820,7 @@ navigated or bracketed further. This is how the canonical
 printer writes a bracket chain back (`jobs[0].pay` prints as
 `jobs first { offset 0 }.pay`). **`recv count { … }` is a value too since 0.24**
 — the number of rows the block yields (`n: jobs count { }`, `jobs count { } > 2`,
-`rows count { where checked }` at a group scope) — while `exists`/`none` stay
+`$rows count { where checked }` at a group scope) — while `exists`/`none` stay
 predicates with no value form. In `where` the rules of §3 are unchanged: `count
 { … }` is the consumer test (with its optional `<relop> N`), and a value-position
 directive is a scalar operand only with a continuation. [`sugar`, `ast`,
@@ -851,12 +871,14 @@ Every failure is an `OqxError` with a `stage`:
   negative or fractional index, a bare `first`/`single` in `where`, and (since
   0.24) the grouping errors of §3/§4: an unaliased expression key, a duplicate
   key, `having` without `group by`, `distinct` with `group by`, a key named
-  `count` without a `select`, a bare row field at the group scope, an aggregate
-  outside the post-group clauses or in a body without `group by`, a nested
-  aggregate, a wrong aggregate arity, `distinct` on `any`/`all`; and (since
-  0.25) the `flatten` errors of §3: an expression with no `as`, a duplicate
-  name, a reserved, literal or `$`-name after `as`, an aggregate in a flatten
-  expression.
+  `count` without a `select`, a reduction that reads the post-group `$rows` from
+  a pre-group clause (§4 "Reductions" — the staging error), `count()` with no
+  collection, a wrong reduction arity; and (since 0.25) the `flatten` errors of
+  §3: an expression with no `as`, a duplicate name, a reserved, literal or
+  `$`-name after `as`. **Retired in 0.29** with the aggregate category: a bare
+  row field at the group scope (now its per-row list), an aggregate outside the
+  post-group clauses or in an ungrouped body, a nested aggregate, `distinct` on
+  `any`/`all`, and an aggregate in a `flatten`.
 - `eval` — unknown functions/methods, `single` matching several rows, a required
   value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
   (including a bracket index binding), a scalar in row position (`` `s` is a string ("abc"), not a

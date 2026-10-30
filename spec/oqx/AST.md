@@ -50,7 +50,7 @@ guess the default of.
 | `range` | `lo..hi`, `lo...hi`, `..hi`, `lo..` | expressions |
 | `tuple` | `(e1, e2, …)` — two or more expressions, a value and a receiver (since 0.20) | expressions |
 | `template` | `` `text ${expr} text` `` — a template literal: text parts and interpolated expressions, a string value (since 0.21) | expressions |
-| `aggregate` | `count()`, `sum(e)`, `collect(distinct e)` — an aggregate call over the group's rows (since 0.24); never a `call` | expressions (a select item, `having`, `order by` of a grouped body) |
+| ~~`aggregate`~~ | **retired in 0.29.** `count($rows)`, `sum(e)` are ordinary `call` nodes — the reduction names are reserved (GRAMMAR §1) but carry no node of their own. Through 0.28 a free call by one of those names parsed to `aggregate` wherever it was written, with `arg: Expr \| null` and a `distinct` flag | — |
 
 The `where` tree and value expressions are distinct families: `and`/`or`/`not`
 own the boolean structure of a predicate so consumer tests compose with scalar
@@ -120,7 +120,7 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | `range` | `lo: Expr \| null`; `hi: Expr \| null`; `exclusiveEnd: boolean` |
 | `tuple` | `items: Expr[]` (≥ 2) |
 | `template` | `parts: (string \| Expr)[]` — **strictly alternating**: a text part, an interpolation, a text part, … — so the list has odd length (≥ 1) and begins and ends with a text part, which may be `""` (`` `${a}` `` is `["", a, ""]`, `` `${a}${b}` `` is `["", a, "", b, ""]`, `` `hi` `` is `["hi"]`, `` `` `` is `[""]`). A text part is a **plain JSON string**, not a node (no `kind`, no span), holding the **decoded** text (GRAMMAR §1 escapes resolved, newlines verbatim); an interpolation is any `Expr` (a nested `template` or a value-position `op` included) |
-| `aggregate` | `name: "count" \| "sum" \| "min" \| "max" \| "avg" \| "collect" \| "first" \| "last" \| "any" \| "all"`; `arg: Expr \| null` — `null` only for the bare `count()`; `distinct: boolean` — the `(distinct e)` modifier (since 0.24) |
+| ~~`aggregate`~~ | **retired in 0.29** — a reduction is a `call` with its `name` and one `args` entry. A consumer of a 0.24–0.28 tree maps `{ kind: "aggregate", name, arg, distinct }` to `{ kind: "call", name, args: [arg] }`, with `arg: null` (the bare `count()`) becoming `count($rows)` and `distinct: true` becoming a `distinct` on the argument collection |
 
 Shape rules the parser guarantees (and `cases/ast.json`, `cases/group-by.json` pin):
 
@@ -155,10 +155,10 @@ Shape rules the parser guarantees (and `cases/ast.json`, `cases/group-by.json` p
   `flatten` whose `expr` is the `collect` op over `tags` — there is no block
   field — and `flatten tags distinct { } as t` the same op with `distinct:
   true`. `flatten` is a list on every body, `[]` when the body has none.
-- Grouping (0.24): a free call by an aggregate name is an `aggregate` node
-  wherever it is written (`count()` is `{ kind: "aggregate", name: "count", arg:
-  null, distinct: false }`; `collect(distinct name)` carries the modifier) —
-  never a `call`. A `group by` key is a `key` node named like a select item
+- Grouping (0.24; **0.29**): a free call by a reduction name is an ordinary
+  `call` node — `count($rows)` is `{ kind: "call", name: "count", args: […] }`
+  like any other free call, and there is no `aggregate` node, no null `arg` and
+  no `distinct` field. A `group by` key is a `key` node named like a select item
   (`group by meta.region` → `key` named `region`). A grouped body with **no
   `select`** carries the **synthesized** projection — one `field` per key (`name`
   = the key's, `expr` the bare `ident`) and `count: count()` — so the tree shows
@@ -201,8 +201,9 @@ last:
   when `as` was omitted (`flatten xs as x` at 16 spans `[16, 31]`, `flatten
   ys` at 32 `[32, 42]`);
 - `groupBy`: the `group` word through the last key; `key`: the alias (or the
-  expression) through the expression; `aggregate`: the name through the
-  closing parenthesis (`count()` at 13 spans `[13, 20]`);
+  expression) through the expression; a reduction spans as the `call` it is —
+  the name through the closing parenthesis (`count($rows)` at 13 spans
+  `[13, 26]`);
 - `field`/`collect`: the leading carets or the name through the value;
   `order`: the expression through `asc`/`desc`;
 - `and`/`or`: the first part to the last; `not`: the `!` through its operand;
@@ -257,7 +258,8 @@ a number, not a node); for `op` — `receiver`, `sub`; for `follow` —
 slots of the smaller nodes (`expr`, `parts`,
 `recv`, `args`, `left`/`right`, `lo`/`hi`, `items`; `required` — `expr`;
 `template` — `parts`, visiting the interpolated expressions in order and
-skipping the text strings, which are not nodes; `aggregate` — `arg`).
+skipping the text strings, which are not nodes). A reduction is traversed as a
+`call` (through `args`); the 0.28 `aggregate` slot `arg` is gone.
 
 - **`visit(root, { enter?(node, ctx), leave?(node, ctx) })`** — depth-first.
   `enter` may return `false` to skip the node's children (`leave` is still
@@ -327,10 +329,13 @@ A reference is `{ name, clause, scope: { depth, steps }, span }`:
   producing rows one deeper); since 0.24 a **`groupBy` node** — the body's
   groups, at the same depth (the rows replaced by one key record per group) —
   for a name read at the **group scope**: in a select item, `having` or `order
-  by` of a grouped body and not inside an aggregate's argument (an argument is
-  read on the group's rows, so its steps stop before the `groupBy` step).
-  `rows` as a receiver there is a step like any receiver (`{ expr: "rows",
-  depth: d + 1 }`). A `flatten` adds **no step** (since 0.25): a flattened row
+  by` of a grouped body. Since 0.29 a reduction's argument is an ordinary
+  expression of that scope and adds no exception — a non-key bare name there
+  reads its per-row list from the group, so it is a group-scope read like any
+  other; it is `$rows { … }` that re-enters the rows, and as a receiver it is a
+  step like any receiver (`{ expr: "$rows", depth: d + 1 }`). Through 0.28 a
+  name inside an aggregate's argument was instead a ROW read, its steps stopping
+  before the `groupBy` step. A `flatten` adds **no step** (since 0.25): a flattened row
   is the row, at the same depth, so the chain is unchanged after it — and a
   written block's receiver is a step like any block receiver (`{ expr:
   "blocks", depth: d + 1 }` for the names inside `flatten blocks { where typ ==
@@ -360,7 +365,7 @@ What is a reference:
 What is not:
 
 - `$`-names (`$key`, `$depth`, `$stop`, …) — the language's values; `$it` alone;
-  a `binding`; a function, method or **aggregate name**; the keys of a
+  a `binding`; a function, method or **reduction name**; the keys of a
   projection (an item's alias, a lift's name, a group key's name);
 - a name a `flatten` bound (SEMANTICS §25, since 0.25), read where the binding
   is in force — a later `flatten`'s expression, a `group by` key, `having`, a
@@ -381,10 +386,13 @@ What is not:
   a name there is a reference whatever the `select` says;
 - at a **group scope** (since 0.24; SEMANTICS §24): a bare **key name** — or a
   chain headed by it, or an outer reference to it from a nested block (`^lo`
-  inside `rows collect { … }`) — is the key, an alias of the expression
-  reported in clause `groupBy`; and `rows` is the language's value. Inside an
-  aggregate's argument both are row reads again (`collect(city)` references
-  `city` on the rows; `sum(rows)` references a property `rows`);
+  inside `$rows collect { … }`) — is the key, an alias of the expression
+  reported in clause `groupBy`; `$rows` is the language's value; and since 0.29
+  a bare **non-key** name is a group-scope reference to its per-row list
+  (`collect(city)` references `city` at the group scope, not on the rows). Only
+  a `$rows { … }` block re-enters the row scope, as any receiver does. Through
+  0.28 a name inside an aggregate's argument was a row read, and `sum(rows)`
+  referenced a property named `rows`;
 - the trailing `.name`s of a navigation whose head is **not** a name — a call
   (`refs(before).title`), a block (`blocks[type == "task"].text`), a tuple, a
   literal: the head's value is not a row of any scope, so only the names inside
@@ -426,8 +434,9 @@ follow kids { depth 2 } }`); each `flatten` after `follow` with its name
 whether `as` was, and the name is what the later clauses read; since 0.25);
 `group by` after it with **every key
 aliased** as select items are (`group by city: city, lo: age`), then `having`
-(since 0.24); an aggregate as the call it is (`count()`, `sum(distinct pay)`),
-a value-position `count` directive as `rows count { where checked }`; a tuple with its parentheses `(a, b)`; an empty
+(since 0.24); a reduction as the ordinary call it is (`count($rows)`,
+`sum(pay)`), a value-position `count` directive as `$rows count { where
+checked }`; a tuple with its parentheses `(a, b)`; an empty
 block as `{ }`; the logical connectives as the **words**
 `and` / `or` (since 0.18; `&&` / `||` parse to the same nodes and the JSON
 `op` stays `"&&"` / `"||"`), the prefix negation as `!`; a **template literal
@@ -452,8 +461,8 @@ reference, a binding, a tuple, or a postfix chain headed by a name, an outer
 reference, a binding or a free call (navigation, calls, `!`, a directive: the
 receivers of GRAMMAR §5 and §4) — prints collection-scoped, `S [<consumer>]
 [distinct] { … }` (since 0.26). A source that cannot head a block — a literal,
-a template, a range, an arithmetic, logical or `in` expression, a unary, an
-aggregate (each an eval error or a degenerate query) — prints in the clause
+a template, a range, an arithmetic, logical or `in` expression, a unary (each an
+eval error or a degenerate query) — prints in the clause
 form `select … from S …`. Inside every body the projection leads without its
 keyword (a body's first clause is always the projection).
 
@@ -508,3 +517,4 @@ document says which `major.minor` produced it.
 | 0.27 | No node or field added, renamed or removed. A `select` alias is now visible to every clause that reads the body's rows and, through `^name`, to the nested blocks (SEMANTICS §14); the tree still keeps the surface form (the alias stays an `ident` / `outer`), so a reader of an older minor sees the same shapes — only `resolveAliases` and the `references` pass changed what they substitute and skip. Through 0.26 a block alias inside an expression, and a forward reference through a nested block, parsed differently (an error, or a row read). |
 | 0.26 | No node or field added, renamed or removed. The canonical print changed form: a query prints **collection-scoped** (`S [<consumer>] [distinct] { … }`, GRAMMAR §2) and `collect` as the bare brace (`x { … }`, `x distinct { … }`); `query.source` is the collection either way and the JSON is unchanged. A `references` step for a `collect` destination block therefore prints `follow kids { … }`. Two sugars desugar in the parser: a consumer word with no block is the op over an empty `subquery` (empty span at the end of the word; printed without the block, `jobs count`), and a projection-only block over a `collect`/`first`/`single` op whose block projects nothing merges into that op (`jobs[0] { name }` is one `first` op — the one tree shape of 0.25 that no longer parses as two ops). |
 | 0.24 | Added (minor): the `groupBy` and `key` nodes; `query.groupBy`, `query.having`, `subquery.groupBy`, `subquery.having` (materialized as `null`); the `aggregate` expression node (a free call by an aggregate name parses to it, never to a `call`); the traversal clauses `groupBy` and `having`; a `groupBy` node as a `references` step; `count` as a value-position directive (an `op` with `op: "count"` in a `collect` item or an operand). Nothing renamed or removed. A reader of an older minor meets the two new fields on every body and the new kinds. |
+| 0.29 | **Removed (major): the `aggregate` node.** A reduction is an ordinary `call` (`count($rows)`, `sum(e)`), so `name`/`arg`/`distinct` are gone and a reduction traverses and prints through `args`. The group scope gained the per-row list read for a non-key bare name, and `rows` became the intrinsic **`$rows`**, total (`[$it]` when ungrouped). A consumer of a 0.24–0.28 tree maps `aggregate` → `call` as the field table says. |

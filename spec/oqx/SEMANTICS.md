@@ -497,10 +497,12 @@ baseline. [`regex`]
 Calling a name not in these tables is an **eval error** (`unknown function
 'f(…)'` / `unknown method '.m(…)'`), raised when the call is evaluated (an empty
 source never evaluates it). A free-function call may be a source or a receiver.
-The **aggregate names** `count sum min max avg collect first last any all` are
-not functions of this table: a free call by one of them is an aggregate (§24,
-GRAMMAR §4), legal only after a `group by`, and a host cannot serve a function
-under one of these names. [`builtins`, `strings`, `regex`, `group-by`]
+The **reduction names** `count sum min max avg collect first last any all` are
+the language's, not this table's and not a host's: since 0.29 a free call by one
+of them is an ordinary **collection function** (§24, GRAMMAR §4) — one argument,
+the collection, legal wherever a call is — and a host cannot serve a function
+under one of these names. Through 0.28 such a call was an `aggregate` node,
+legal only after a `group by`. [`builtins`, `strings`, `regex`, `group-by`]
 
 ## 12. Projection and records
 
@@ -676,8 +678,8 @@ and `desc` reverses that order of present values only: **absent sorts last in
 both directions**. Keys are arbitrary expressions read in the row's scope
 (fields, `$it`, intrinsics, `^outer`); they are not rewritten against
 aliases. In a body with `group by` the rows are the groups and the sort
-expressions read the group scope — a key, an aggregate (`order by count()
-desc`), `rows` (§24). Ordering of mixed-type or boolean keys is not specified.
+expressions read the group scope — a key, a non-key property as its per-row
+list, a reduction (`order by count($rows) desc`), `$rows` (§24). Ordering of mixed-type or boolean keys is not specified.
 [`order-by`, `group-by`]
 
 ## 18. `limit` / `offset`
@@ -859,7 +861,7 @@ all yield a value (absent or `false`), never an error.
 [`errors-lex`, `errors-parse`, `errors-eval`, `logical`, `regex`, `cardinality`,
 `group-by`]
 
-## 24. Grouping and aggregates (since 0.24)
+## 24. Grouping and reductions (since 0.24; reductions became ordinary collection functions in 0.29)
 
 `group by k1, …, kn` (GRAMMAR §3) turns the rows a body yields into **one row
 per distinct key tuple** — a **group** — and the body's post-group clauses (the
@@ -869,9 +871,9 @@ coerced (§3) and re-projected by `from`, filtered by `where` **per row**, walke
 by `follow` (the occurrences are what is grouped), **grouped**, filtered by
 `having` **per group**, ordered, bounded, reduced by the consumer. With a
 `flatten` (§25) the **flattened** rows are what is grouped, and a bound name is
-a legal key (`flatten tags as t group by t`); an aggregate's argument reads it
-on each flattened row (`collect(t)`), while `rows` re-enters the rows
-themselves, which carry no binding.
+a legal key (`flatten tags as t group by t`); the bound name reads as its
+per-row list at the group scope (`collect(t)` reduces the same list), while
+`$rows` re-enters the rows themselves, which carry no binding.
 
 **Keys.** Each key expression is read in the row's scope exactly as `where` is
 (bare names are the row's properties, `^` the enclosing row, `$depth` an
@@ -888,49 +890,99 @@ record**: one property per key, in key order, holding the key's value on the
 group's first row (`{ city: "NYC" }`; a key absent on that row is an absent
 property). So at the group scope a bare key name reads the key, `$it` is the
 record, `$key` is its structural identity (the record), `^name` reads the
-enclosing row as everywhere, and **`rows`** is the group's **rows** — the rows
+enclosing row as everywhere, and **`$rows`** is the group's **rows** — the rows
 the body kept, in input order (the raw rows: an entry stays an entry) — a value
-(`select city, rows`) and a receiver (`rows collect { select title }`, `rows
-count { where checked }`, `rows first { name values order by age }`, `rows
-single { … }`, `having rows exists { where !active }`), inside whose block `^`
-reads the group's keys. Any other bare name at the group scope is a **parse
-error** (GRAMMAR §3): a grouped body cannot read a row field directly — it
-reads a key, an aggregate, or `rows`. `rows` is a property like any other
-outside a group scope, and inside an aggregate's argument (which reads the
-rows).
+(`select city, $rows`) and a receiver (`$rows collect { select title }`, `$rows
+count { where checked }`, `$rows first { name values order by age }`, `$rows
+single { … }`, `having $rows exists { where !active }`), inside whose block `^`
+reads the group's keys.
 
-**Aggregates.** An aggregate call (GRAMMAR §4) reduces the group of the scope it
-is read in; its argument is evaluated **on each of the group's row scopes** in
-group order — the scope the body's `where` saw, so lifts and walk intrinsics are
-readable there. Every **value aggregate** sees only the **present** values of
-its argument (absent is skipped, never counted, summed, collected or returned);
-`count()` alone counts rows. With `distinct`, the present values are deduped by
-identity (§16), first occurrence kept, before the reduction.
+**A non-key bare name is its per-row list** (0.29). Any other property name at
+the group scope reads the **list of that property's value across the group's
+rows**, in input order, one element per row — so a two-row group reads `product`
+as `["baseball", "mitt"]`. A property that is itself list-valued reads as a
+**list of lists**: each row contributes its value, whatever shape that value
+has, and nothing is flattened (`$rows { tags values }` is the same list of
+lists; use `flatten` to spread it). This is what makes a reduction an ordinary
+function — `sum(quantity)` works because `quantity` **is** the list — and it
+gives OQX a defined answer where SQL rejects the query: a non-aggregated column
+of a grouped select is neither an error nor an arbitrary row's value, it is all
+of them. Through 0.28 such a name was a parse error and a grouped body could not
+read a row field at all. The bare name is **the host's** at a group scope exactly
+as everywhere else in the language; only `$it`, `$key` and `$rows` are the
+engine's.
 
-| Aggregate | Result |
+**Reductions.** A reduction (GRAMMAR §4) is an ordinary function of **one
+collection**, in the family of `size` and `list`. It reduces whatever collection
+it is given, wherever it is written: `count($rows)` the group's rows,
+`count(quantity)` the per-row list of a non-key property, `sum($rows { quantity
+* price values })` a per-row expression the list alone cannot express. The
+argument is an ordinary expression evaluated in the scope the reduction stands
+in; it is the `$rows { … }` receiver, not the function, that re-enters the row
+scopes (in group order — the scope the body's `where` saw, so lifts and walk
+intrinsics are readable there). Every **value reduction** sees only the
+**present** elements (absent is skipped, never counted, summed, collected or
+returned) — the 0.24 rule, unchanged, so no query's arithmetic moves.
+Deduplication is the collection's `distinct`, not a call modifier:
+`count($rows { select distinct e values })`.
+
+Through 0.28 these were **aggregates**, a syntactic category: the argument was
+read per row by the *function*, arity was overloaded (`count()` rows,
+`count(e)` present values), `distinct` was a call modifier, they could not nest,
+and they were legal only in a select item, `having` or `order by` of a grouped
+body. All of that is gone — the behaviour that remains is the arithmetic.
+
+| Reduction | Result |
 | --- | --- |
-| `count()` | the number of the group's rows |
-| `count(e)` | the number of rows where `e` is present; `count(distinct e)` the number of distinct present values |
+| `count(c)` | the number of **present** elements of `c`; `count($rows)` is the number of the group's rows, `count(quantity)` the rows whose `quantity` is present |
 | `sum(e)` | the sum of the present values; **`0` when there is none** (the additive identity — a census sums to zero, it does not go blank); a present value that is not a number is the **eval error** `` cannot sum `e` over the group: it is a string ("…") — `sum` takes numbers `` |
 | `avg(e)` | the sum divided by the count of the present values; **absent when there is none** (no mean exists); a non-number is the error above (`cannot average`) |
 | `min(e)` / `max(e)` | the least / greatest present value by the ordering of §6: the first value is the running extreme, each later value replaces it when it orders strictly below (`min`) / above (`max`); a value that does not order against the extreme (a mixed kind) leaves it unchanged; absent when there is none |
 | `collect(e)` | the list of the present values in group order (`[]` when none); `collect(distinct e)` the distinct ones |
 | `first(e)` / `last(e)` | the first / last present value; absent when none |
-| `any(p)` / `all(p)` | **truthiness** (§4) of `p` on the group's rows — absent is false, so these do not skip absent: `any` is true iff some row's `p` is truthy, `all` iff every row's is; evaluated in group order and short-circuiting at the first row that decides, like `||`/`&&` (§13). No `distinct`. |
+| `any(c)` / `all(c)` | **truthiness** (§4) of the elements of `c` — the one pair that does **not** skip absent, since absent is false: `any` is true iff some element is truthy, `all` iff every one is; evaluated in order and short-circuiting at the first element that decides, like `||`/`&&` (§13). A predicate over the rows is `any($rows { p values })`. |
 
-Aggregates do not nest (an argument is read on rows, where there is no group),
-and may stand only in a select item, `having` or `order by` of a grouped body
-(GRAMMAR §4). An aggregate reached outside a group scope — possible only through
-a built tree — is an eval error.
+Reductions **nest** and stand **wherever a call stands** (GRAMMAR §4) — nothing
+about them is special any more. What governs where one may be *read* is not the
+function but its collection: see "Staging" below. A reduction of something that
+is not a collection is the eval error `` cannot reduce `e`: it is a string
+("…") — `sum` takes a collection ``.
 
 **`having P`** evaluates the `where` tree `P` (§13) on each group scope and
 keeps the groups for which it holds. Like `where`, it is rewritten against the
-body's `select` aliases (§14: `select n: count() … having n > 1`), may test
-`rows` with a consumer (`having rows exists { … }`), and may read the keys and
-aggregates directly (`having count() > 1`, `having has(city)`).
+body's `select` aliases (§14: `select n: count($rows) … having n > 1`), may test
+`$rows` with a consumer (`having $rows exists { … }`), and may read the keys and
+reductions directly (`having count($rows) > 1`, `having has(city)`).
+
+**`$rows` is total** (0.29). In a body **without** `group by`, `$rows` is
+**`[$it]`** — the one row it is read on, a group of one — so a reduction is
+well-formed in an ungrouped body and means the per-row thing: `select r:
+sum($rows { quantity * price values })` gives each row its own figure, and `where
+sum($rows { quantity values }) > 500` is an ordinary per-row predicate. It is
+emphatically **not** the whole result: `$rows` never reaches beyond the row or
+group it is read on, and the whole-result reduction stays the consumer form
+(`docs count { … }`). Totality is what removes the 0.28 trap in which `sum($rows
+{ … })` parsed, found `$rows` an unknown identifier at row scope, and silently
+reduced to `sum`'s additive identity `0`.
+
+**Staging.** `$rows` means the group's rows only **after** `group by`; before it
+(`where`, `from`, `frontier`, a group key, a bound, `flatten`) the rows are not
+grouped and `$rows` is `[$it]`. The two readings are stratified by the clause
+order and neither depends on the other — there is **no circularity** — but a
+projection written for the group scope and read from a pre-group clause would
+quietly reduce a one-element collection instead of the group: `select n:
+count($rows) … where n > 1` inlines (§14) to `count([$it])`, which is `1` of
+every row. Silently-one is worse than a refusal, so it is the parse error ``
+`n` reads `$rows` after grouping, but `where` runs before `group by` — move it
+to `having` `` (GRAMMAR §4), judged over the alias-resolved `where` and `select`
+so the alias is followed. A reduction that reads no post-group `$rows` is
+unrestricted. Through 0.28 the same staging was expressed as "an aggregate
+cannot be read in `where`", triggered by the function's name rather than by what
+its collection is.
 
 **Projection.** Each kept group projects as §12 says: a record over the items
-(a key by name, an aggregate, a `rows`-derived value, `$it`, `$key`), or under
+(a key by name, a non-key property as its per-row list, a reduction, a
+`$rows`-derived value, `$it`, `$key`), or under
 `values` the single item's value per group (`select city values`, `select
 count() values`). Without a `select`, the keys and `count: count()`. A nested
 grouped block (`jobs collect { employer, total: sum(pay) group by employer }`)
@@ -1012,10 +1064,12 @@ whatever served the rows. `order by`, `limit` and `offset` apply to the
 flattened rows; so does every consumer (`count` counts them, `first` is the
 first of them, `exists` is false when every parent fanned out to nothing), and
 a single receiver fanned out is plural (§3). `group by` groups the flattened
-rows (§24); the bound name is a legal key, read by an aggregate on each row
-(`collect(t)`), while `rows` re-enters the rows themselves.
+rows (§24); the bound name is a legal key and reads as its per-row list at the
+group scope (`collect(t)` reduces that list), while `$rows` re-enters the rows
+themselves.
 
 **Errors** are parse errors (GRAMMAR §3): an expression that is not a plain
 navigation with no `as`, a duplicate name, a keyword, literal word or `$`-name
-after `as`, an aggregate in a flatten expression, `flatten` out of order.
+after `as`, `flatten` out of order. A reduction in a flatten expression is legal
+since 0.29 unless it reads the post-group `$rows` (the staging error, §24).
 [`flatten`]
