@@ -968,15 +968,21 @@ reduced to `sum`'s additive identity `0`.
 **Staging.** `$rows` means the group's rows only **after** `group by`; before it
 (`where`, `from`, `frontier`, a group key, a bound, `flatten`) the rows are not
 grouped and `$rows` is `[$it]`. The two readings are stratified by the clause
-order and neither depends on the other — there is **no circularity** — but a
-projection written for the group scope and read from a pre-group clause would
-quietly reduce a one-element collection instead of the group: `select n:
-count($rows) … where n > 1` inlines (§14) to `count([$it])`, which is `1` of
-every row. Silently-one is worse than a refusal, so it is the parse error ``
-`n` reads `$rows` after grouping, but `where` runs before `group by` — move it
-to `having` `` (GRAMMAR §4), judged over the alias-resolved `where` and `select`
-so the alias is followed. A reduction that reads no post-group `$rows` is
-unrestricted. Through 0.28 the same staging was expressed as "an aggregate
+order and neither depends on the other — there is **no circularity**, and the
+token is legal in every clause.
+
+What is refused is the **alias indirection**, and it is the alias that is
+judged, never the reduction. A pre-group clause may not read a `select` alias
+whose definition contains `$rows`: that item was written for the group scope, and
+§14's inlining would evaluate it pre-group where `$rows` is `[$it]`, reducing a
+one-element collection and answering the same thing for every row. So `select n:
+count($rows) … where n > 1` inlines to `count([$it])` — `1` of every row — and
+is the parse error `` `n` reads `$rows` after grouping, but `where` runs before
+`group by` — move it to `having` `` (GRAMMAR §4). The **same text written
+directly** in `where` is accepted, because written there it plainly means the
+per-row thing: `where sum($rows { quantity values }) > 500` filters each row by
+its own figure. Silently answering `1` for every row is worse than a refusal;
+spelling it out is not. Through 0.28 the same staging was expressed as "an aggregate
 cannot be read in `where`", triggered by the function's name rather than by what
 its collection is.
 

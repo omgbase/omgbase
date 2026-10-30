@@ -660,18 +660,23 @@ nothing about them is special: `sum(collect(…))` is well-formed, and through 0
 already has (§`select`). Through 0.28 it stood after the opening parenthesis in
 the SQL spelling — `count(distinct e)` — and was rejected on `any`/`all`.
 
-**The staging rule.** A reduction over the **post-group** `$rows` is read after
-grouping, so it may not be read from a clause that runs **before** `group by`
-(`where`, `from`, `frontier`, a group key, a bound; SEMANTICS §24 "Staging"). It
-is not a circularity — `$rows` is `[$it]` before grouping and the group's rows
-after, each well-defined — but reading a post-group projection early would
-silently reduce a one-row collection, so it is the parse error `` `n` reads
-`$rows` after grouping, but `where` runs before `group by` — move it to
-`having` ``. The judgement is made over the alias-resolved `where` and `select`,
-so `select n: count($rows) … where n > 1` is that error through its alias. A
-reduction that reads no post-group `$rows` is unrestricted: `where sum($rows {
-quantity values }) > 500` is legal and **per-row**. Evaluation: SEMANTICS §24.
-[`group-by`]
+**The staging rule.** `$rows` is legal in every clause — it is `[$it]` before
+`group by` and the group's rows after, each well-defined, so there is no
+circularity and nothing to forbid about the token itself. `where sum($rows {
+quantity values }) > 500` is legal and **per-row**.
+
+What is refused is the **alias indirection**: a clause that runs before
+`group by` (`where`, `from`, `frontier`, a group key, a bound, `flatten`) may
+not read a `select` **alias whose definition contains `$rows`**, because that
+item was written for the group scope and §14's inlining would evaluate it
+pre-group, where `$rows` is `[$it]` — reducing a one-element collection and
+yielding the same answer for every row. `select n: count($rows) … where n > 1`
+is therefore the parse error `` `n` reads `$rows` after grouping, but `where`
+runs before `group by` — move it to `having` ``, and it is **the alias, not the
+reduction, that is judged**: the same text written directly in `where` is
+accepted, because written there it means the per-row thing and says so. Silently
+answering `1` for every row is worse than a refusal; writing it out is not.
+Evaluation: SEMANTICS §24. [`group-by`]
 
 ### Template literals (since 0.21)
 
