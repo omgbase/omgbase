@@ -38,13 +38,13 @@
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::Result;
 use crate::ast::{
-    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy,
-    LogicalOp, OpNode, OrderSpec, Query, SelectItem, Subquery, TemplatePart, UnaryOp, Where,
+    BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy, LogicalOp,
+    OpNode, OrderSpec, Query, ReductionName, SelectItem, Subquery, TemplatePart, UnaryOp, Where,
 };
 use crate::context::DataContext;
 use crate::errors::OqxError;
@@ -153,7 +153,7 @@ impl<C: DataContext> Engine for InMemoryEngine<C> {
 const RECUR: &[&str] = &["$depth", "$stop", "$leaf", "$frontier", "$ordinal"];
 const KEY: &str = "$key";
 /// `rows` at a group scope: the group's rows (SEMANTICS §24, since 0.24).
-const ROWS: &str = "rows";
+const ROWS: &str = "$rows";
 const HARD_DEPTH_CAP: u32 = 8;
 
 /// A row on its way to becoming a scope: the value, plus the entry key when the
@@ -430,7 +430,7 @@ fn rowless<'p>(enclosing: &'p Scope<'p>) -> Scope<'p> {
     }
 }
 
-/// `rows` as a receiver at a group scope: the group's rows in row position
+/// `$rows` as a receiver at a group scope: the group's rows in row position
 /// (an entry stays an entry), never the context's property.
 fn is_group_rows(e: &Expr, scope: &Scope<'_>) -> bool {
     matches!(e, Expr::Ident { name, .. } if name == ROWS) && scope.group.is_some()
@@ -909,70 +909,39 @@ impl<'e, C: DataContext> Exec<'e, C> {
         Ok(kept)
     }
 
-    // An aggregate (§24) over the group of the scope it is read in. The argument
-    // is read on each row's scope in group order; every value aggregate sees the
-    // PRESENT values only (`count()` alone counts rows), `distinct` dedups them by
-    // identity (§16), and `any`/`all` test truthiness (absent is false) and stop
-    // at the first row that decides, like `||` / `&&`.
-    fn aggregate(
-        &self,
-        e: &Expr,
-        name: AggregateName,
-        arg: Option<&Expr>,
-        distinct: bool,
-        scope: &Scope<'_>,
-    ) -> Result<Value> {
-        let Some(g) = &scope.group else {
-            return Err(OqxError::eval(format!(
-                "`{}` is an aggregate and is read on a group — it needs a `group by` in its body",
-                describe(e)
-            )));
-        };
-        let Some(arg) = arg else {
-            return Ok(Value::Number(g.row_scopes.len() as f64));
-        };
+    // A reduction (§24): an ordinary collection function of ONE argument, legal
+    // wherever a call is. The argument is evaluated ONCE in the scope the call
+    // stands in — it is `$rows { … }` that re-enters row scopes, not the function
+    // — then coerced with `to_list` (absent is empty, a lone value is one
+    // element) and reduced over the PRESENT elements. `any`/`all` test truthiness
+    // (absent is false) and stop at the first element that decides, like `||`/`&&`.
+    // No arity overload and no `distinct` modifier: dedupe with the collection's
+    // own `select distinct`.
+    fn reduction(&self, name: ReductionName, arg: &Expr, scope: &Scope<'_>) -> Result<Value> {
+        let v = self.eval_expr(arg, scope)?;
+        let raw = crate::semantics::to_list(&v).into_owned();
         match name {
-            AggregateName::Any => {
-                for s in &g.row_scopes {
-                    if self.eval_expr(arg, s)?.truthy() {
-                        return Ok(Value::Bool(true));
-                    }
-                }
-                return Ok(Value::Bool(false));
+            ReductionName::Any => {
+                return Ok(Value::Bool(raw.iter().any(Value::truthy)));
             }
-            AggregateName::All => {
-                for s in &g.row_scopes {
-                    if !self.eval_expr(arg, s)?.truthy() {
-                        return Ok(Value::Bool(false));
-                    }
-                }
-                return Ok(Value::Bool(true));
+            ReductionName::All => {
+                return Ok(Value::Bool(raw.iter().all(Value::truthy)));
             }
             _ => {}
         }
-        let mut values: Vec<Value> = Vec::with_capacity(g.row_scopes.len());
-        for s in &g.row_scopes {
-            let v = self.eval_expr(arg, s)?;
-            if !v.is_absent() {
-                values.push(v);
-            }
-        }
-        if distinct {
-            let mut seen: HashSet<String> = HashSet::new();
-            values.retain(|v| seen.insert(canonical_key(&self.ctx.identity(v))));
-        }
+        let mut values: Vec<Value> = raw.into_iter().filter(|v| !v.is_absent()).collect();
         Ok(match name {
-            AggregateName::Count => Value::Number(values.len() as f64),
-            AggregateName::Collect => Value::Array(values),
-            AggregateName::First => values.into_iter().next().unwrap_or(Value::Undefined),
-            AggregateName::Last => values.pop().unwrap_or(Value::Undefined),
-            AggregateName::Sum | AggregateName::Avg => {
+            ReductionName::Count => Value::Number(values.len() as f64),
+            ReductionName::Collect => Value::Array(values),
+            ReductionName::First => values.into_iter().next().unwrap_or(Value::Undefined),
+            ReductionName::Last => values.pop().unwrap_or(Value::Undefined),
+            ReductionName::Sum | ReductionName::Avg => {
                 let mut total = 0.0;
                 for v in &values {
                     let Value::Number(n) = v else {
                         return Err(OqxError::eval(format!(
-                            "cannot {} `{}` over the group: it is {} — `{}` takes numbers",
-                            if name == AggregateName::Sum {
+                            "cannot {} `{}`: it is {} — `{}` takes numbers",
+                            if name == ReductionName::Sum {
                                 "sum"
                             } else {
                                 "average"
@@ -984,7 +953,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     };
                     total += n;
                 }
-                if name == AggregateName::Sum {
+                if name == ReductionName::Sum {
                     Value::Number(total)
                 } else if values.is_empty() {
                     Value::Undefined
@@ -992,24 +961,25 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     Value::Number(total / values.len() as f64)
                 }
             }
-            AggregateName::Min | AggregateName::Max => {
-                let mut iter = values.into_iter();
-                let Some(mut best) = iter.next() else {
+            ReductionName::Min | ReductionName::Max => {
+                let mut it = values.into_iter();
+                let Some(mut best) = it.next() else {
                     return Ok(Value::Undefined);
                 };
-                let want = if name == AggregateName::Min {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                };
-                for v in iter {
-                    if compare(&v, &best) == Some(want) {
+                for v in it {
+                    if let Some(c) = compare(&v, &best)
+                        && if name == ReductionName::Min {
+                            c == std::cmp::Ordering::Less
+                        } else {
+                            c == std::cmp::Ordering::Greater
+                        }
+                    {
                         best = v;
                     }
                 }
                 best
             }
-            AggregateName::Any | AggregateName::All => unreachable!("handled above"),
+            ReductionName::Any | ReductionName::All => unreachable!("handled above"),
         })
     }
 
@@ -2152,13 +2122,6 @@ impl<'e, C: DataContext> Exec<'e, C> {
             }
             // A value-position directive (`jobs first { … }.pay`, the desugared `x[…]`).
             Expr::Op(op) => self.eval_collect_value(op, scope),
-            // An aggregate (SEMANTICS §24) over the group of the current scope.
-            Expr::Aggregate {
-                name,
-                arg,
-                distinct,
-                ..
-            } => self.aggregate(e, *name, arg.as_deref(), *distinct, scope),
             Expr::Binary {
                 op, left, right, ..
             } => {
@@ -2342,13 +2305,25 @@ impl<'e, C: DataContext> Exec<'e, C> {
         if name == KEY {
             return Ok(self.scope_identity(scope));
         }
-        // `rows` on a group scope is the group's rows (§24); elsewhere a property.
-        if name == ROWS
-            && let Some(g) = &scope.group
+        // `$rows` is the group's rows at a group scope and `[$it]` everywhere else
+        // — total since 0.29 (§24), so a reduction is well-formed in any body.
+        if name == ROWS {
+            return Ok(match &scope.group {
+                Some(g) => Value::Array(g.rows.iter().cloned().map(Row::into_value).collect()),
+                None => Value::Array(vec![scope.row.clone()]),
+            });
+        }
+        // At a group scope a bare NON-KEY name reads its PER-ROW LIST (§24, 0.29):
+        // one element per row of the group, in input order, absent included. A key
+        // name is the group record's own property and is read below.
+        if let Some(g) = &scope.group
+            && !matches!(&scope.row, Value::Object(o) if o.contains_key(name))
         {
-            return Ok(Value::Array(
-                g.rows.iter().cloned().map(Row::into_value).collect(),
-            ));
+            let mut out = Vec::with_capacity(g.row_scopes.len());
+            for rs in &g.row_scopes {
+                out.push(self.resolve_in(name, rs)?);
+            }
+            return Ok(Value::Array(out));
         }
         if RECUR.contains(&name)
             && let Some(v) = scope.meta.as_ref().and_then(|m| m.get(name))
@@ -2371,6 +2346,14 @@ impl<'e, C: DataContext> Exec<'e, C> {
         args: &[Expr],
         scope: &Scope<'_>,
     ) -> Result<Value> {
+        // A reduction is reserved (§1) and handled here, before the host is asked:
+        // it coerces the one collection itself rather than taking an argument list.
+        if recv.is_none()
+            && let Some(red) = ReductionName::from_word(name)
+            && args.len() == 1
+        {
+            return self.reduction(red, &args[0], scope);
+        }
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
             vals.push(self.eval_expr(a, scope)?);
@@ -2559,7 +2542,6 @@ fn expr_has_recur(e: &Expr) -> bool {
         }
         Expr::Tuple { items, .. } => items.iter().any(expr_has_recur),
         Expr::Template { parts, .. } => template_exprs(parts).any(expr_has_recur),
-        Expr::Aggregate { arg, .. } => arg.as_deref().is_some_and(expr_has_recur),
         Expr::Lit { .. } | Expr::Binding { .. } | Expr::Outer { .. } => false,
     }
 }
@@ -3198,7 +3180,7 @@ mod tests {
 
     #[test]
     fn grouping_and_aggregates() {
-        // The default projection: the keys and `count: count()`, groups in
+        // The default projection: the keys and `count: count($rows)`, groups in
         // first-appearance order; `where` runs per row before the grouping.
         check(
             "from people group by city",
@@ -3206,13 +3188,13 @@ mod tests {
             json!([{ "city": "NYC", "count": 2 }, { "city": "SF", "count": 1 }]),
         );
         check(
-            "select city, n: count() from people where active group by city",
+            "select city, n: count($rows) from people where active group by city",
             people(),
             json!([{ "city": "NYC", "n": 1 }, { "city": "SF", "n": 1 }]),
         );
         // Every aggregate; absent values are skipped (sum of none is 0, avg of none absent).
         check(
-            "select city, s: sum(age), a: avg(age), lo: min(age), hi: max(age), names: collect(name), f: first(name), l: last(name), some: any(active), every: all(active), d: count(distinct active) from people group by city",
+            "select city, s: sum(age), a: avg(age), lo: min(age), hi: max(age), names: collect(name), f: first(name), l: last(name), some: any(active), every: all(active), d: count($rows { select distinct active values }) from people group by city",
             people(),
             json!([
                 { "city": "NYC", "s": 70, "a": 35, "lo": 29, "hi": 41, "names": ["Bob", "Carol"], "f": "Bob", "l": "Carol", "some": true, "every": false, "d": 2 },
@@ -3227,29 +3209,29 @@ mod tests {
         check_err(
             "select city, s: sum(name) from people group by city",
             people(),
-            &["cannot sum `name` over the group: it is a string (\"Bob\") — `sum` takes numbers"],
+            &["cannot sum `name`: it is a string (\"Bob\") — `sum` takes numbers"],
         );
-        // `rows`: the group's rows as a receiver (`^` inside reads the keys) in a
+        // `$rows`: the group's $rows as a receiver (`^` inside reads the keys) in a
         // select item and in `having`; `order by` reads the group scope.
         check(
-            "select city, n: rows count { where age > 30 && city == ^city }, youngest: rows first { name values order by age } from people group by city having rows exists { where age > 30 } order by count() desc, city",
+            "select city, n: $rows count { where age > 30 && city == ^city }, youngest: $rows first { name values order by age } from people group by city having $rows exists { where age > 30 } order by count($rows) desc, city",
             people(),
             json!([{ "city": "NYC", "n": 1, "youngest": "Carol" }, { "city": "SF", "n": 1, "youngest": "Alice" }]),
         );
         check(
-            "select city, ages: rows collect { age values } from people group by city",
+            "select city, ages: $rows collect { age values } from people group by city",
             people(),
             json!([{ "city": "NYC", "ages": [41, 29] }, { "city": "SF", "ages": [52] }]),
         );
-        // An entry row stays an entry through `rows`: `$key` is readable inside the block.
+        // An entry row stays an entry through `$rows`: `$key` is readable inside the block.
         check(
-            "select k, ks: rows collect { $key values } from entries(o) group by k: $it.k",
+            "select k, ks: $rows collect { $key values } from entries(o) group by k: $it.k",
             json!({ "o": { "a": { "k": 1 }, "b": { "k": 2 }, "c": { "k": 1 } } }),
             json!([{ "k": 1, "ks": ["a", "c"] }, { "k": 2, "ks": ["b"] }]),
         );
         // A nested grouped block, a count of groups, a where-position test over groups.
         check(
-            "name, by: jobs collect { employer, n: count() group by employer }, g: jobs count { group by employer } from people where jobs exists { group by employer having count() > 1 }",
+            "name, by: jobs collect { employer, n: count($rows) group by employer }, g: jobs count { group by employer } from people where jobs exists { group by employer having count($rows) > 1 }",
             people(),
             json!([{ "name": "Bob", "by": [{ "employer": "Globocorp", "n": 2 }], "g": 1 }]),
         );
@@ -3261,7 +3243,7 @@ mod tests {
         );
         // Grouping a walk groups the occurrences; a single receiver grouped is one record.
         check(
-            "select d, n: count() from tree follow kids group by d: $depth",
+            "select d, n: count($rows) from tree follow kids group by d: $depth",
             json!({ "tree": [{ "kids": [{ "kids": [{}] }, {}] }] }),
             json!([{ "d": 1, "n": 1 }, { "d": 2, "n": 2 }, { "d": 3, "n": 1 }]),
         );
@@ -3278,7 +3260,7 @@ mod tests {
             json!({ "city": "NYC", "count": 2 }),
         );
         check(
-            "people exists { group by city having count() > 2 }",
+            "people exists { group by city having count($rows) > 2 }",
             people(),
             json!(false),
         );

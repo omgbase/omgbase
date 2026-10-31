@@ -112,9 +112,9 @@
 use std::collections::HashSet;
 
 use crate::ast::{
-    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy,
-    GroupKey, LogicalOp, OpNode, OrderSpec, Query, RelOp, SelectItem, Span, Subquery, TemplatePart,
-    UnaryOp, Where,
+    BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey,
+    LogicalOp, OpNode, OrderSpec, Query, ReductionName, RelOp, SelectItem, Span, Subquery,
+    TemplatePart, UnaryOp, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::lexer::{TokType, Token, lex_string, lex_template};
@@ -216,7 +216,7 @@ const CLAUSE_WORDS: [&str; 22] = [
 ];
 // The names a group scope resolves besides its keys (SEMANTICS §24): the
 // group's rows, the key record itself, and its identity.
-const GROUP_SCOPE_NAMES: [&str; 3] = ["rows", "$it", "$key"];
+const GROUP_SCOPE_NAMES: [&str; 3] = ["$rows", "$it", "$key"];
 const RELOPS: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
 // The comparison level (GRAMMAR §4): the six relational operators and, since
 // 0.22, the four regex operators — sugar over `matches`, non-associative like
@@ -773,7 +773,7 @@ impl Parser {
         {
             body.select = self.default_group_projection(g)?;
         }
-        let resolved_where = match &body.r#where {
+        let _resolved_where = match &body.r#where {
             Some(w) => match resolve_where(&body.select, w.clone()) {
                 Ok(w) => Some(w),
                 Err(msg) => return self.fail(msg),
@@ -802,7 +802,7 @@ impl Parser {
         };
         let resolved_select = rc.select;
         // `having` reads the group: an aliased key's name there is the key.
-        let resolved_having = match &body.having {
+        let _resolved_having = match &body.having {
             Some(h) => match resolve_where(&read_keys(&body.select, &rc.aliased_keys), h.clone()) {
                 Ok(h) => Some(h),
                 Err(msg) => return self.fail(msg),
@@ -831,24 +831,17 @@ impl Parser {
         let check = GroupCheck {
             resolved_select: &resolved_select,
             having: body.having.as_ref(),
-            resolved_having: resolved_having.as_ref(),
             order_by: rc.order_by.as_deref(),
-            froms: &body.froms,
-            r#where: resolved_where.as_ref(),
-            frontier: rc.frontier.as_ref(),
-            flatten: &rc.flatten,
-            limit: body.limit.as_ref(),
-            offset: body.offset.as_ref(),
+            raw_where: body.r#where.as_ref(),
             group_by: rc.group_by.as_ref(),
         };
-        match &body.group_by {
-            Some(g) => {
-                if body.distinct {
-                    return self.fail_at(g.span.start, DISTINCT_WITH_GROUP);
-                }
-                self.check_grouped_body(&check)?;
+        // A body without `group by` needs no check since 0.29: a reduction is an
+        // ordinary call, legal anywhere, because `$rows` is total (`[$it]`).
+        if let Some(g) = &body.group_by {
+            if body.distinct {
+                return self.fail_at(g.span.start, DISTINCT_WITH_GROUP);
             }
-            None => self.reject_aggregates(&check)?,
+            self.check_grouped_body(&check)?;
         }
         Ok(body)
     }
@@ -868,7 +861,7 @@ impl Parser {
         };
         starts_value(nx)
             || (nx.kind == TokType::Ident
-                && AggregateName::from_word(&nx.value).is_some()
+                && ReductionName::from_word(&nx.value).is_some()
                 && self.peek_at(2).is_some_and(|t| t.kind == TokType::LParen))
     }
 
@@ -954,7 +947,7 @@ impl Parser {
         };
         starts_value(nx)
             || (nx.kind == TokType::Ident
-                && AggregateName::from_word(&nx.value).is_some()
+                && ReductionName::from_word(&nx.value).is_some()
                 && self.peek_at(2).is_some_and(|t| t.kind == TokType::LParen))
     }
 
@@ -1025,52 +1018,45 @@ impl Parser {
     // `name(` where `name` is an aggregate: `count()`, `sum(e)`, `collect(distinct
     // e)`. The cursor is at the `(`. Arity and the `distinct` modifier are checked
     // here; WHERE the aggregate may stand is the body's business (`check_grouped_body`).
-    fn parse_aggregate(&mut self, name: AggregateName, start: usize) -> Result<Expr> {
-        self.next(); // '('
-        let mut distinct = false;
-        if self.at_word(TokType::Ident, "distinct") && self.peek_at(1).is_some_and(starts_value) {
-            self.next();
-            distinct = true;
+    // `name(` where `name` is a reduction: `count($rows)`, `sum(e)`. The cursor
+    // is at the `(`. Since 0.29 a reduction is an ordinary `Call` of ONE
+    // argument — the collection — so only arity is checked here; where it may
+    // stand is no longer a question of what it is (SEMANTICS §24 "Staging"
+    // governs what its collection may be, not what the function is called).
+    fn parse_reduction(&mut self, name: ReductionName, start: usize) -> Result<Expr> {
+        let args = self.parse_args()?;
+        if args.is_empty() {
+            return self.fail_at(
+                start,
+                format!(
+                    "`{n}()` needs its collection — the group's rows are `{n}($rows)`, a property's per-row values `{n}(<name>)`",
+                    n = name.as_str()
+                ),
+            );
         }
-        let mut arg: Option<Box<Expr>> = None;
-        if !self.at(TokType::RParen) {
-            arg = Some(Box::new(self.parse_value_expr()?));
-            if self.at(TokType::Comma) {
-                return self.fail(format!(
-                    "`{}(…)` takes one argument — an aggregate reduces one expression over the group's rows",
+        if args.len() > 1 {
+            return self.fail_at(
+                start,
+                format!(
+                    "`{}(…)` takes one argument, the collection it reduces",
                     name.as_str()
-                ));
-            }
+                ),
+            );
         }
-        if !self.at(TokType::RParen) {
-            return self.fail(format!("expected ')' to close `{}(…)`", name.as_str()));
-        }
-        self.next();
-        if arg.is_none() && name != AggregateName::Count {
-            return self.fail(format!(
-                "`{n}()` needs an argument (`{n}(<expr>)`) — only `count()` counts the group's rows without one",
-                n = name.as_str()
-            ));
-        }
-        if distinct && name.is_predicate() {
-            return self.fail(format!(
-                "`{}(distinct …)`: `distinct` applies to a value aggregate (count, sum, min, max, avg, collect, first, last), not to a predicate aggregate",
-                name.as_str()
-            ));
-        }
-        Ok(Expr::Aggregate {
-            name,
-            arg,
-            distinct,
+        Ok(Expr::Call {
+            recv: None,
+            name: name.as_str().to_owned(),
+            args,
             span: Span::new(start, self.end()),
         })
     }
 
-    // A free call: an aggregate node for an aggregate name (reserved since 0.24),
-    // an ordinary `call` otherwise. The cursor is at the `(`.
+    // A free call. A reduction name is reserved (§1) and arity-checked; every
+    // other name is an ordinary host call. Both are `Call` since 0.29.
+    // The cursor is at the `(`.
     fn parse_free_call(&mut self, name: String, start: usize) -> Result<Expr> {
-        if let Some(agg) = AggregateName::from_word(&name) {
-            return self.parse_aggregate(agg, start);
+        if let Some(red) = ReductionName::from_word(&name) {
+            return self.parse_reduction(red, start);
         }
         let args = self.parse_args()?;
         Ok(Expr::Call {
@@ -1085,104 +1071,53 @@ impl Parser {
     // rows are grouped (`from`, `where`, `frontier`, the keys, the bound) — and,
     // in a body without `group by`, every clause. The `where` is the alias-resolved
     // one, so an aggregate reached through a select alias is caught too.
-    fn reject_aggregates(&self, b: &GroupCheck<'_>) -> Result<()> {
-        let mut found: Vec<(&Expr, &'static str)> = Vec::new();
-        fn push_all<'a>(
-            found: &mut Vec<(&'a Expr, &'static str)>,
-            exprs: impl IntoIterator<Item = &'a Expr>,
-            clause: &'static str,
-        ) {
-            let mut out = Vec::new();
-            for e in exprs {
-                aggregates_in(e, &mut out);
-            }
-            found.extend(out.into_iter().map(|a| (a, clause)));
-        }
-        if let Some(w) = b.r#where {
-            let mut out = Vec::new();
-            where_aggregates(w, &mut out);
-            found.extend(out.into_iter().map(|a| (a, "`where`")));
-        }
-        push_all(&mut found, b.froms, "`from`");
-        push_all(&mut found, b.frontier, "`frontier`");
-        push_all(&mut found, b.flatten.iter().map(|f| &f.expr), "`flatten`");
-        push_all(&mut found, b.limit, "`limit`");
-        push_all(&mut found, b.offset, "`offset`");
-        if let Some(g) = b.group_by {
-            push_all(
-                &mut found,
-                g.keys.iter().map(|k| &k.expr),
-                "a `group by` key",
-            );
-        }
+    // SEMANTICS §24 "Staging". `$rows` is legal in every clause — `[$it]` before
+    // `group by`, the group's rows after — so the token is never refused. What is
+    // refused is the ALIAS INDIRECTION: `where` is the one pre-group clause §14
+    // inlines aliases into, so a `select` alias whose definition reads `$rows`
+    // would be evaluated pre-group there, reducing a one-element collection and
+    // answering the same thing for every row. The ALIAS is judged, never the
+    // function: the same text written directly in `where` is accepted.
+    fn reject_staged_rows(&self, b: &GroupCheck<'_>) -> Result<()> {
         if b.group_by.is_none() {
-            push_all(
-                &mut found,
-                b.resolved_select.iter().filter_map(|it| match it {
-                    SelectItem::Field { expr, .. } => Some(expr),
-                    SelectItem::Collect { .. } => None,
-                }),
-                "a select item",
-            );
-            if let Some(o) = b.order_by {
-                push_all(&mut found, o.iter().map(|o| &o.expr), "`order by`");
-            }
+            return Ok(());
         }
-        let Some((agg, clause)) = found.first() else {
+        let Some(raw) = b.raw_where else {
             return Ok(());
         };
-        if b.group_by.is_none() {
-            return self.fail_at(
-                agg.span().start,
-                format!(
-                    "`{}` is an aggregate: it is read after grouping and may stand only in a select item, `having` or `order by` of a body with `group by` — this body has none",
-                    describe(Node::Expr(agg))
-                ),
-            );
+        let grouped: Vec<&str> = b
+            .resolved_select
+            .iter()
+            .filter_map(|it| match it {
+                SelectItem::Field {
+                    name, expr, lift, ..
+                } if *lift == 0 && !name.is_empty() && expr_reads_rows(expr) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        if grouped.is_empty() {
+            return Ok(());
         }
-        self.fail_at(
-            agg.span().start,
-            format!(
-                "`{}` is an aggregate and cannot be read in {clause}{} — the rows are not grouped yet there; aggregates stand in a select item, `having` or `order by`",
-                describe(Node::Expr(agg)),
-                if *clause == "`where`" {
-                    " (a select alias standing for one included)"
-                } else {
-                    ""
-                }
-            ),
-        )
+        let mut named: Vec<&Expr> = Vec::new();
+        where_idents(raw, &mut named);
+        for e in named {
+            if let Expr::Ident { name, span } = e
+                && grouped.contains(&name.as_str())
+            {
+                return self.fail_at(
+                        span.start,
+                        format!(
+                            "`{name}` reads `$rows` after grouping, but `where` runs before `group by` — move it to `having`"
+                        ),
+                    );
+            }
+        }
+        Ok(())
     }
 
-    // A grouped body: aggregates only after the grouping (and never nested), and
-    // every bare name at the group scope a key, an alias, or the group's rows.
+    // A grouped body: the staging rule (§24), then the names at the group scope.
     fn check_grouped_body(&self, b: &GroupCheck<'_>) -> Result<()> {
-        self.reject_aggregates(b)?;
-        // An aggregate's argument is read on the group's rows, where there is no
-        // group to aggregate: `sum(count())` is an error, not a double reduction.
-        let mut post: Vec<&Expr> = Vec::new();
-        for it in b.resolved_select {
-            if let SelectItem::Field { expr, .. } = it {
-                aggregates_in(expr, &mut post);
-            }
-        }
-        if let Some(h) = b.resolved_having {
-            where_aggregates(h, &mut post);
-        }
-        if let Some(o) = b.order_by {
-            for s in o {
-                aggregates_in(&s.expr, &mut post);
-            }
-        }
-        if let Some(nested) = nested_aggregate(&post) {
-            return self.fail_at(
-                nested.span().start,
-                format!(
-                    "`{}`: an aggregate cannot nest — its argument is read on each of the group's rows, where there is no group to reduce",
-                    describe(Node::Expr(nested))
-                ),
-            );
-        }
+        self.reject_staged_rows(b)?;
         let group_by = b.group_by.expect("a grouped body");
         // The names a position at the group scope may read: the keys, the
         // group values (`rows`, `$it`, `$key`) and the aliases given.
@@ -1255,28 +1190,23 @@ impl Parser {
     ) -> Result<()> {
         let again = |x: &Expr| self.check_group_expr(x, valid, clause, in_call);
         match e {
+            // Since 0.29 a BARE name at the group scope is always the host's — a key
+            // reads the key, any other property reads its per-row list — so nothing
+            // bare is refused. Only a `$`-name that is not one of the group scope's
+            // three intrinsics is, since `$` is the language's namespace and the
+            // walk intrinsics belong to rows.
             Expr::Ident { name, span } => {
-                if valid.contains(name.as_str()) {
+                if !name.starts_with('$') || valid.contains(name.as_str()) {
                     return Ok(());
                 }
-                let hint = match in_call {
-                    None => String::new(),
-                    Some(c) => format!(
-                        "; `{c}(…)` is not an aggregate — the aggregates are {}",
-                        AggregateName::WORDS.join(", ")
-                    ),
-                };
                 self.fail_at(
                     span.start,
                     format!(
-                        "`{name}` is not a group key or aggregate — {clause} of a grouped body reads the group: a key (`group by {name}`), an aggregate over its rows (`collect({name})`), or the rows themselves (`rows collect {{ select {name} }}`){hint}"
+                        "`{name}` is not read at a group scope — {clause} of a grouped body has `$it` (the key record), `$key` (its identity) and `$rows` (the group's rows); a row's own intrinsics are read inside `$rows {{ … }}`"
                     ),
                 )
             }
-            Expr::Lit { .. }
-            | Expr::Binding { .. }
-            | Expr::Outer { .. }
-            | Expr::Aggregate { .. } => Ok(()),
+            Expr::Lit { .. } | Expr::Binding { .. } | Expr::Outer { .. } => Ok(()),
             Expr::Member { recv, .. } => again(recv),
             Expr::Call {
                 recv, name, args, ..
@@ -1332,10 +1262,13 @@ impl Parser {
             .collect();
         items.push(SelectItem::Field {
             name: "count".to_owned(),
-            expr: Expr::Aggregate {
-                name: AggregateName::Count,
-                arg: None,
-                distinct: false,
+            expr: Expr::Call {
+                recv: None,
+                name: "count".to_owned(),
+                args: vec![Expr::Ident {
+                    name: "$rows".to_owned(),
+                    span: Span::EMPTY,
+                }],
                 span: Span::EMPTY,
             },
             lift: 0,
@@ -3159,78 +3092,77 @@ const DISTINCT_WITH_GROUP: &str = "`distinct` is redundant with `group by` — a
 /// row clauses (`resolve_row_clauses`).
 struct GroupCheck<'a> {
     /// The items with their aliases substituted (`resolve_select`; an item naming
-    /// an aliased key reads the key), for the aggregate and group-read checks.
+    /// an aliased key reads the key), for the staging and group-read checks.
     resolved_select: &'a [SelectItem],
     having: Option<&'a Where>,
-    resolved_having: Option<&'a Where>,
     order_by: Option<&'a [OrderSpec]>,
-    froms: &'a [Expr],
-    r#where: Option<&'a Where>,
-    frontier: Option<&'a Expr>,
-    flatten: &'a [Flatten],
-    limit: Option<&'a Expr>,
-    offset: Option<&'a Expr>,
+    /// The `where` BEFORE alias substitution — the staging check reads aliases by name.
+    raw_where: Option<&'a Where>,
     group_by: Option<&'a GroupBy>,
 }
 
-// Every aggregate node in `e` read at THIS scope (a nested block's body is its
-// own scope and is not entered; a block's receiver is). An aggregate's argument
-// is entered too, so a nested aggregate is found by `nested_aggregate`.
-fn aggregates_in<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+// Does `e` read `$rows` at THIS scope? (A nested block's body is its own scope
+// and is not entered; a block's receiver is.) The staging check (§24) uses it to
+// tell a group-scope projection from a per-row one.
+fn expr_reads_rows(e: &Expr) -> bool {
     match e {
-        Expr::Aggregate { arg, .. } => {
-            out.push(e);
-            if let Some(a) = arg {
-                aggregates_in(a, out);
-            }
-        }
-        Expr::Lit { .. } | Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } => {}
-        Expr::Member { recv, .. } => aggregates_in(recv, out),
+        Expr::Ident { name, .. } => name == "$rows",
+        Expr::Lit { .. } | Expr::Outer { .. } | Expr::Binding { .. } => false,
+        Expr::Member { recv, .. } => expr_reads_rows(recv),
         Expr::Call { recv, args, .. } => {
-            if let Some(r) = recv {
-                aggregates_in(r, out);
-            }
-            args.iter().for_each(|a| aggregates_in(a, out));
+            recv.as_deref().is_some_and(expr_reads_rows) || args.iter().any(expr_reads_rows)
         }
-        Expr::Unary { expr, .. } | Expr::Required { expr, .. } => aggregates_in(expr, out),
+        Expr::Unary { expr, .. } | Expr::Required { expr, .. } => expr_reads_rows(expr),
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
-        | Expr::In { left, right, .. } => {
-            aggregates_in(left, out);
-            aggregates_in(right, out);
-        }
-        Expr::Range { lo, hi, .. } => {
-            for b in [lo, hi].into_iter().flatten() {
-                aggregates_in(b, out);
-            }
-        }
-        Expr::Tuple { items, .. } => items.iter().for_each(|x| aggregates_in(x, out)),
-        Expr::Template { parts, .. } => template_exprs(parts).for_each(|x| aggregates_in(x, out)),
-        Expr::Op(op) => aggregates_in(&op.receiver, out),
+        | Expr::In { left, right, .. } => expr_reads_rows(left) || expr_reads_rows(right),
+        Expr::Range { lo, hi, .. } => [lo.as_deref(), hi.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(expr_reads_rows),
+        Expr::Tuple { items, .. } => items.iter().any(expr_reads_rows),
+        Expr::Template { parts, .. } => template_exprs(parts).any(expr_reads_rows),
+        Expr::Op(op) => expr_reads_rows(&op.receiver),
     }
 }
 
-fn where_aggregates<'a>(w: &'a Where, out: &mut Vec<&'a Expr>) {
+// Every bare identifier a where tree reads at THIS scope, for the staging check.
+fn where_idents<'a>(w: &'a Where, out: &mut Vec<&'a Expr>) {
+    fn walk<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+        match e {
+            Expr::Ident { .. } => out.push(e),
+            Expr::Lit { .. } | Expr::Outer { .. } | Expr::Binding { .. } => {}
+            Expr::Member { recv, .. } => walk(recv, out),
+            Expr::Call { recv, args, .. } => {
+                if let Some(r) = recv {
+                    walk(r, out);
+                }
+                args.iter().for_each(|a| walk(a, out));
+            }
+            Expr::Unary { expr, .. } | Expr::Required { expr, .. } => walk(expr, out),
+            Expr::Binary { left, right, .. }
+            | Expr::Logical { left, right, .. }
+            | Expr::In { left, right, .. } => {
+                walk(left, out);
+                walk(right, out);
+            }
+            Expr::Range { lo, hi, .. } => [lo.as_deref(), hi.as_deref()]
+                .into_iter()
+                .flatten()
+                .for_each(|b| walk(b, out)),
+            Expr::Tuple { items, .. } => items.iter().for_each(|x| walk(x, out)),
+            Expr::Template { parts, .. } => template_exprs(parts).for_each(|x| walk(x, out)),
+            Expr::Op(op) => walk(&op.receiver, out),
+        }
+    }
     match w {
         Where::And { parts, .. } | Where::Or { parts, .. } => {
-            parts.iter().for_each(|p| where_aggregates(p, out));
+            parts.iter().for_each(|p| where_idents(p, out));
         }
-        Where::Not { expr, .. } => where_aggregates(expr, out),
-        Where::Scalar { expr, .. } => aggregates_in(expr, out),
-        Where::Op(op) => aggregates_in(&op.receiver, out),
+        Where::Not { expr, .. } => where_idents(expr, out),
+        Where::Scalar { expr, .. } => walk(expr, out),
+        Where::Op(op) => walk(&op.receiver, out),
     }
-}
-
-// The first aggregate whose argument holds another (`sum(count())`), if any.
-fn nested_aggregate<'a>(found: &[&'a Expr]) -> Option<&'a Expr> {
-    found.iter().copied().find(|a| {
-        let Expr::Aggregate { arg: Some(arg), .. } = a else {
-            return false;
-        };
-        let mut inner = Vec::new();
-        aggregates_in(arg, &mut inner);
-        !inner.is_empty()
-    })
 }
 
 // The default key of an unaliased projection item: the last segment of a bare /

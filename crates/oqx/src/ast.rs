@@ -344,11 +344,14 @@ impl LogicalOp {
 }
 serde_as_word!(LogicalOp);
 
-/// The aggregate functions (SEMANTICS §24, since 0.24): reserved free-function
-/// names that reduce a group's rows. `count` takes zero or one argument, every
-/// other exactly one; `any`/`all` take a predicate and admit no `distinct`.
+/// The reductions (SEMANTICS §24; ordinary collection functions since 0.29):
+/// reserved free-function names, each taking ONE argument — the collection — and
+/// reducing it to one value. They are ordinary `Call` expressions: no syntactic
+/// category, no clause restriction, no arity overload, no `distinct` modifier
+/// (dedupe with the collection's own `select distinct`). Reserved so a host
+/// cannot serve a function under one of these names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AggregateName {
+pub enum ReductionName {
     Count,
     Sum,
     Min,
@@ -361,8 +364,8 @@ pub enum AggregateName {
     All,
 }
 
-impl AggregateName {
-    /// The TS `AGGREGATE_NAMES`, in the order the error messages list them.
+impl ReductionName {
+    /// The TS `REDUCTION_NAMES`, in the order the error messages list them.
     pub const WORDS: &'static [&'static str] = &[
         "count", "sum", "min", "max", "avg", "collect", "first", "last", "any", "all",
     ];
@@ -370,43 +373,44 @@ impl AggregateName {
     /// The TS spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            AggregateName::Count => "count",
-            AggregateName::Sum => "sum",
-            AggregateName::Min => "min",
-            AggregateName::Max => "max",
-            AggregateName::Avg => "avg",
-            AggregateName::Collect => "collect",
-            AggregateName::First => "first",
-            AggregateName::Last => "last",
-            AggregateName::Any => "any",
-            AggregateName::All => "all",
+            ReductionName::Count => "count",
+            ReductionName::Sum => "sum",
+            ReductionName::Min => "min",
+            ReductionName::Max => "max",
+            ReductionName::Avg => "avg",
+            ReductionName::Collect => "collect",
+            ReductionName::First => "first",
+            ReductionName::Last => "last",
+            ReductionName::Any => "any",
+            ReductionName::All => "all",
         }
     }
 
-    /// The inverse of [`AggregateName::as_str`] (the TS `isAggregateName`):
-    /// `None` when the word is not an aggregate's.
+    /// The inverse of [`ReductionName::as_str`] (the TS `isReductionName`):
+    /// `None` when the word is not a reduction's.
     pub fn from_word(word: &str) -> Option<Self> {
         Some(match word {
-            "count" => AggregateName::Count,
-            "sum" => AggregateName::Sum,
-            "min" => AggregateName::Min,
-            "max" => AggregateName::Max,
-            "avg" => AggregateName::Avg,
-            "collect" => AggregateName::Collect,
-            "first" => AggregateName::First,
-            "last" => AggregateName::Last,
-            "any" => AggregateName::Any,
-            "all" => AggregateName::All,
+            "count" => ReductionName::Count,
+            "sum" => ReductionName::Sum,
+            "min" => ReductionName::Min,
+            "max" => ReductionName::Max,
+            "avg" => ReductionName::Avg,
+            "collect" => ReductionName::Collect,
+            "first" => ReductionName::First,
+            "last" => ReductionName::Last,
+            "any" => ReductionName::Any,
+            "all" => ReductionName::All,
             _ => return None,
         })
     }
 
-    /// `any` / `all`: a predicate aggregate (truthiness over the rows, no `distinct`).
+    /// `any` / `all`: truthiness over the collection's elements rather than a
+    /// value fold — the one pair that does not skip absent (§24).
     pub fn is_predicate(self) -> bool {
-        matches!(self, AggregateName::Any | AggregateName::All)
+        matches!(self, ReductionName::Any | ReductionName::All)
     }
 }
-serde_as_word!(AggregateName);
+serde_as_word!(ReductionName);
 
 /// Scalar value/predicate expression, evaluated against a row scope + bindings.
 #[derive(Clone, Debug, PartialEq)]
@@ -505,12 +509,6 @@ pub enum Expr {
     /// `(distinct e)` modifier. A free call by an aggregate name parses to this
     /// node wherever it is written, never to a [`Expr::Call`]; it is legal only
     /// in the post-group clauses of a body with `group by`.
-    Aggregate {
-        name: AggregateName,
-        arg: Option<Box<Expr>>,
-        distinct: bool,
-        span: Span,
-    },
     /// A value-position directive (since 0.17): `recv first { … }.pay`, and
     /// what a bracket lookup `x[…]` desugars to. Serializes as the bare
     /// `OpNode` (`kind: "op"`): an op is an expression only by position.
@@ -535,8 +533,7 @@ impl Expr {
             | Expr::In { span, .. }
             | Expr::Range { span, .. }
             | Expr::Tuple { span, .. }
-            | Expr::Template { span, .. }
-            | Expr::Aggregate { span, .. } => *span,
+            | Expr::Template { span, .. } => *span,
             Expr::Op(op) => op.span,
         }
     }
@@ -563,8 +560,7 @@ impl Expr {
             | Expr::In { span, .. }
             | Expr::Range { span, .. }
             | Expr::Tuple { span, .. }
-            | Expr::Template { span, .. }
-            | Expr::Aggregate { span, .. } => span,
+            | Expr::Template { span, .. } => span,
             Expr::Op(op) => &mut op.span,
         }
     }
@@ -587,7 +583,6 @@ impl Expr {
             Expr::Range { .. } => "range",
             Expr::Tuple { .. } => "tuple",
             Expr::Template { .. } => "template",
-            Expr::Aggregate { .. } => "aggregate",
         }
     }
 }

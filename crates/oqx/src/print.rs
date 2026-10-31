@@ -138,11 +138,7 @@ fn prec(e: &Expr) -> u8 {
         | Expr::Binding { .. }
         | Expr::Tuple { .. }
         | Expr::Template { .. } => PRIMARY,
-        Expr::Member { .. }
-        | Expr::Call { .. }
-        | Expr::Aggregate { .. }
-        | Expr::Required { .. }
-        | Expr::Op(_) => POSTFIX,
+        Expr::Member { .. } | Expr::Call { .. } | Expr::Required { .. } | Expr::Op(_) => POSTFIX,
         Expr::Unary { .. } => UNARY,
         Expr::Binary { op, .. } => match op {
             BinaryOp::Add | BinaryOp::Sub => ADD,
@@ -539,21 +535,6 @@ fn expr(e: &Expr) -> Out {
                 Some(r) => cat(vec![receiver(r), text(format!(".{name}")), args]),
             }
         }
-        // An aggregate prints as the call it is written as (`count()`, `sum(distinct x)`).
-        Expr::Aggregate {
-            name,
-            arg,
-            distinct,
-            ..
-        } => cat(vec![
-            text(format!(
-                "{}({}",
-                name.as_str(),
-                if *distinct { "distinct " } else { "" }
-            )),
-            arg.as_deref().map_or_else(Vec::new, expr),
-            text(")"),
-        ]),
         Expr::Unary { op, expr: x, .. } => cat(vec![text(op.as_str()), operand(x, UNARY)]),
         // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
         Expr::Required { expr: x, .. } => cat(vec![operand(x, POSTFIX), text("!")]),

@@ -607,7 +607,9 @@ fn at_group_scope(body: Node<'_>, path: &[Node<'_>], i: usize, node: Node<'_>) -
     for a in &path[i + 1..] {
         match a {
             Node::Query(_) | Node::Subquery(_) => break,
-            Node::Expr(Expr::Aggregate { .. }) => return false,
+            // 0.29: a reduction's argument is an ordinary expression of the group
+            // scope, so nothing on the path demotes a group read to a row read.
+            // Through 0.28 an `Aggregate` node here did exactly that.
             _ => {}
         }
     }

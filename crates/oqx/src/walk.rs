@@ -326,12 +326,6 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             Expr::Template { parts, .. } => {
                 out.extend(template_exprs(parts).map(|x| child(Node::Expr(x), None, 0)));
             }
-            // The argument is read on each of the group's rows (0.24); none for `count()`.
-            Expr::Aggregate { arg, .. } => {
-                if let Some(a) = arg {
-                    out.push(child(Node::Expr(a), None, 0));
-                }
-            }
         },
     }
     out
@@ -763,19 +757,6 @@ where
                     .collect(),
                 span: *span,
             },
-            Expr::Aggregate {
-                name,
-                arg,
-                distinct,
-                span,
-            } => Expr::Aggregate {
-                name: *name,
-                arg: arg
-                    .as_deref()
-                    .map(|a| Box::new(self.expr(a, clause, depth))),
-                distinct: *distinct,
-                span: *span,
-            },
         };
         self.path.pop();
         let ctx = self.ctx(Some(clause), depth);
@@ -959,11 +940,6 @@ fn strip_expr_spans(e: &mut Expr) {
                         strip_expr_spans(x);
                     }
                 }),
-                Expr::Aggregate { arg, .. } => {
-                    if let Some(a) = arg {
-                        strip_expr_spans(a);
-                    }
-                }
                 Expr::Op(_) => unreachable!("handled above"),
             }
         }

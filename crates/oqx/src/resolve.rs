@@ -688,21 +688,6 @@ where
                 span,
             }
         }
-        // An aggregate's argument is read on the group's rows (0.24).
-        Expr::Aggregate {
-            name,
-            arg,
-            distinct,
-            span,
-        } => Expr::Aggregate {
-            name,
-            arg: match arg {
-                Some(a) => Some(go(a)?),
-                None => None,
-            },
-            distinct,
-            span,
-        },
         // The receiver is read in this scope; the block is its own scope.
         Expr::Op(mut op) => {
             op.receiver = *go(Box::new(op.receiver))?;
@@ -762,11 +747,6 @@ fn alias_refs(it: &SelectItem, index: &HashMap<&str, usize>) -> Vec<String> {
             Expr::Tuple { items, .. } => items.iter().for_each(|x| visit(x, own, index, out)),
             Expr::Template { parts, .. } => {
                 template_exprs(parts).for_each(|x| visit(x, own, index, out))
-            }
-            Expr::Aggregate { arg, .. } => {
-                if let Some(a) = arg {
-                    visit(a, own, index, out);
-                }
             }
             Expr::Op(op) => visit(&op.receiver, own, index, out),
         }

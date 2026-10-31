@@ -401,10 +401,6 @@ pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
         Expr::Template { parts, .. } => {
             template_exprs(parts).any(|x| expr_reads_scope_in(x, at, up_to))
         }
-        // The argument is read on the group's rows, which sit at the group's depth.
-        Expr::Aggregate { arg, .. } => arg
-            .as_deref()
-            .is_some_and(|a| expr_reads_scope_in(a, at, up_to)),
     }
 }
 
@@ -525,9 +521,6 @@ pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
         // which only the data decides: with an interpolation it is never
         // raise-free.
         Expr::Template { parts, .. } => template_exprs(parts).next().is_none(),
-        // `sum`/`avg` raise on a non-number (§24), which only the data decides;
-        // and an aggregate outside a group scope raises.
-        Expr::Aggregate { .. } => false,
     }
 }
 

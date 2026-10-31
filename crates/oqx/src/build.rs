@@ -5,8 +5,8 @@
 //! shape as a parsed one and prints with [`crate::print`].
 
 use crate::ast::{
-    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy,
-    GroupKey, LogicalOp, OpNode, OrderSpec, Query, SelectItem, Span, Subquery, TemplatePart,
+    BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey,
+    LogicalOp, OpNode, OrderSpec, Query, ReductionName, SelectItem, Span, Subquery, TemplatePart,
     UnaryOp, Where,
 };
 use crate::value::Value;
@@ -136,13 +136,14 @@ pub fn template(parts: Vec<TemplatePart>) -> Expr {
         span: Span::EMPTY,
     }
 }
-/// `name(arg)` / `name(distinct arg)` / `count()` — an aggregate over the
-/// group's rows (SEMANTICS §24).
-pub fn aggregate(name: AggregateName, arg: Option<Expr>, distinct: bool) -> Expr {
-    Expr::Aggregate {
-        name,
-        arg: arg.map(Box::new),
-        distinct,
+/// `name(collection)` — a reduction (SEMANTICS §24). Since 0.29 an ordinary
+/// `Call` of one argument: no `Aggregate` variant, no optional arg, no
+/// `distinct` flag (dedupe with the collection's own `select distinct`).
+pub fn reduction(name: ReductionName, arg: Expr) -> Expr {
+    Expr::Call {
+        recv: None,
+        name: name.as_str().to_owned(),
+        args: vec![arg],
         span: Span::EMPTY,
     }
 }

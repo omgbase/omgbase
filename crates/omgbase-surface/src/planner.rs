@@ -287,10 +287,6 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
         // list or a record is an eval error only the data decides, so with any
         // interpolation it may raise.
         Expr::Template { parts, .. } => oqx::walk::template_exprs(parts).next().is_some(),
-        // An aggregate (oqx 0.24) raises on a non-number under `sum`/`avg`,
-        // which only the data decides; a grouped query is never planned anyway
-        // (`compile`).
-        Expr::Aggregate { .. } => true,
     }
 }
 
