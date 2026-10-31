@@ -95,7 +95,7 @@ import type {
   Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, FollowDestination, Consumer, RelOp,
   BinaryOp, Span, TemplatePart, Flatten, GroupBy, GroupKey, ReductionName,
 } from "./ast.ts";
-import { REDUCTION_NAMES, isReductionName } from "./ast.ts";
+import { isReductionName } from "./ast.ts";
 import { readKeys, resolveRowClauses, resolveSelect, resolveWhere } from "./resolve.ts";
 import { visit } from "./walk.ts";
 import { printTemplate } from "./print.ts";

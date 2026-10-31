@@ -893,7 +893,7 @@
           }
         ]
       },
-      "query": "people { select kk: kind, n: count() group by kk having kk != \"hr\" order by kk }",
+      "query": "people { select kk: kind, n: count($rows) group by kk having kk != \"hr\" order by kk }",
       "expect": {
         "result": [
           {
@@ -957,7 +957,7 @@
           }
         ]
       },
-      "query": "people { select kind, n: count() group by kind order by n desc }",
+      "query": "people { select kind, n: count($rows) group by kind order by n desc }",
       "expect": {
         "result": [
           {
@@ -1383,7 +1383,7 @@
         "group"
       ],
       "notes": "`kind: kind` is the row field, so the key `kind` is a row read in clause `groupBy`; `order by n` is the alias `count()`.",
-      "query": "people { select kind, n: count() group by kind order by n }",
+      "query": "people { select kind, n: count($rows) group by kind order by n }",
       "expect": {
         "references": [
           {

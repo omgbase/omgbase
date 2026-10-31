@@ -1976,7 +1976,7 @@
           }
         ]
       },
-      "query": "select tags, n: count() from people flatten tags group by tags",
+      "query": "select tags, n: count($rows) from people flatten tags group by tags",
       "expect": {
         "result": [
           {
@@ -2023,7 +2023,7 @@
           }
         ]
       },
-      "query": "select t, who: collect(name), rs: rows collect { name } from people flatten tags as t group by t order by t",
+      "query": "select t, who: collect(name), rs: $rows collect { name } from people flatten tags as t group by t order by t",
       "expect": {
         "result": [
           {
@@ -2128,7 +2128,7 @@
           }
         ]
       },
-      "query": "select t values from people flatten tags as t group by t having count() > 1",
+      "query": "select t values from people flatten tags as t group by t having count($rows) > 1",
       "expect": {
         "result": [
           "a"
@@ -2606,22 +2606,12 @@
       }
     },
     {
-      "name": "error: an aggregate in a flatten expression",
-      "tags": [
-        "flatten",
-        "error",
-        "aggregate"
-      ],
-      "notes": "The rows are not grouped yet when `flatten` runs.",
+      "name": "a reduction in a flatten expression is legal (0.29)",
+      "tags": ["flatten", "reduction"],
+      "notes": "GRAMMAR §3: `flatten` splits a value into rows, and since 0.29 a reduction is an ordinary expression that may produce one — here `collect(tags)` is the per-row list of each row's tags, flattened back out, so the grouping sees the same three rows. Through 0.28 any aggregate in a `flatten` was the parse error \"`collect(tags)` is an aggregate and cannot be read in `flatten`\".",
       "query": "from people flatten collect(tags) as t group by city",
-      "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "`collect(tags)` is an aggregate and cannot be read in `flatten`"
-          ]
-        }
-      }
+      "roots": {"people": [{"name": "Bob", "city": "NYC", "tags": ["x", "y"]}, {"name": "Ann", "city": "NYC", "tags": ["y"]}, {"name": "Cal", "city": "SF", "tags": ["z"]}]},
+      "expect": {"result": [{"city": "NYC", "count": 3}, {"city": "SF", "count": 1}]}
     },
     {
       "name": "error: a lift inside a flatten block",
@@ -2643,22 +2633,12 @@
       }
     },
     {
-      "name": "error: a bound name is not a group key",
-      "tags": [
-        "flatten",
-        "error",
-        "group"
-      ],
-      "notes": "After `group by` the body reads the group (§24); a flattened row's binding is read through a key or an aggregate.",
+      "name": "a bound name that is not a key reads its per-row list",
+      "tags": ["flatten", "group", "rows"],
+      "notes": "§24: a `flatten` binding is a row field like any other, so at the group scope a bound name that is NOT a key reads the list of its value across the group's flattened rows — `['x','y','y']` for the two NYC rows flattened to three. Through 0.28 it was the parse error \"`t` is not a group key or aggregate\".",
       "query": "select t from people flatten tags as t group by city",
-      "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "`t` is not a group key or aggregate"
-          ]
-        }
-      }
+      "roots": {"people": [{"name": "Bob", "city": "NYC", "tags": ["x", "y"]}, {"name": "Ann", "city": "NYC", "tags": ["y"]}, {"name": "Cal", "city": "SF", "tags": ["z"]}]},
+      "expect": {"result": [{"t": ["x", "y", "y"]}, {"t": ["z"]}]}
     },
     {
       "name": "references: the flatten expression is read on the rows; the bound name is not a reference after it",
@@ -2931,7 +2911,7 @@
         "group"
       ],
       "notes": "`where` runs before the fan-out, so `t` there is the row's property (no select item names `t`, else §14's alias rule would already exclude it); the key `t` reads the binding.",
-      "query": "select n: count() from people where t == 1 flatten tags as t group by t",
+      "query": "select n: count($rows) from people where t == 1 flatten tags as t group by t",
       "expect": {
         "references": [
           {

@@ -131,7 +131,7 @@ export interface InMemoryEngineOptions {
 
 const RECUR = new Set(["$depth", "$stop", "$leaf", "$frontier", "$ordinal"]);
 const KEY = "$key";
-const ROWS = "rows";
+const ROWS = "$rows";
 const HARD_DEPTH_CAP = 8;
 
 // What a scope projects to: the select list plus the `values` mode flag. Both
@@ -1117,8 +1117,15 @@ export class InMemoryEngine implements Engine {
     if (name === "$it") return scope.row;
     // `$key` is the row's identity on every row (SEMANTICS §16, since 0.20).
     if (name === KEY) return this.scopeIdentity(scope);
-    // `rows` on a group scope is the group's rows (§24); elsewhere a property.
-    if (name === ROWS && scope.group) return scope.group.rows;
+    // `$rows` is the group's rows at a group scope and `[$it]` everywhere else
+    // — total since 0.29 (§24), so a reduction is well-formed in any body.
+    if (name === ROWS) return scope.group ? scope.group.rows : [scope.row];
+    // At a group scope a bare NON-KEY name reads its PER-ROW LIST (§24, 0.29):
+    // one element per row of the group, in input order, absent elements
+    // included. A key name is the group's own record property and is read below.
+    if (scope.group && !Object.hasOwn(scope.row as object, name)) {
+      return scope.group.rowScopes.map((rs) => this.resolveIn(name, rs));
+    }
     if (RECUR.has(name) && scope.meta && Object.hasOwn(scope.meta, name)) return scope.meta[name];
     if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
