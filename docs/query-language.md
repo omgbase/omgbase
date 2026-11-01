@@ -720,7 +720,7 @@ seconds**. There are no new value kinds, and arithmetic between them is
   enclosing row.
 - **`cursor`:** opaque, keyset on `(_path, _id)`, valid for the same query only.
 
-## 7b. Grouping and aggregates (oqx 0.24)
+## 7b. Grouping and reductions (oqx 0.24; `$rows` and reductions-as-functions since 0.29)
 
 `group by <key>, …` after `where`/`follow` and before `order by` turns the rows
 a body yields into **one row per distinct key tuple** — the Dataview `GROUP BY`
@@ -730,50 +730,74 @@ navigation named by its last segment (`_doc.layer` → `layer`), or an expressio
 with an alias (`decade: (era - era % 10) / 10`); absent and `null` group
 together; groups come in first-appearance order (spec/oqx SEMANTICS §24).
 
-After the grouping the body reads the **group**, not a row: a `select` item,
-`having` and `order by` may name a key, an **aggregate** over the group's rows,
-or `rows` — the group's rows as a collection, usable as a receiver
-(`rows { select _title }`, `rows count { not checked }`,
-`rows first { _title values order by _updated_at desc }`). Any other name
-is a parse error naming it (`` `_title` is not a group key or aggregate — … reference
-it through rows ``). The aggregates — reserved free-function names, legal only in a
-grouped body's select/having/order by — are `count()` (rows), `count(e)` /
-`count(distinct e)` (present / distinct present values), `sum(e)` (`0` of
-none; a non-number is an error), `avg(e)`, `min(e)`, `max(e)` (absent of none;
-OQX ordering), `collect(e)` / `collect(distinct e)` (the present values in
-group order), `first(e)` / `last(e)` (first/last present value), `any(p)` /
-`all(p)` (truthiness over the rows). `having <pred>` filters the groups (it may
-name a `select` alias: `having n > 1`); `order by count() desc` sorts them
-(aliases are not substituted in `order by`, as ever); `limit`/`offset` bound
-them; `distinct` with `group by` is an error (redundant). Without a `select`
-the projection is the keys plus `count`. `count { … }` is also a **value** now
-(`n: _nodes count { _kind == "md:task" }`), inside or outside a group.
+After the grouping the body reads the **group**, not a row: `$it` is the key
+record, `$key` its identity, and `$rows` (0.29) the group's rows as a
+collection, usable as a receiver (`$rows { select _title }`,
+`$rows count { not checked }`,
+`$rows first { _title values order by _updated_at desc }`). A key name reads
+the key (one value — the group is defined by it); any other bare name reads
+the **list of that property's value across the group's rows**, one element
+per row (0.29). Through 0.28 a non-key bare name was instead the parse error
+`` `title` is not a group key or aggregate ``, and the group's rows were
+reached only through an aggregate's argument or the bare `rows`. The
+reductions — reserved free-function names, ordinary **collection functions**
+since 0.29 (in the family of `size`/`list`, legal wherever a call is legal,
+not a clause-restricted category) — are `count(e)` (present values; rows via
+`count($rows)`), `sum(e)` (`0` of none; a non-number is an error), `avg(e)`,
+`min(e)`, `max(e)` (absent of none; OQX ordering), `collect(e)` (the present
+values in order), `first(e)` / `last(e)` (first/last present value), `any(p)` /
+`all(p)` (truthiness over the values). `distinct` is **not** a call modifier
+(0.29) — it belongs to the collection (`count($rows { select distinct e
+values })`); through 0.28 it stood after the opening parenthesis
+(`count(distinct e)`) and was rejected on `any`/`all`. `having <pred>` filters
+the groups (it may name a `select` alias: `having n > 1`); `order by
+count($rows) desc` sorts them (aliases are not substituted in `order by`, as
+ever); `limit`/`offset` bound them; `distinct` with `group by` is an error
+(redundant). Without a `select` the projection is the keys plus
+`count: count($rows)`. `count { … }` is also a **value** (`n: _nodes count {
+_kind == "md:task" }`), inside or outside a group.
 
 ```
 docs { group by layer }                                               → [{ layer: "canon", count: 13 }, …]
-docs { select layer, n: count(), titles: collect(_title) group by layer order by count() desc }
+docs { select layer, n: count($rows), titles: collect(_title) group by layer order by count($rows) desc }
 blocks {
-  select _path, open: rows count { not checked }, done: rows count { where checked }
-  where _type == "task" group by _path having count() > 0 order by _path
+  select _path, open: $rows count { not checked }, done: $rows count { where checked }
+  where _type == "task" group by _path having count($rows) > 0 order by _path
 }
-docs { select type, n: count() where layer == "working" group by type having n > 1 }
+docs { select type, n: count($rows) where layer == "working" group by type having n > 1 }
 docs count { group by layer }                                         → the number of layers
 ```
+
+**The staging rule** (0.29): `$rows` is legal everywhere — `[$it]` before
+`group by`, the group's rows after, each well-defined — so there is nothing to
+forbid about the token itself; `where sum($rows { quantity values }) > 500` is
+legal and **per-row**. What is refused is the **alias indirection**: a clause
+that runs before `group by` (`where`, `from`, `frontier`, a group key, a
+bound, `flatten`) may not read a `select` alias whose definition reads
+`$rows`, because that item was written for the group scope and inlining it
+would evaluate it pre-group, where `$rows` is `[$it]` — silently answering the
+same thing for every row. `select n: count($rows) … where n > 1` is therefore
+the parse error `` `n` reads `$rows` after grouping, but `where` runs before
+`group by` — move it to `having` ``, and it is the alias, not the reduction,
+that is judged: the same text written directly in `where` is accepted,
+because written there it means the per-row thing and says so. Through 0.28
+this was instead a blanket ban on any aggregate appearing in an ungrouped
+body's `where`.
 
 **A grouped row is not a store row** (spec/oqx SEMANTICS §24; spec/surface
 §1.4): the runner injects no `_id`/`_path` envelope — a hit is the group's
 projection exactly as written (`{ layer, n, titles }`, what `bare` yields for a
 row query; `bare: true` is accepted and changes nothing), the envelope-collision
-rule does not apply, rows that surface as values (`rows { }` with no
+rule does not apply, rows that surface as values (`$rows { }` with no
 projection) still render as `{ _id, _path }` references, `values` returns the bare
 per-group values, and paging is by position — the query's `limit`/`offset`
 define the set, the tool's `limit` takes the first page, `truncated` says
 whether more groups follow, and the cursor is always `null` (as under a custom
 `order by`). The planner declines a grouped query whole (it runs in memory; SQL
 `GROUP BY` pushdown is a later round), and the unknown-names check judges a
-key's expression on the rows, an aggregate's argument on the rows, and the
-names inside a `rows …{ }` block on the grouped rows' kind (`rows count { where
-chekced }` is still the "not a field of blocks" hint).
+key's expression on the rows, a non-key bare name or a reduction's argument on
+the rows, and the names inside a `$rows …{ }` block on the grouped rows' kind
+(`$rows count { where chekced }` is still the "not a field of blocks" hint).
 
 ## 7c. Flatten (oqx 0.25)
 
@@ -796,7 +820,7 @@ before the fan-out.
 ```
 docs { select _path, tags where type == "process" flatten tags order by _path, tags }
 docs { select _path, t: b._text flatten _blocks { _type == "task" and not checked } as b }
-docs { select tags, n: count() flatten tags group by tags order by count() desc }
+docs { select tags, n: count($rows) flatten tags group by tags order by count($rows) desc }
 docs { select _path, e: j.employer, t flatten jobs as j flatten j.tags as t }
 ```
 
