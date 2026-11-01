@@ -4,6 +4,11 @@ All notable changes to `@omgbase/git-adapter` are recorded here. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.1.2] - 2026-11-01
+
+### Patch
+- Dependency pins moved: .
+
 ## [0.1.1] - 2026-10-27
 
 ### Patch
