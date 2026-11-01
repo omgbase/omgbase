@@ -1,6 +1,6 @@
 {
   "languageId": "oqx",
-  "languageVersion": "0.28",
+  "languageVersion": "0.29",
   "defaultToken": "invalid",
   "tokenPostfix": ".oqx",
   "ignoreCase": false,
@@ -242,10 +242,6 @@
       ],
       [
         "\\$[A-Za-z0-9_$]*",
-        "variable.predefined"
-      ],
-      [
-        "rows(?![A-Za-z0-9_$])",
         "variable.predefined"
       ],
       [

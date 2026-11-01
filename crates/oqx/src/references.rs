@@ -537,8 +537,10 @@ impl<'a> PostFlatten<'a> {
 /// Whether `name`, read at scope `depth`, is a value of a GROUP scope there
 /// (SEMANTICS §24): the body whose rows are at `depth` has a `group by`, the
 /// position is one of its post-group clauses — a select item, `having`, `order
-/// by` — not inside an aggregate's argument (which reads the group's rows), and
-/// the name is a key or `rows`.
+/// by` — and the name is a key or `$rows`. Since 0.29 a reduction's argument is
+/// an ordinary expression of the group scope too (there is no `Aggregate` node
+/// to demote it to a row read), so every name reached from a post-group clause
+/// is a group value.
 fn is_group_value(name: &str, depth: usize, path: &[Node<'_>], node: Node<'_>) -> bool {
     let Some(i) = body_index_at(path, depth) else {
         return false;
@@ -552,7 +554,7 @@ fn is_group_value(name: &str, depth: usize, path: &[Node<'_>], node: Node<'_>) -
         Node::Subquery(s) => s.group_by.as_ref(),
         _ => None,
     };
-    name == "rows" || keys.is_some_and(|g| g.keys.iter().any(|k| k.name == name))
+    name == "$rows" || keys.is_some_and(|g| g.keys.iter().any(|k| k.name == name))
 }
 
 /// The index in `path` of the body whose rows are at scope `depth` (every
@@ -569,10 +571,12 @@ fn body_index_at(path: &[Node<'_>], depth: usize) -> Option<usize> {
 }
 
 /// Whether a position under `body` (at `path[i]`) reads the body's GROUP scope:
-/// the body is grouped, the position lies in a select item, `having` or `order
-/// by`, and no aggregate stands between the body and the position (an
-/// aggregate's argument reads the group's rows; a nested body is its own scope
-/// and ends the search).
+/// the body is grouped and the position lies in a select item, `having` or
+/// `order by`. Through 0.28 an `Aggregate` node between the body and the
+/// position demoted a group read to a row read (its argument read the group's
+/// rows); since 0.29 a reduction's argument is an ordinary expression of the
+/// group scope, so no such demotion exists — every name reached from a
+/// post-group clause is a group value (`is_group_value` above).
 fn at_group_scope(body: Node<'_>, path: &[Node<'_>], i: usize, node: Node<'_>) -> bool {
     let (group_by, select, having, order_by) = match body {
         Node::Query(q) => (
@@ -593,27 +597,14 @@ fn at_group_scope(body: Node<'_>, path: &[Node<'_>], i: usize, node: Node<'_>) -
         return false;
     }
     let child = path.get(i + 1).copied().unwrap_or(node);
-    let post = match child {
+    match child {
         Node::Select(it) => select.iter().any(|x| std::ptr::eq(x, it)),
         Node::Order(o) => order_by.is_some_and(|os| os.iter().any(|x| std::ptr::eq(x, o))),
         // `having` is visited as its where tree (an op test as the op itself).
         Node::Where(w) => having.is_some_and(|h| std::ptr::eq(h, w)),
         Node::Op(op) => having.is_some_and(|h| matches!(h, Where::Op(b) if std::ptr::eq(&**b, op))),
         _ => false,
-    };
-    if !post {
-        return false;
     }
-    for a in &path[i + 1..] {
-        match a {
-            Node::Query(_) | Node::Subquery(_) => break,
-            // 0.29: a reduction's argument is an ordinary expression of the group
-            // scope, so nothing on the path demotes a group read to a row read.
-            // Through 0.28 an `Aggregate` node here did exactly that.
-            _ => {}
-        }
-    }
-    true
 }
 
 /// The row chain of the scope a node is evaluated in, from its ancestors.

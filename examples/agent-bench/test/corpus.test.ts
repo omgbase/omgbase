@@ -144,7 +144,7 @@ describe("the timeline corpus through a workspace", () => {
     expect(inFlight.map((h) => h.title)).toEqual(["Bench alignment", "Drainage works", "Shutter fabrication", "Pipeline v1", "Chiller commissioning", "Visitor centre brief"]);
 
     // aggregate-by-key: the counts, delta on top, ember absent (zero)
-    const open = await hits(server, 'docs { select project, n: count() where type == "milestone" and status == "open" group by project order by count() desc }');
+    const open = await hits(server, 'docs { select project, n: count($rows) where type == "milestone" and status == "open" group by project order by count($rows) desc }');
     expect(open.map((h) => [h.project, h.n])).toEqual([["delta", 5], ["fjord", 4], ["cirrus", 3], ["aurora", 2], ["basalt", 1]]);
 
     // timeline-follow: the forward walk over the inverse `after:` relation, capped at depth 8, re-seeded from the frontier

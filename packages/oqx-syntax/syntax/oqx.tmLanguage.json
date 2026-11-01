@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.28",
+  "version": "0.29",
   "patterns": [
     {
       "include": "#expression"
@@ -381,11 +381,6 @@
       "match": "\\$[A-Za-z0-9_$]*",
       "name": "variable.language.oqx"
     },
-    "group-rows": {
-      "comment": "group-rows",
-      "match": "rows(?![A-Za-z0-9_$])",
-      "name": "variable.language.oqx"
-    },
     "identifier": {
       "comment": "identifier",
       "match": "[A-Za-z_$][A-Za-z0-9_$]*",
@@ -564,9 +559,6 @@
         },
         {
           "include": "#intrinsic"
-        },
-        {
-          "include": "#group-rows"
         },
         {
           "include": "#identifier"

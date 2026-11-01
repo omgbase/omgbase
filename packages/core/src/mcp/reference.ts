@@ -436,7 +436,7 @@ revisions:  (history as rows — one per stored revision of every document of th
   position (cursor null); as _id / as _path is refused (the envelope reads them).
     docs { select _path, tags where type == "process" flatten tags order by _path, tags }
     docs { select _path, t: b._text flatten _blocks { _type == "task" and not checked } as b }
-    docs { select tags, n: count() flatten tags group by tags order by count() desc }
+    docs { select tags, n: count($rows) flatten tags group by tags order by count($rows) desc }
 
 ## order by, limit/offset, pagination
 
@@ -541,7 +541,7 @@ text()/where prune the candidate set; only order by reweights.
   revisions { select _seq, _origin, _ts, _hash where _path == "/processes/calcination.md" order by _seq desc }
   docs { _revisions count { _origin == "api" } > 0 }
   revisions { select p: _path, d: _doc._path where _doc == null }
-  docs { select layer, n: count(), titles: collect(_title), open: rows count { _nodes exists { _kind == "md:task" and not checked } } group by layer having count() > 1 order by count() desc }
+  docs { select layer, n: count($rows), titles: collect(_title), open: $rows count { _nodes exists { _kind == "md:task" and not checked } } group by layer having count($rows) > 1 order by count($rows) desc }
   docs { select _path, tag: tags where "process" in tags flatten tags order by _path, tags }
 
 Common mistake: \`$path\`/\`$id\` — omgbase has no $ names; the engine's location and
@@ -642,7 +642,7 @@ backlinks; refs(before) a property's documents; $depth per row. SEARCH: text("wo
   docs { select _path, $depth where _path == "/timeline/review.md" follow refs(before), refs(after) }
   docs count { layer == "canon" }
   revisions { select _seq, _ts, _hash where _path == "/processes/calcination.md" order by _seq desc }
-  docs { select tags, n: count() flatten tags group by tags order by count() desc }
+  docs { select tags, n: count($rows) flatten tags group by tags order by count($rows) desc }
 
 Every error is filter_invalid naming what to change; when the engine can correct the call, data.fix IS the call.
 Chapters: sugar paths targets scoping scalars predicates nested select flatten order follow semantic examples; all.

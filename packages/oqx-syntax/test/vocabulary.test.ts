@@ -12,7 +12,6 @@ import {
   COMMENT,
   CONSUMERS,
   CONTEXTUAL_WORDS,
-  GROUP_ROWS,
   IDENTIFIER,
   ILLEGAL_CHARACTERS,
   INTRINSICS,
@@ -76,10 +75,10 @@ describe("vocabulary", () => {
     expect(sorted(methods)).toEqual(sorted(BUILTIN_METHODS));
   });
 
-  it("aggregates are SEMANTICS §24's table and GRAMMAR §1's reserved function names; rows is §2's group value", () => {
+  it("reductions are SEMANTICS §24's table and GRAMMAR §1's reserved function names", () => {
     const sem = read("SEMANTICS.md");
     const s24 = sem.slice(sem.indexOf("## 24."));
-    // The first cell of each table row names one or two aggregates (`min(e)` / `max(e)`).
+    // The first cell of each table row names one or two reductions (`min(e)` / `max(e)`).
     const cells = [...s24.matchAll(/^\| ([^|]+) \|/gm)].map((m) => m[1]!);
     const table = cells.flatMap((c) => [...c.matchAll(/`([a-z]+)\(/g)].map((m) => m[1]!));
     expect(sorted(table)).toEqual(sorted(AGGREGATES));
@@ -87,18 +86,17 @@ describe("vocabulary", () => {
     const para = grammar.slice(grammar.indexOf("**Reserved function names**"));
     const list = para.match(/`([^`]+)`/)?.[1] ?? "";
     expect(sorted(list.split(/\s+/))).toEqual(sorted(AGGREGATES));
-    const s2 = sem.slice(sem.indexOf("## 2."), sem.indexOf("## 3."));
-    expect(s2).toMatch(new RegExp(`\`${GROUP_ROWS}\` — the group's rows`));
   });
 
-  it("intrinsics are the $names SEMANTICS §2 resolves before the row (steps 1-3)", () => {
-    // §2's resolution list: steps 1-3 are the language's intrinsics; step 4 is
-    // lifts, step 5 the row. Names mentioned elsewhere in the prose are not
-    // intrinsics by virtue of being mentioned (`$value` is named there as an
-    // ordinary property since 0.15).
+  it("intrinsics are the $names SEMANTICS §2 resolves before the row (steps 1-4)", () => {
+    // §2's resolution list: steps 1-4 are the language's intrinsics ($it, $key
+    // and $rows unconditional; the walk intrinsics conditional on a follow) —
+    // step 5 is lifts, step 6 the row. Names mentioned elsewhere in the prose
+    // are not intrinsics by virtue of being mentioned (`$value` is named there
+    // as an ordinary property since 0.15).
     const sem = read("SEMANTICS.md");
     const s2 = sem.slice(sem.indexOf("## 2."), sem.indexOf("## 3."));
-    const steps = s2.slice(s2.search(/^1\. /m), s2.search(/^4\. /m));
+    const steps = s2.slice(s2.search(/^1\. /m), s2.search(/^5\. /m));
     const names = steps.match(/\$[a-z_]+/g) ?? [];
     expect(sorted(names)).toEqual(sorted(INTRINSICS));
     expect(INTRINSICS).not.toContain("$value");

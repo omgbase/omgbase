@@ -2,7 +2,7 @@
   {
     "name": "group-by-with-rows-link-and-count",
     "dql": "TABLE rows.file.link, length(rows) FROM \"books\" GROUP BY author",
-    "oqx": "docs { select key, c0: collect(_path), c1: count() where _path.startsWith(\"/books/\") or _path == \"/books.md\" group by key: author }",
+    "oqx": "docs { select key, c0: collect(_path), c1: count($rows) where _path.startsWith(\"/books/\") or _path == \"/books.md\" group by key: author }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -49,7 +49,7 @@
   {
     "name": "group-by-key-is-the-key",
     "dql": "TABLE key, length(rows) AS n GROUP BY status SORT key",
-    "oqx": "docs { select key, c0: key, n: count() group by key: status order by key }",
+    "oqx": "docs { select key, c0: key, n: count($rows) group by key: status order by key }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -136,7 +136,7 @@
   {
     "name": "where-after-group-is-having",
     "dql": "TABLE length(rows) AS count FROM \"notes\" WHERE status = \"open\" GROUP BY project WHERE length(rows) > 1 SORT length(rows) DESC",
-    "oqx": "docs { select key, count: count() where (_path.startsWith(\"/notes/\") or _path == \"/notes.md\") and status == \"open\" group by key: project having count() > 1 order by count() desc }",
+    "oqx": "docs { select key, count: count($rows) where (_path.startsWith(\"/notes/\") or _path == \"/notes.md\") and status == \"open\" group by key: project having count($rows) > 1 order by count($rows) desc }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -157,7 +157,7 @@
   {
     "name": "sort-before-group-orders-the-rows",
     "dql": "TABLE rows.file.link FROM \"books\" SORT file.mtime DESC GROUP BY author",
-    "oqx": "docs { select key, c0: rows { v: _path values order by _updated_at desc } where _path.startsWith(\"/books/\") or _path == \"/books.md\" group by key: author }",
+    "oqx": "docs { select key, c0: $rows { v: _path values order by _updated_at desc } where _path.startsWith(\"/books/\") or _path == \"/books.md\" group by key: author }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -179,7 +179,7 @@
   {
     "name": "sort-before-group-with-no-rows-column-warns",
     "dql": "TABLE length(rows) FROM \"books\" SORT file.mtime DESC GROUP BY author",
-    "oqx": "docs { select key, c0: count() where _path.startsWith(\"/books/\") or _path == \"/books.md\" group by key: author }",
+    "oqx": "docs { select key, c0: count($rows) where _path.startsWith(\"/books/\") or _path == \"/books.md\" group by key: author }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -233,7 +233,7 @@
   {
     "name": "task-grouped-by-file",
     "dql": "TASK WHERE !completed GROUP BY file.link",
-    "oqx": "blocks { select key, tasks: rows { _id: _id, _text: _text, checked: checked, _path: _path } where _type == \"task\" and !checked group by key: _path }",
+    "oqx": "blocks { select key, tasks: $rows { _id: _id, _text: _text, checked: checked, _path: _path } where _type == \"task\" and !checked group by key: _path }",
     "render": {
       "type": "task",
       "grouped": true,
@@ -255,7 +255,7 @@
   {
     "name": "task-grouped-sorted",
     "dql": "TASK SORT file.mtime DESC GROUP BY file.link SORT key",
-    "oqx": "blocks { select key, tasks: rows { _id: _id, _text: _text, checked: checked, _path: _path order by _doc._updated_at desc } where _type == \"task\" group by key: _path order by key }",
+    "oqx": "blocks { select key, tasks: $rows { _id: _id, _text: _text, checked: checked, _path: _path order by _doc._updated_at desc } where _type == \"task\" group by key: _path order by key }",
     "render": {
       "type": "task",
       "grouped": true,
@@ -277,7 +277,7 @@
   {
     "name": "bare-rows-column",
     "dql": "TABLE rows FROM \"a\" GROUP BY status",
-    "oqx": "docs { select key, c0: rows { _path: _path } where _path.startsWith(\"/a/\") or _path == \"/a.md\" group by key: status }",
+    "oqx": "docs { select key, c0: $rows { _path: _path } where _path.startsWith(\"/a/\") or _path == \"/a.md\" group by key: status }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -369,7 +369,7 @@
   {
     "name": "group-key-alias-may-be-a-bare-path",
     "dql": "TABLE rows GROUP BY author AS path",
-    "oqx": "docs { select path, c0: rows { _path: _path } group by path: author }",
+    "oqx": "docs { select path, c0: $rows { _path: _path } group by path: author }",
     "render": {
       "type": "table",
       "withoutId": false,

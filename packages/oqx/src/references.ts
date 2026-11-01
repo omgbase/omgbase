@@ -256,15 +256,17 @@ function isFlattenBound(name: string, depth: number, path: readonly AstNode[], n
  * Whether `name`, read at scope `depth`, is a value of a GROUP scope there
  * (SEMANTICS §24): the body whose rows are at `depth` has a `group by`, the
  * position is one of its post-group clauses — a select item, `having`, `order
- * by` — not inside an aggregate's argument (which reads the group's rows), and
- * the name is a key or `rows`.
+ * by` — and the name is a key or `$rows`. Since 0.29 a reduction's argument is
+ * an ordinary expression of the group scope too (there is no `aggregate` node
+ * to demote it to a row read), so every name reached from a post-group clause
+ * is a group value.
  */
 function isGroupValue(name: string, depth: number, path: readonly AstNode[], node: AstNode): boolean {
   const i = bodyIndexAt(path, depth);
   if (i === -1) return false;
   const body = path[i] as Query | Subquery;
   if (!atGroupScope(body, path, i, node)) return false;
-  return name === "rows" || body.groupBy!.keys.some((k) => k.name === name);
+  return name === "$rows" || body.groupBy!.keys.some((k) => k.name === name);
 }
 
 /** The index in `path` of the body whose rows are at scope `depth` (every nested body is one scope deeper), or -1. */
@@ -280,24 +282,16 @@ function bodyIndexAt(path: readonly AstNode[], depth: number): number {
 }
 
 /** Whether a position under `body` (at `path[i]`) reads the body's GROUP scope:
- * the body is grouped, the position lies in a select item, `having` or `order
- * by`, and no aggregate stands between the body and the position (an
- * aggregate's argument reads the group's rows; a nested body is its own scope
- * and ends the search). */
+ * the body is grouped and the position lies in a select item, `having` or
+ * `order by`. Through 0.28 an `aggregate` node between the body and the
+ * position demoted a group read to a row read (its argument read the group's
+ * rows); since 0.29 a reduction's argument is an ordinary expression of the
+ * group scope, so no such demotion exists — every name reached from a
+ * post-group clause is a group value (`isGroupValue` above). */
 function atGroupScope(body: Query | Subquery, path: readonly AstNode[], i: number, node: AstNode): boolean {
   if (body.groupBy === null) return false;
   const child = path[i + 1] ?? node;
-  const post = body.select.includes(child as SelectItem) || child === body.having || (body.orderBy?.includes(child as never) ?? false);
-  if (!post) return false;
-  // 0.29: a reduction's argument is an ordinary expression of the group scope
-  // (a non-key bare name there reads its per-row list), so nothing between the
-  // body and the position demotes a group read to a row read. Through 0.28 an
-  // `aggregate` node on the path did exactly that.
-  for (let j = i + 1; j < path.length; j++) {
-    const a = path[j]!;
-    if (a.kind === "query" || a.kind === "subquery") break;
-  }
-  return true;
+  return body.select.includes(child as SelectItem) || child === body.having || (body.orderBy?.includes(child as never) ?? false);
 }
 
 /** The row chain of the scope a node is evaluated in, from its ancestors. */

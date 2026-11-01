@@ -147,16 +147,16 @@ const QUERIES: string[] = [
   'select _path, nameless: ^nodes collect { _kind values where _name == ^nope } from nodes where _kind == "md:section" && _name == "Preparation"',
   // group by (oqx 0.24): the planner declines a grouped query whole (even with a
   // pushable `where`), so both paths run in memory — and must still agree
-  'select layer, n: count() from docs group by layer order by count() desc, layer',
-  'select layer, n: count(), eras: collect(era) from docs where _path.startsWith("practitioners/") group by layer',
-  'select type, open: rows count { where _nodes exists { where _kind == "md:task" and not _attrs.checked } } from docs group by type having count() > 1 order by type',
-  'select _path, done: rows count { where checked }, all: count() from blocks where _type == "task" group by _path order by _path',
+  'select layer, n: count($rows) from docs group by layer order by count($rows) desc, layer',
+  'select layer, n: count($rows), eras: collect(era) from docs where _path.startsWith("practitioners/") group by layer',
+  'select type, open: $rows count { where _nodes exists { where _kind == "md:task" and not _attrs.checked } } from docs group by type having count($rows) > 1 order by type',
+  'select _path, done: $rows count { where checked }, all: count($rows) from blocks where _type == "task" group by _path order by _path',
   'docs count { group by layer }',
   'select _kind values from nodes group by _kind order by _kind',
   // flatten (oqx 0.25): declined whole as well — the fan-out runs in memory on both paths
   'select _path, _tags from docs where type == "process" flatten _tags order by _path, _tags',
   'select _path, t: b._text from docs where layer == "canon" flatten _blocks { where _type == "task" and not checked } as b order by _path, t',
-  'select _tags, n: count() from docs where has(_tags) flatten _tags group by _tags order by count() desc, _tags',
+  'select _tags, n: count($rows) from docs where has(_tags) flatten _tags group by _tags order by count($rows) desc, _tags',
 ];
 
 describe("OQX differential conformance — planned == in-memory", () => {

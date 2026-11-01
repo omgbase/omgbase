@@ -18,14 +18,13 @@
 // line-oriented engines (TextMate, Monarch, CodeMirror) inherently are.
 
 import {
-  AGGREGATES,
+  REDUCTIONS,
   BUILTIN_FUNCTIONS,
   BUILTIN_METHODS,
   COMMENT,
   CONSUMERS,
   CONTEXTUAL_WORDS,
   FLATTEN_AS,
-  GROUP_ROWS,
   IDENTIFIER,
   KEYWORDS,
   LITERALS,
@@ -105,11 +104,11 @@ export const RULES: readonly Rule[] = [
   // `having` (0.24) is a clause when a predicate can follow: a value start, or an
   // aggregate call — `having count() > 1` — whose name is a consumer word and so
   // cannot begin a value on its own.
-  { name: "having", regex: `having${END}(?:${VALUE_START}|(?=[ \\t]+(?:${alternation(AGGREGATES)})[ \\t]*\\())`, groups: ["clause"] },
+  { name: "having", regex: `having${END}(?:${VALUE_START}|(?=[ \\t]+(?:${alternation(REDUCTIONS)})[ \\t]*\\())`, groups: ["clause"] },
   // `flatten` (0.25) is a clause when a value can follow it, exactly as `having`
   // (an aggregate call whose name is a consumer word included, so the parser's
   // "an aggregate cannot be read in `flatten`" is reached as a clause).
-  { name: "flatten", regex: `flatten${END}(?:${VALUE_START}|(?=[ \\t]+(?:${alternation(AGGREGATES)})[ \\t]*\\())`, groups: ["clause"] },
+  { name: "flatten", regex: `flatten${END}(?:${VALUE_START}|(?=[ \\t]+(?:${alternation(REDUCTIONS)})[ \\t]*\\())`, groups: ["clause"] },
   // `as` (0.25) binds a flattened value's name: a clause word when a plain name
   // follows (not a keyword or a contextual word), otherwise a field.
   { name: "flatten-as", regex: `${FLATTEN_AS}${END}(?![ \\t]+(?:${alternation(NON_VALUE_WORDS)})${END})(?=[ \\t]+[A-Za-z_$])`, groups: ["clause"] },
@@ -154,7 +153,7 @@ export const RULES: readonly Rule[] = [
         cases: [
           // The builtins and, since 0.24, the aggregates (`count(`, `sum(`,
           // `collect(`) — one word list, one token class.
-          { words: [...BUILTIN_FUNCTIONS, ...AGGREGATES], token: "builtinFunction" },
+          { words: [...BUILTIN_FUNCTIONS, ...REDUCTIONS], token: "builtinFunction" },
           { words: OMGBASE.rowFunctions, token: "hostFunction" },
         ],
         default: "function",
@@ -164,7 +163,6 @@ export const RULES: readonly Rule[] = [
   { name: "intrinsic", regex: "\\$[A-Za-z0-9_$]*", groups: ["intrinsic"] },
   // `rows` (0.24): the group's rows, the language's value at a group scope — an
   // intrinsic without a `$`, as position-free as the `$`-names.
-  { name: "group-rows", regex: `${GROUP_ROWS}${END}`, groups: ["intrinsic"] },
   { name: "identifier", regex: "IDENT", groups: ["identifier"] },
 
   // ---- operators and punctuation -------------------------------------------

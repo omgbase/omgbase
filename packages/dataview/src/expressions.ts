@@ -174,7 +174,8 @@ function thisField(rest: string[], node: Node, ctx: Ctx): Typed {
   return trailing({ expr: authoredKey(row, name, ctx), kind: "unknown" }, rest.slice(1), node, ctx);
 }
 
-/** `rows[.…]` after GROUP BY: the group's rows as an aggregate. */
+/** `rows[.…]` after GROUP BY — Dataview's spelling — compiled to OQX's `$rows`
+ * intrinsic (oqx 0.29; it was the bare `rows` through 0.28). */
 function rowsField(rest: string[], node: Node, ctx: Ctx): Typed {
   if (ctx.groupKey === null) throw unsupported("rows", "`rows` exists only after GROUP BY", at(ctx, node));
   if (rest.length === 0) return { expr: rowsCollect(ctx), kind: "list", rows: true };
@@ -245,7 +246,6 @@ export function rebase(e: Expr, name: string): Expr {
     case "range": return { ...e, lo: e.lo ? r(e.lo) : null, hi: e.hi ? r(e.hi) : null };
     case "tuple": return { ...e, items: e.items.map(r) };
     case "template": return { ...e, parts: e.parts.map((p): TemplatePart => (typeof p === "string" ? p : r(p))) };
-    case "aggregate": return { ...e, arg: e.arg ? r(e.arg) : null };
     case "op": return { ...e, receiver: r(e.receiver) };
   }
 }
@@ -261,14 +261,14 @@ export function rebaseWhere(w: Where, name: string): Where {
 }
 
 /** `collect(x)` — or, when a SORT preceded the GROUP BY, the block form that
- * carries the row order: `rows { x values order by … }`. */
+ * carries the row order: `$rows { x values order by … }`. */
 function aggregateOf(ctx: Ctx, fn: "collect" | "sum" | "min" | "max" | "avg" | "first" | "last" | "any" | "all", value: Expr): Expr {
   if (ctx.rowsOrder && (fn === "collect" || fn === "first" || fn === "last")) {
     ctx.rowsOrderUsed = true;
     const sub = build.subquery({ select: [build.field("v", value)], values: true, orderBy: ctx.rowsOrder });
-    if (fn === "collect") return build.op(ident("rows"), "collect", sub);
-    if (fn === "first") return build.op(ident("rows"), "first", sub);
-    return build.op(ident("rows"), "first", { ...sub, orderBy: ctx.rowsOrder.map((o) => build.order(o.expr, !o.desc)) });
+    if (fn === "collect") return build.op(ident("$rows"), "collect", sub);
+    if (fn === "first") return build.op(ident("$rows"), "first", sub);
+    return build.op(ident("$rows"), "first", { ...sub, orderBy: ctx.rowsOrder.map((o) => build.order(o.expr, !o.desc)) });
   }
   return call(null, fn, [value]);
 }
@@ -280,7 +280,7 @@ export function rowsCollect(ctx: Ctx): Expr {
   if (ctx.rowsOrder) ctx.rowsOrderUsed = true;
   const select = ctx.taskBound ? taskSelect(ctx.taskBound.name)
     : (ctx.target === "blocks" ? ["_id", "_text", "checked", "_path"] : ["_path"]).map((n) => build.field(n, ident(n)));
-  return build.op(ident("rows"), "collect", build.subquery({ select, orderBy: ctx.rowsOrder }));
+  return build.op(ident("$rows"), "collect", build.subquery({ select, orderBy: ctx.rowsOrder }));
 }
 
 /** The alias of the task's block id on a TASK query re-rooted at the page
@@ -463,7 +463,7 @@ function callValue(e: DExpr & { kind: "call" }, ctx: Ctx): Typed {
     case "length": {
       arity(1);
       const r = rowsArg(args[0]!);
-      if (r?.rows) return { expr: call(null, "count", []), kind: "number" };
+      if (r?.rows) return { expr: call(null, "count", [ident("$rows")]), kind: "number" };
       const v = toValue(args[0]!, ctx);
       // `size(<relation>)`: the collect's receiver (`_in_links`, `_doc._in_links`, `t._out_links`).
       if (v.kind === "inlinks" || v.kind === "outlinks") return { expr: call(null, "size", [v.expr.kind === "op" ? v.expr.receiver : v.expr]), kind: "number" };

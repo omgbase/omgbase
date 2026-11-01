@@ -56,25 +56,30 @@ and never climbs:
    key (§21), a walk occurrence's identity (§20), a projected `$key:` (§16),
    else the host's identity of the row — structural by default. Unconditional
    like `$it`: a row property literally named `$key` is unreachable by bare name.
-3. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
-   intrinsics, on a `follow` occurrence (§20); and `rows` — the group's rows,
-   on a **group scope** (§24, since 0.24).
-4. a value **lifted** into this scope by a `^name:` item (§19), or **bound**
+3. `$rows` — the group's rows at a **group scope**, and `[$it]` everywhere
+   else (§24, since 0.24; the intrinsic since 0.29 — bare `rows` through 0.28).
+   **Total, and unconditional like `$it`/`$key`**: unlike step 4 below, it never
+   falls through to a property read when the scope carries no group — a row
+   property literally named `$rows` is unreachable by bare name.
+4. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
+   intrinsics, on a `follow` occurrence (§20).
+5. a value **lifted** into this scope by a `^name:` item (§19), or **bound**
    into it by a `flatten … as name` (§25, since 0.25) — so a bound name
    shadows a same-named row property.
-5. at the root scope: the named root; elsewhere: the row's own property.
+6. at the root scope: the named root; elsewhere: the row's own property.
 
-Step 3 applies only where the scope **carries** that metadata: a walk
-occurrence, a group. Anywhere else the name is an ordinary property read (step 5), so a
+Step 4 applies only where the scope **carries** that metadata: a walk
+occurrence. Anywhere else the name is an ordinary property read (step 6), so a
 host whose rows carry a `$depth` or `$ordinal` of their own (omgbase's blocks
 do) exposes it outside a `follow`, and a plain-JSON row `{ "$depth": 3 }`
 projects `3`. Since 0.13; before, the six names read absent everywhere they
-were not metadata, shadowing the row. (`$key` left this rule in 0.20: it is an
-identity, never a property.) **`$value` is not an intrinsic** (since 0.15,
-when the current item was renamed from `$value` to `$it` with no synonym): it
-is an ordinary property read under step 5 everywhere — at the top level, in a
-nested block, and in an entry scope (where it is a property of the entry's
-*value*) — so `{ "$value": 3 }` projects `3` and a row without it reads absent.
+were not metadata, shadowing the row. (`$key` left this rule in 0.20, and
+`$rows` never had it, since 0.29: both are identities/collections, never a
+property.) **`$value` is not an intrinsic** (since 0.15, when the current item
+was renamed from `$value` to `$it` with no synonym): it is an ordinary property
+read under step 6 everywhere — at the top level, in a nested block, and in an
+entry scope (where it is a property of the entry's *value*) — so
+`{ "$value": 3 }` projects `3` and a row without it reads absent.
 [`intrinsics`]
 
 **The root object** (since 0.18). The root scope is a row like any other: its
@@ -935,10 +940,10 @@ body. All of that is gone — the behaviour that remains is the arithmetic.
 | Reduction | Result |
 | --- | --- |
 | `count(c)` | the number of **present** elements of `c`; `count($rows)` is the number of the group's rows, `count(quantity)` the rows whose `quantity` is present |
-| `sum(e)` | the sum of the present values; **`0` when there is none** (the additive identity — a census sums to zero, it does not go blank); a present value that is not a number is the **eval error** `` cannot sum `e` over the group: it is a string ("…") — `sum` takes numbers `` |
+| `sum(e)` | the sum of the present values; **`0` when there is none** (the additive identity — a census sums to zero, it does not go blank); a present value that is not a number is the **eval error** `` cannot sum `e`: it is a string ("…") — `sum` takes numbers `` |
 | `avg(e)` | the sum divided by the count of the present values; **absent when there is none** (no mean exists); a non-number is the error above (`cannot average`) |
 | `min(e)` / `max(e)` | the least / greatest present value by the ordering of §6: the first value is the running extreme, each later value replaces it when it orders strictly below (`min`) / above (`max`); a value that does not order against the extreme (a mixed kind) leaves it unchanged; absent when there is none |
-| `collect(e)` | the list of the present values in group order (`[]` when none); `collect(distinct e)` the distinct ones |
+| `collect(e)` | the list of the present values in input order (`[]` when none); dedupe with the collection's own `select distinct` (`collect($rows { select distinct e values })`) — `collect(distinct e)` was the 0.24–0.28 call-modifier spelling |
 | `first(e)` / `last(e)` | the first / last present value; absent when none |
 | `any(c)` / `all(c)` | **truthiness** (§4) of the elements of `c` — the one pair that does **not** skip absent, since absent is false: `any` is true iff some element is truthy, `all` iff every one is; evaluated in order and short-circuiting at the first element that decides, like `||`/`&&` (§13). A predicate over the rows is `any($rows { p values })`. |
 
@@ -1044,7 +1049,7 @@ select-position block admits is admitted (a `follow`, a `group by`, a nested
 bound inside it is not a property of what gets bound.
 
 **The flattened row.** Each output row **is the parent row** with `name` bound
-as step 4 of §2 — beside the lifts, at the **same scope depth**: `$it` is the
+as step 5 of §2 — beside the lifts, at the **same scope depth**: `$it` is the
 row, bare names its properties, `^` reads the enclosing scope, a walk's
 `$depth`/`$stop`/`$ordinal` are the occurrence's, and a host's row decoration
 (omgbase's `id`/`path` envelope) applies as to any row, repeating per element.

@@ -967,7 +967,7 @@ describe("alchemy corpus — distinct (dedup by projection)", () => {
 
 describe("alchemy corpus — group by and aggregates (oqx 0.24)", () => {
   it("documents per layer, with a count and the titles — a census in one query, no row dump", () => {
-    const r = hits("select layer, n: count(), titles: collect(_title) from docs group by layer order by count() desc, layer");
+    const r = hits("select layer, n: count($rows), titles: collect(_title) from docs group by layer order by count($rows) desc, layer");
     // A grouped row is not a store row: no `id`/`path` envelope, no cursor.
     expect(r.cursor).toBeNull();
     expect(r.truncated).toBe(false);
@@ -987,10 +987,10 @@ describe("alchemy corpus — group by and aggregates (oqx 0.24)", () => {
     expect(dflt.hits).toEqual([{ layer: "canon", count: 13 }, { layer: "draft", count: 1 }, { layer: "working", count: 6 }]);
   });
 
-  it("tasks per document, checked and unchecked — rows as a receiver and having over the groups", () => {
+  it("tasks per document, checked and unchecked — $rows as a receiver and having over the groups", () => {
     const r = hits(
-      "select _path, open: rows count { where not checked }, done: rows count { where checked }, all: count() " +
-      "from blocks where _type == \"task\" group by _path having count() > 0 order by _path",
+      "select _path, open: $rows count { where not checked }, done: $rows count { where checked }, all: count($rows) " +
+      "from blocks where _type == \"task\" group by _path having count($rows) > 0 order by _path",
     );
     expect(r.hits.length).toBeGreaterThan(5);
     for (const g of r.hits) {
@@ -1001,13 +1001,20 @@ describe("alchemy corpus — group by and aggregates (oqx 0.24)", () => {
     }
     expect(r.hits.map((g) => g._path)).toEqual(r.hits.map((g) => g._path).slice().sort());
     // `having` filters groups: only documents with an open task; `values` yields the bare keys.
-    const open = hits("select _path values from blocks where _type == \"task\" group by _path having rows exists { where not checked } order by _path");
+    const open = hits("select _path values from blocks where _type == \"task\" group by _path having $rows exists { where not checked } order by _path");
     expect(open.values).toEqual(r.hits.filter((g) => (g.open as number) > 0).map((g) => g._path));
-    // The name check judges the group's rows through `rows`: a misspelled task field is a hint, not a silent zero.
-    const typo = hits("select _path, n: rows count { where chekced } from blocks where _type == \"task\" group by _path");
+    // The name check judges the group's rows through `$rows`: a misspelled task field is a hint, not a silent zero.
+    const typo = hits("select _path, n: $rows count { where chekced } from blocks where _type == \"task\" group by _path");
     expect(typo.hints?.[0]).toMatch(/no block in this repository carries a property `chekced`; did you mean `checked`\?/);
-    // Reading a row field at the group scope is the parse error naming it.
-    expect(() => hits("select text from blocks where type == \"task\" group by path")).toThrow(/`text` is not a group key or aggregate/);
+    // Since 0.29 a non-key bare name at the group scope reads its per-row list — no longer an error.
+    const perRow = hits("select text from blocks where type == \"task\" group by path");
+    for (const g of perRow.hits) expect(Array.isArray(g.text)).toBe(true);
+    // What IS still refused: a `where` reading a select alias whose value reads `$rows` — the
+    // staging rule (§24). The alias is judged, not the function; the same text written directly
+    // in `having` is fine (`count($rows) > 0` above).
+    expect(() =>
+      hits('select n: count($rows) from blocks where _type == "task" and n > 1 group by path'),
+    ).toThrow(/`n` reads `\$rows` after grouping/);
   });
 });
 
@@ -1029,7 +1036,7 @@ describe("alchemy corpus — flatten (oqx 0.25)", () => {
     expect(both.hits.map((h) => h.t)).toEqual(["fire", "process"]);
     for (const h of both.hits) expect(h._tags).toEqual(["process", "fire"]);
     // Grouping the flattened rows: how many process documents carry each tag.
-    const census = hits('select _tags, n: count() from docs where type == "process" flatten _tags group by _tags order by count() desc, _tags');
+    const census = hits('select _tags, n: count($rows) from docs where type == "process" flatten _tags group by _tags order by count($rows) desc, _tags');
     expect(census.hits[0]).toEqual({ _tags: "process", n: docs.length });
     expect(census.hits.reduce((n, g) => n + (g.n as number), 0)).toBe(r.hits.length);
     // The planner declines a flattened query whole; the in-memory path agrees.

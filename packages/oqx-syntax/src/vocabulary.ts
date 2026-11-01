@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.28";
+export const LANGUAGE_VERSION = "0.29";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -43,11 +43,16 @@ export const FLATTEN_AS = "as";
  * names that reduce a `group by` group — `count()`, `sum(e)`, `collect(distinct
  * e)`, … Highlighted as builtin functions when a `(` follows (the consumer words
  * among them — `collect`, `count`, `first` — stay consumers before a `{`). */
-export const AGGREGATES = ["count", "sum", "min", "max", "avg", "collect", "first", "last", "any", "all"] as const;
+export const REDUCTIONS = ["count", "sum", "min", "max", "avg", "collect", "first", "last", "any", "all"] as const;
 
-/** The group's rows (SEMANTICS §24, since 0.24): `rows` at a group scope is the
- * language's value, like `$it` — highlighted as an intrinsic. */
-export const GROUP_ROWS = "rows";
+/** @deprecated oqx 0.29 renamed these reductions; they are ordinary collection
+ * functions now, not a syntactic category. */
+export const AGGREGATES = REDUCTIONS;
+
+/* The group's rows were the bare word `rows` through oqx 0.28 and had their own
+ * rule here. Since 0.29 they are the intrinsic `$rows`, which INTRINSICS below
+ * carries — so the bare-word rule is gone, and a host's own `rows` property is
+ * highlighted as the ordinary property read it now is. */
 
 /** The clauses of a `follow` destination block (GRAMMAR §3, `follow`, since
  * 0.20): `frontier <expr>` and `depth <n>`, after the block's `where`. `depth`
@@ -102,7 +107,7 @@ export const BUILTIN_METHODS = ["lower", "upper", "contains", "startsWith", "end
  * (SEMANTICS §2, §21) and the recursion intrinsics of a `follow` occurrence (§20).
  * Any other `$name` is a host intrinsic — the grammar scopes every `$`-identifier
  * as `variable.language`, so hosts need not be enumerated to be highlighted. */
-export const INTRINSICS = ["$it", "$key", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"] as const;
+export const INTRINSICS = ["$it", "$key", "$rows", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"] as const;
 
 /** Identifier shape (GRAMMAR §1): `[A-Za-z_$][A-Za-z0-9_$]*`. */
 export const IDENTIFIER = "[A-Za-z_$][A-Za-z0-9_$]*";

@@ -131,9 +131,6 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
     // a record is an eval error only the data decides, so with any interpolation
     // it may raise.
     case "template": return e.parts.some((p) => typeof p !== "string");
-    // An aggregate (oqx 0.24) raises on a non-number under `sum`/`avg`, which
-    // only the data decides; a grouped query is never planned anyway (below).
-    case "aggregate": return true;
     case "lit": case "binding": return false;
   }
 }

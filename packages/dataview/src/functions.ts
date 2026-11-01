@@ -45,7 +45,7 @@ export const FUNCTIONS: Readonly<Record<string, FunctionStatus>> = {
   extract: { status: "unsupported", reason: "OQX has no object construction" },
   sort: { status: "unsupported", reason: "OQX sorts rows (order by), not list values" },
   reverse: { status: "unsupported", reason: "OQX has no list reversal" },
-  length: { status: "supported", oqx: "size(x); length(rows) → count() after GROUP BY; length(file.inlinks|outlinks) → size(in_links|out_links)" },
+  length: { status: "supported", oqx: "size(x); length(rows) → count($rows) after GROUP BY; length(file.inlinks|outlinks) → size(in_links|out_links)" },
   nonnull: { status: "unsupported", reason: "OQX has no list filter" },
   all: { status: "group", oqx: "all(p) over rows after GROUP BY; the lambda form is unsupported" },
   any: { status: "group", oqx: "any(p) over rows after GROUP BY; the lambda form is unsupported" },

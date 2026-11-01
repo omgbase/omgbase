@@ -207,10 +207,10 @@ function kindOfPath(on: RowKind | null, path: readonly string[]): Kind | null {
       cur = seg as Kind;
       continue;
     }
-    // At a group scope `rows` yields the grouped rows (their kind); a key is a
+    // At a group scope `$rows` yields the grouped rows (their kind); a key is a
     // value the language built, not a row of any kind.
     if (typeof cur === "object") {
-      if (seg !== "rows" || i !== 0) return null;
+      if (seg !== "$rows" || i !== 0) return null;
       cur = cur.group;
       continue;
     }

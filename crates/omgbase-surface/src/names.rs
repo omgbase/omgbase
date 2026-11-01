@@ -260,7 +260,7 @@ impl VocabularyCache {
 
 /// `Root` is the root scope; `Group(k)` a GROUP scope (oqx 0.24): the groups
 /// of rows of kind `k` (`None` when the rows' kind is unknown), whose only
-/// row-yielding name is `rows`.
+/// row-yielding name is `$rows`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RowKind {
     Root,
@@ -363,10 +363,10 @@ fn kind_of_path(on: Option<RowKind>, path: &[&str]) -> Option<Target> {
                 let next = lookup(handles(t), seg).or_else(|| lookup(relations(t), seg))?;
                 cur = Some(RowKind::Of(next));
             }
-            // At a group scope `rows` yields the grouped rows (their kind); a
+            // At a group scope `$rows` yields the grouped rows (their kind); a
             // key is a value the language built, not a row of any kind.
             RowKind::Group(k) => {
-                if *seg != "rows" || i != 0 {
+                if *seg != "$rows" || i != 0 {
                     return None;
                 }
                 cur = k.map(RowKind::Of);
@@ -1171,10 +1171,10 @@ mod tests {
         let (store, repo) = fixture();
         for q in [
             "select s: stage, n: s from docs where s == \"x\"",
-            // a group scope (oqx 0.24): a key is never a row property; `rows`
+            // a group scope (oqx 0.24): a key is never a row property; `$rows`
             // yields the grouped rows, so names under it are judged as docs/blocks
-            "select stage, n: count(), kynd: collect(kind) from docs group by stage having n > 1 order by count() desc",
-            "select kind, open: rows count { where _nodes exists { where _kind == \"md:task\" } } from docs group by kind",
+            "select stage, n: count($rows), kynd: collect(kind) from docs group by stage having n > 1 order by count($rows) desc",
+            "select kind, open: $rows count { where _nodes exists { where _kind == \"md:task\" } } from docs group by kind",
             "select p: _path, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" }",
             "select $key: _id from docs where $depth > 0 and has(stage) and size(list(kind)) > 0",
             "select a: _attrs.whatever from blocks",
@@ -1192,12 +1192,12 @@ mod tests {
             .len(),
             1
         );
-        // under a group scope, `rows` is still the docs: an unknown bare name through it hints
+        // under a group scope, `$rows` is still the docs: an unknown bare name through it hints
         assert_eq!(
             hints(
                 &store,
                 &repo,
-                "select stage, t: rows collect { select kynd } from docs group by stage"
+                "select stage, t: $rows collect { select kynd } from docs group by stage"
             ),
             ["no document in this repository carries a property `kynd`; did you mean `kind`?"]
         );
@@ -1205,7 +1205,7 @@ mod tests {
             hints(
                 &store,
                 &repo,
-                "select lang, n: rows count { where chekced } from blocks group by lang"
+                "select lang, n: $rows count { where chekced } from blocks group by lang"
             ),
             ["no block in this repository carries a property `chekced`; did you mean `checked`?"]
         );

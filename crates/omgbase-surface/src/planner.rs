@@ -594,7 +594,9 @@ mod tests {
         // a grouped query is declined whole (oqx 0.24), pushable `where` or not
         assert!(
             compile(
-                &parse("select layer, n: count() from docs where _path == \"a.md\" group by layer"),
+                &parse(
+                    "select layer, n: count($rows) from docs where _path == \"a.md\" group by layer"
+                ),
                 &[],
                 "r"
             )

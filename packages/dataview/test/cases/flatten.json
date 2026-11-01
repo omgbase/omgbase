@@ -847,7 +847,7 @@
   {
     "name": "group-by-tag-census",
     "dql": "TABLE length(rows) AS n FLATTEN file.tags AS tag GROUP BY tag SORT length(rows) DESC",
-    "oqx": "docs { select key, n: count() flatten _tags { } as tag group by key: tag order by count() desc }",
+    "oqx": "docs { select key, n: count($rows) flatten _tags { } as tag group by key: tag order by count($rows) desc }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -890,7 +890,7 @@
   {
     "name": "group-by-bound-name-is-the-key",
     "dql": "TABLE length(rows) FLATTEN file.tags AS tag GROUP BY tag AS tag SORT tag",
-    "oqx": "docs { select tag, c0: count() flatten _tags { } as tag group by tag: tag order by tag }",
+    "oqx": "docs { select tag, c0: count($rows) flatten _tags { } as tag group by tag: tag order by tag }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -1105,7 +1105,7 @@
   {
     "name": "task-over-flattened-tasks-grouped",
     "dql": "TASK FLATTEN file.tasks AS t GROUP BY file.link",
-    "oqx": "docs { select key, tasks: rows { _path: _path, task_id: t._id, text: t._text, checked: t.checked } flatten _blocks { where _type == \"task\" } as t group by key: _path }",
+    "oqx": "docs { select key, tasks: $rows { _path: _path, task_id: t._id, text: t._text, checked: t.checked } flatten _blocks { where _type == \"task\" } as t group by key: _path }",
     "render": {
       "type": "task",
       "grouped": true,
