@@ -57,7 +57,13 @@ const DESCRIPTION_BUDGET = 900;
  * `_frontmatter.<key>` / `_attrs.checked`, and the digest covers the effects as
  * given — so `apply:0`, `apply:2`, `plan:0`, `plan:1` and `execute:0` moved
  * again and are pinned here at their 5.0 values; `apply:1` (a pure `insert`)
- * carries no attribute spelling and kept its digest.
+ * carries no attribute spelling and kept its digest. A rung demonstrating a
+ * document `set` with `field: "content"` (spec/mutate §11.2) was added to
+ * both ladders to fit the 900-char budget: `apply` gained a 4th, unpinned
+ * rung (`apply:3`); `plan`'s unpinned `plan:3` (`no target: the hit`) was
+ * replaced outright rather than appended, since `plan:0`/`plan:1` are the
+ * only pinned rungs and a 6th line did not fit either way — the "no target"
+ * pattern stays demonstrated by `apply:2`'s `select` with no `target`.
  */
 export const PINNED_4_3: Record<string, string> = {
   "apply:0": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
@@ -212,7 +218,7 @@ describe("example ladders (spec/surface §4 \"Descriptions\")", () => {
       seen[t] = (seen[t] ?? 0) + 1;
     });
     for (const [k, digest] of Object.entries(PINNED_4_3)) expect(found[k], k).toBe(digest);
-    expect(Object.keys(found).sort()).toEqual(["apply:0", "apply:1", "apply:2", "execute:0", "plan:0", "plan:1", "plan:2", "plan:3", "plan:4"]);
+    expect(Object.keys(found).sort()).toEqual(["apply:0", "apply:1", "apply:2", "apply:3", "execute:0", "plan:0", "plan:1", "plan:2", "plan:3", "plan:4"]);
   });
 
   it("spec/surface/cases/examples.json's steps are exactly the extraction, bytewise (the drift gate; SURFACE_SPEC_UPDATE=1 regenerates)", () => {

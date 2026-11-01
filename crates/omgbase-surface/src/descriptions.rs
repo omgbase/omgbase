@@ -69,18 +69,19 @@ pub const BLOCKS_RESOLVE: &str = r#"blocks_resolve — "the id of the thing I me
 Open questions or passages: query with text("...") or order by semantic("...") desc. Grammar: query_syntax."#;
 
 /// `apply`
-pub const APPLY: &str = r###"apply — plan and commit in one call; returns the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.
-{"effects":[{"op":"set","target":"/substances/salt.md","field":"_frontmatter.verified","value":false}],"reason":"re-check salt"}   one scalar; a bare path is a document target
-{"effects":[{"op":"insert","into":"/lab/2026-02-notes.md","at":"end","markdown":"## Follow-ups\n\n- [ ] re-run cycle 4"}]}   append at a document's end
-{"select":"blocks { _type == \"task\" and not checked and _path == \"/processes/calcination.md\" }","effects":[{"op":"set","field":"_attrs.checked","value":true}],"expect":{"max":10}}   bulk check-off; expect.max is REQUIRED with select
-Plan first for anything you cannot undo by hand; every error's data.fix is a corrected call to copy. Grammar: query_syntax."###;
+pub const APPLY: &str = r###"apply — plan and commit in one call: the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.
+{"effects":[{"op":"set","target":"/substances/salt.md","field":"_frontmatter.verified","value":false}],"reason":"re-check salt"}   a bare path is a document target
+{"effects":[{"op":"insert","into":"/lab/2026-02-notes.md","at":"end","markdown":"## Follow-ups\n\n- [ ] re-run cycle 4"}]}   append at a doc's end
+{"select":"blocks { _type == \"task\" and not checked and _path == \"/processes/calcination.md\" }","effects":[{"op":"set","field":"_attrs.checked","value":true}],"expect":{"max":10}}   bulk check-off; expect.max required with select
+{"effects":[{"op":"set","target":"/log.md","field":"content","value":"---\ntype: x\n---\n\n# A\n"}]}   whole document, fence included
+Plan first for anything hard to undo; every error's data.fix is the corrected call. Grammar: query_syntax."###;
 
 /// `plan`
 pub const PLAN: &str = r##"plan — Preview: the Plan (summary, $new.n ids) burns no id. Commit: execute { plan_id }. Bodies: diffs: true.
 {"effects":[{"op":"set","target":"/processes/calcination.md","field":"_frontmatter.verified","value":false}]}   path = doc
 {"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"markdown":"- [ ] Weigh the calx"}]}   in a section
 {"effects":[{"op":"create","path":"lab/march.md","markdown":"# March\n"},{"op":"insert","into":"$new.0","markdown":"Hi."}]}   fill it: $new.0
-{"select":"docs { stage == \"nigredo\" }","effects":[{"op":"set","field":"_frontmatter.ok","value":true}]}   no target: the hit
+{"effects":[{"op":"set","target":"/log.md","field":"content","value":"---\ntype: x\n---\n\n# A\n"}]}   whole document, fence included
 {"select":"docs { type == \"lab-note\" }","effects":[{"op":"insert","into":"-> `/processes/${subject}.md`","markdown":"-> `[${_title}](${_path})`"}]}   -> reads the row
 Ops: create insert set unset move remove split merge retarget; grammar: query_syntax."##;
 

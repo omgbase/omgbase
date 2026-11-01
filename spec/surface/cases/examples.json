@@ -227,6 +227,22 @@
         },
         {
           "read": {
+            "tool": "apply",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": "/log.md",
+                  "field": "content",
+                  "value": "---\ntype: x\n---\n\n# A\n"
+                }
+              ]
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
             "tool": "plan",
             "args": {
               "effects": [
@@ -283,12 +299,12 @@
           "read": {
             "tool": "plan",
             "args": {
-              "select": "docs { stage == \"nigredo\" }",
               "effects": [
                 {
                   "op": "set",
-                  "field": "_frontmatter.ok",
-                  "value": true
+                  "target": "/log.md",
+                  "field": "content",
+                  "value": "---\ntype: x\n---\n\n# A\n"
                 }
               ]
             },
@@ -1191,6 +1207,14 @@
             ]
           },
           {
+            "error": "doc_missing",
+            "retriable": false,
+            "data": {
+              "doc": "/log.md",
+              "effect_index": 0
+            }
+          },
+          {
             "version": 1,
             "planner_v": "p3",
             "effects": [
@@ -1417,101 +1441,11 @@
             }
           },
           {
-            "version": 1,
-            "planner_v": "p3",
-            "effects": [
-              {
-                "op": "set",
-                "target": {
-                  "kind": "document",
-                  "_id": "d_7",
-                  "_path": "processes/calcination.md"
-                },
-                "field": "_frontmatter.ok",
-                "value": true
-              },
-              {
-                "op": "set",
-                "target": {
-                  "kind": "document",
-                  "_id": "d_9",
-                  "_path": "processes/dissolution.md"
-                },
-                "field": "_frontmatter.ok",
-                "value": true
-              }
-            ],
-            "opset": {
-              "creates": [],
-              "moves": [],
-              "tombstones": [],
-              "set_frontmatter": [
-                {
-                  "doc": "d_7",
-                  "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\nok: true\n---\n\n"
-                },
-                {
-                  "doc": "d_9",
-                  "raw": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags: [process, water]\nverified: true\nstage: nigredo\nok: true\n---\n\n"
-                }
-              ],
-              "ops": []
-            },
-            "preconditions": {
-              "docs": [
-                {
-                  "_id": "d_7",
-                  "_path": "processes/calcination.md",
-                  "base_revision": "r_22",
-                  "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
-                },
-                {
-                  "_id": "d_9",
-                  "_path": "processes/dissolution.md",
-                  "base_revision": "r_9",
-                  "_hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
-                }
-              ],
-              "blocks": [],
-              "parents": [],
-              "absent_paths": []
-            },
-            "new_ids": [],
-            "selection": {
-              "query": "docs { stage == \"nigredo\" }",
-              "templates": [
-                {
-                  "op": "set",
-                  "field": "_frontmatter.ok",
-                  "value": true
-                }
-              ],
-              "cardinality": 2,
-              "identities": [
-                "d_7",
-                "d_9"
-              ]
-            },
-            "plan_id": "679579cfe866c204fc6c06fb546c495a848ade75dbd334086babe0c921a3d248",
-            "diagnostics": [],
-            "preview": {
-              "results": [],
-              "revisions": [
-                {
-                  "_id": "d_7",
-                  "_path": "/processes/calcination.md",
-                  "_hash": "022e852023324ddd6c8a7dde87f4acd9d2aa545f9793ce5f911bde3c48e92ab9"
-                },
-                {
-                  "_id": "d_9",
-                  "_path": "/processes/dissolution.md",
-                  "_hash": "3f485f45895dda766d3c49c6128bf735932031ba70c060787552d1435be7b3d0"
-                }
-              ],
-              "summary": [
-                "set _frontmatter.ok = true in /processes/calcination.md",
-                "set _frontmatter.ok = true in /processes/dissolution.md"
-              ]
+            "error": "doc_missing",
+            "retriable": false,
+            "data": {
+              "doc": "/log.md",
+              "effect_index": 0
             }
           },
           {
