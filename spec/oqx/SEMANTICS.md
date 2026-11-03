@@ -185,9 +185,17 @@ receiver (`(mom, dad, siblings) { name values }`, `follow (before, after) { dept
 
 ## 4. Truthiness
 
-`where <scalar>`, `!x`, and the operands of `&&`/`||` use truthiness: **absent,
-`false`, `0`, `-0`, and `""` are falsy; everything else is truthy** — including
-an empty array and an empty object. [`where`, `builtins`]
+`where <scalar>`, `!x`, and the operands of `&&`/`||` use truthiness. **Falsy:
+absent, or the empty/zero form of its own type** — `false`, `0`, `-0`, `""`,
+**`[]`, `{}`** (since 0.30; through 0.29 an empty array or object was truthy).
+Everything else is truthy. The two new members are tested exactly as `size()`
+tests them (string/array/object), **not** by a bare `size(x) == 0`: `size`'s
+own table (§11) falls back to `0` for "absent or any scalar", so a literal
+`size(x) == 0` would wrongly call `5` and `true` falsy too. Numbers and
+booleans keep their own, separate zero/false rule; only the string, array and
+object branches are new. An object's emptiness is its **own-key count** (§2),
+so `{ a: null }` — a key present whose value is absent — is **not** empty: it
+has one key, regardless of what it points to. [`where`, `builtins`]
 
 ## 5. Equality (`==`, `!=`)
 
@@ -231,6 +239,50 @@ tightest (`-a!` is `-(a!)`, `!a!` is `!(a!)`, `a!.b` requires `a`, `a.b!`
 requires `a.b`). Over a bracket lookup, `x[n]!` requires the positional row and
 `x[p]!` requires exactly one match (GRAMMAR §4): zero is this error over the
 `single` directive, many is the `single` error. [`sugar`, `errors-eval`]
+
+### 5c. Postfix `?` — present (since 0.30)
+
+`x?` dispatches on what `x` is, and it is total — never an error, never a
+filter in the sense of dropping the whole value:
+
+- **absent → absent.** No-op.
+- **an array → the present elements**, in order (absent ones dropped, same
+  test as `has()`, §2). **Absent when none survive** — including an array
+  that started empty, since there is no way to tell "filtered down to
+  nothing" from "had nothing to begin with" apart, and no reason to. Never
+  `[]`.
+- **anything else (a scalar, an object) → itself, unchanged.** There is
+  nothing inside a single value for `?` to filter.
+
+The array case is the only one that does anything; the other two exist so
+`x?` can be written **once** and mean the right thing whether `x` happens to
+be a row-scope scalar or a group-scope per-row list (§24) — the same text,
+reused, rather than two queries that differ only in whether `group by` is
+present. `weapon?` on a row where `weapon` is present is `weapon`, unchanged;
+at a group scope where some rows lack it, it is the list of the rows that
+have it; where no row has it, it is absent — so `having weapon?` reads "some
+row in this group has a weapon" with no bespoke grammar for that question.
+
+`has(x?)` and `!x?`/`where x?` now agree: both say "nothing survived"
+exactly when the other does, because the empty case is absent on both tests,
+not truthy-`[]` against absent-`has`. (Before this rule existed as `x?`'s own
+output, `[]` was truthy — see §4's `since 0.30` note — so this agreement is a
+property of `?` and §4 moving together, not either alone.)
+
+Nothing here needs null and absent (§1) told apart — `?` only distinguishes
+absent from present, never asks which spelling of absent it was given. No
+interaction with `!`: `(x?)!` is vacuous (`x?` is always present, even when
+`[]` would have been — `!` never fires), which is exactly why `x?!` was
+considered as its own atom and then retired (GRAMMAR §4's postfix `?`
+section): `first(x)!` / `last(x)!` already raise when nothing present
+survives, at either scope, with a choice of which end — strictly more than a
+bespoke `?!` offered, for zero new syntax.
+
+Deliberately out of scope: a nested empty array/object *element* (`tags?`
+where one row's own `tags` is `[]`) is **not** additionally collapsed to
+absent by this rule — `?` tests presence (`has`), not emptiness, for each
+element. Recursing emptiness into elements is a different, bigger question
+(a possible future `??`), not this operator. [`sugar`, `present`]
 
 ## 6. Ordering comparisons (`<`, `<=`, `>`, `>=`)
 
@@ -925,7 +977,13 @@ it is given, wherever it is written: `count($rows)` the group's rows,
 argument is an ordinary expression evaluated in the scope the reduction stands
 in; it is the `$rows { … }` receiver, not the function, that re-enters the row
 scopes (in group order — the scope the body's `where` saw, so lifts and walk
-intrinsics are readable there). Every **value reduction** sees only the
+intrinsics are readable there). The evaluated argument is then read as a
+collection, **leniently and totally**: absent is the empty collection, an
+array is itself, anything else (a scalar, an object) is a **one-element**
+collection holding it — so `sum(5)` is `5` and `sum(nope)` is `0`, neither an
+error (this is `toList`, not §3's receiver coercion, which errors on a bare
+scalar; a reduction's argument is never opened as a receiver). Every **value
+reduction** sees only the
 **present** elements (absent is skipped, never counted, summed, collected or
 returned) — the 0.24 rule, unchanged, so no query's arithmetic moves.
 Deduplication is the collection's `distinct`, not a call modifier:
@@ -949,9 +1007,16 @@ body. All of that is gone — the behaviour that remains is the arithmetic.
 
 Reductions **nest** and stand **wherever a call stands** (GRAMMAR §4) — nothing
 about them is special any more. What governs where one may be *read* is not the
-function but its collection: see "Staging" below. A reduction of something that
-is not a collection is the eval error `` cannot reduce `e`: it is a string
-("…") — `sum` takes a collection ``.
+function but its collection: see "Staging" below. There is no "not a
+collection" eval error — `toList` (above) is total, so `sum("abc")` is not a
+shape error, it is the present-value type error of `sum`/`avg` (the table
+above): `cannot sum \`"abc"\`: it is a string ("abc") — \`sum\` takes
+numbers`. This composes with `x?` (§5c): since `?` collapses an all-absent
+array to absent rather than `[]`, and `toList` already treats absent the same
+as `[]`, `sum(weapon?)`/`count(weapon?)`/`collect(weapon?)` answer exactly as
+`sum(weapon)`/`count(weapon)`/`collect(weapon)` already did — `?` changes
+nothing for a reduction, because the present-filtering it does was already
+the reduction's own job.
 
 **`having P`** evaluates the `where` tree `P` (§13) on each group scope and
 keeps the groups for which it holds. Like `where`, it is rewritten against the

@@ -300,7 +300,7 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
                 }
                 out.extend(args.iter().map(|a| child(Node::Expr(a), None, 0)));
             }
-            Expr::Unary { expr, .. } | Expr::Required { expr, .. } => {
+            Expr::Unary { expr, .. } | Expr::Required { expr, .. } | Expr::Present { expr, .. } => {
                 out.push(child(Node::Expr(expr), None, 0))
             }
             // A value-position directive: its receiver, then its body one deeper.
@@ -699,6 +699,10 @@ where
                 expr: Box::new(self.expr(expr, clause, depth)),
                 span: *span,
             },
+            Expr::Present { expr, span } => Expr::Present {
+                expr: Box::new(self.expr(expr, clause, depth)),
+                span: *span,
+            },
             // An op is an expression only by position: its parts are mapped and
             // the op rebuilt; `f` never sees the op itself (AST.md §1).
             Expr::Op(op) => {
@@ -922,7 +926,9 @@ fn strip_expr_spans(e: &mut Expr) {
                     }
                     args.iter_mut().for_each(strip_expr_spans);
                 }
-                Expr::Unary { expr, .. } | Expr::Required { expr, .. } => strip_expr_spans(expr),
+                Expr::Unary { expr, .. }
+                | Expr::Required { expr, .. }
+                | Expr::Present { expr, .. } => strip_expr_spans(expr),
                 Expr::Binary { left, right, .. }
                 | Expr::Logical { left, right, .. }
                 | Expr::In { left, right, .. } => {

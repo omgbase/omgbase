@@ -138,7 +138,11 @@ fn prec(e: &Expr) -> u8 {
         | Expr::Binding { .. }
         | Expr::Tuple { .. }
         | Expr::Template { .. } => PRIMARY,
-        Expr::Member { .. } | Expr::Call { .. } | Expr::Required { .. } | Expr::Op(_) => POSTFIX,
+        Expr::Member { .. }
+        | Expr::Call { .. }
+        | Expr::Required { .. }
+        | Expr::Present { .. }
+        | Expr::Op(_) => POSTFIX,
         Expr::Unary { .. } => UNARY,
         Expr::Binary { op, .. } => match op {
             BinaryOp::Add | BinaryOp::Sub => ADD,
@@ -254,7 +258,7 @@ fn can_head_block(e: &Expr) -> bool {
         Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } | Expr::Tuple { .. } => true,
         Expr::Call { recv, .. } => recv.as_deref().is_none_or(chain_head),
         Expr::Member { recv, .. } => chain_head(recv),
-        Expr::Required { expr, .. } => chain_head(expr),
+        Expr::Required { expr, .. } | Expr::Present { expr, .. } => chain_head(expr),
         Expr::Op(op) => chain_head(&op.receiver),
         _ => false,
     }
@@ -538,6 +542,7 @@ fn expr(e: &Expr) -> Out {
         Expr::Unary { op, expr: x, .. } => cat(vec![text(op.as_str()), operand(x, UNARY)]),
         // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
         Expr::Required { expr: x, .. } => cat(vec![operand(x, POSTFIX), text("!")]),
+        Expr::Present { expr: x, .. } => cat(vec![operand(x, POSTFIX), text("?")]),
         Expr::Op(op) => op_node(op),
         Expr::Binary {
             op, left, right, ..

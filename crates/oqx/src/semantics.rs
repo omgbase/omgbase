@@ -1674,7 +1674,7 @@ mod tests {
     }
 
     #[test]
-    fn truthiness_is_javascript() {
+    fn truthiness_is_absent_or_the_empty_zero_form_of_its_own_type() {
         for v in [
             Value::Undefined,
             Value::Null,
@@ -1683,6 +1683,8 @@ mod tests {
             num(-0.0),
             num(f64::NAN),
             s(""),
+            arr(vec![]),
+            obj(&[]),
         ] {
             assert!(!truthy(&v), "{v:?}");
         }
@@ -1691,8 +1693,8 @@ mod tests {
             num(1.0),
             s("0"),
             s("false"),
-            arr(vec![]),
-            obj(&[]),
+            arr(vec![Value::Number(1.0)]),
+            obj(&[("a", Value::Null)]),
             rng(Value::Null, num(1.0), false),
         ] {
             assert!(truthy(&v), "{v:?}");

@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.29";
+export const LANGUAGE_VERSION = "0.30";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -79,6 +79,9 @@ export const OPERATORS = {
   /** `!` is also the postfix required operator (`x!`, GRAMMAR §4) — lexically one token. */
   logical: ["&&", "||", "!"],
   arithmetic: ["+", "-", "*", "/", "%"],
+  /** `?` is purely postfix — the present operator (`x?`, GRAMMAR §4, since
+   * 0.30); unlike `!` it has no prefix/infix role. */
+  present: ["?"],
   /** `..` inclusive, `...` exclusive high end; scanned before `.` (GRAMMAR §1). */
   range: ["...", ".."],
   /** The membership operator is a contextual word (GRAMMAR §4). */
@@ -117,7 +120,7 @@ export const IDENTIFIER = "[A-Za-z_$][A-Za-z0-9_$]*";
  * comment are, since 0.28) and there is no single `=`/`&`/`|`. (The backtick
  * left this list in 0.21: it opens a template literal; `~` left it in 0.22: it
  * is the regex match operator.) */
-export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "?", "\\"] as const;
+export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "\\"] as const;
 
 /** Comments (GRAMMAR §1, since 0.28): whitespace to the lexer. `//` runs to the
  * end of the line; `blockOpen` … `blockClose` runs to the first close across

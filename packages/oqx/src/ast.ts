@@ -90,6 +90,9 @@ export type Expr =
   | { kind: "unary"; span: Span; op: UnaryOp; expr: Expr }
   // `x!` — the value of `expr`, or an eval error when it is absent (since 0.17).
   | { kind: "required"; span: Span; expr: Expr }
+  // `x?` — the present elements of `expr` when it is an array (absent if none
+  // survive), `expr` unchanged otherwise (since 0.30).
+  | { kind: "present"; span: Span; expr: Expr }
   | { kind: "binary"; span: Span; op: BinaryOp; left: Expr; right: Expr } // arithmetic + comparison + identity
   | { kind: "logical"; span: Span; op: LogicalOp; left: Expr; right: Expr }
   | { kind: "in"; span: Span; left: Expr; right: Expr }
@@ -289,7 +292,7 @@ export type AstKind = AstNode["kind"];
 
 /** The expression kinds (`Expr["kind"]`), for `isExpr`. */
 const EXPR_KINDS: ReadonlySet<string> = new Set([
-  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple", "template",
+  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "present", "binary", "logical", "in", "range", "tuple", "template",
 ]);
 
 /** Whether a node is a scalar `Expr` (an `op` in expression position is not: it

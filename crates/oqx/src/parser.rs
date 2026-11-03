@@ -1222,7 +1222,9 @@ impl Parser {
                 args.iter()
                     .try_for_each(|a| self.check_group_expr(a, valid, clause, inner))
             }
-            Expr::Unary { expr, .. } | Expr::Required { expr, .. } => again(expr),
+            Expr::Unary { expr, .. } | Expr::Required { expr, .. } | Expr::Present { expr, .. } => {
+                again(expr)
+            }
             Expr::Binary { left, right, .. }
             | Expr::Logical { left, right, .. }
             | Expr::In { left, right, .. } => {
@@ -2836,6 +2838,14 @@ impl Parser {
                     expr: Box::new(expr),
                     span: Span::new(start, bang.end),
                 };
+            } else if self.at_op("?") {
+                // Postfix `?`: the present operator (0.30, SEMANTICS §5c). `?` was a
+                // lex error through 0.29, so it competes with nothing here.
+                let q = self.next();
+                expr = Expr::Present {
+                    expr: Box::new(expr),
+                    span: Span::new(start, q.end),
+                };
             } else if self.at_value_directive()
                 || self.at(TokType::LBrace)
                 || (self.at_word(TokType::Ident, "distinct")
@@ -3112,7 +3122,9 @@ fn expr_reads_rows(e: &Expr) -> bool {
         Expr::Call { recv, args, .. } => {
             recv.as_deref().is_some_and(expr_reads_rows) || args.iter().any(expr_reads_rows)
         }
-        Expr::Unary { expr, .. } | Expr::Required { expr, .. } => expr_reads_rows(expr),
+        Expr::Unary { expr, .. } | Expr::Required { expr, .. } | Expr::Present { expr, .. } => {
+            expr_reads_rows(expr)
+        }
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
         | Expr::In { left, right, .. } => expr_reads_rows(left) || expr_reads_rows(right),
@@ -3139,7 +3151,9 @@ fn where_idents<'a>(w: &'a Where, out: &mut Vec<&'a Expr>) {
                 }
                 args.iter().for_each(|a| walk(a, out));
             }
-            Expr::Unary { expr, .. } | Expr::Required { expr, .. } => walk(expr, out),
+            Expr::Unary { expr, .. } | Expr::Required { expr, .. } | Expr::Present { expr, .. } => {
+                walk(expr, out)
+            }
             Expr::Binary { left, right, .. }
             | Expr::Logical { left, right, .. }
             | Expr::In { left, right, .. } => {
@@ -3172,7 +3186,7 @@ fn nav_key(e: &Expr) -> Option<&str> {
         Expr::Ident { name, .. } | Expr::Outer { name, .. } | Expr::Member { name, .. } => {
             Some(name)
         }
-        Expr::Required { expr, .. } => nav_key(expr),
+        Expr::Required { expr, .. } | Expr::Present { expr, .. } => nav_key(expr),
         _ => None,
     }
 }

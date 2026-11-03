@@ -22,6 +22,8 @@ export const call = (recv: Expr | null, name: string, args: Expr[] = []): Expr =
 export const unary = (op: UnaryOp, expr: Expr): Expr => ({ kind: "unary", span: span(), op, expr });
 /** `expr!` — the required value (SEMANTICS §5b). */
 export const required = (expr: Expr): Expr => ({ kind: "required", span: span(), expr });
+/** `expr?` — the present value (SEMANTICS §5c). */
+export const present = (expr: Expr): Expr => ({ kind: "present", span: span(), expr });
 export const binary = (op: BinaryOp, left: Expr, right: Expr): Expr => ({ kind: "binary", span: span(), op, left, right });
 export const logical = (op: LogicalOp, left: Expr, right: Expr): Expr => ({ kind: "logical", span: span(), op, left, right });
 export const inOp = (left: Expr, right: Expr): Expr => ({ kind: "in", span: span(), left, right });

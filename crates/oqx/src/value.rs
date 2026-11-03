@@ -45,16 +45,22 @@ impl Value {
         matches!(self, Value::Undefined | Value::Null)
     }
 
-    /// Truthiness as the `where` clause and `!` see it (JavaScript rules):
-    /// absent, `false`, `0`, `NaN`, and `""` are false; everything else,
-    /// including empty arrays and objects, is true.
+    /// Truthiness as the `where` clause and `!` see it (SEMANTICS §4, 0.30):
+    /// false iff absent, or the empty/zero form of its own type — `false`,
+    /// `0`/`NaN`, `""`, `[]`, `{}` (through 0.29 an empty array or object was
+    /// true). `[]`/`{}` are tested the same way `size()` tests them (length /
+    /// own-key count), not a bare "size is zero", which would wrongly call a
+    /// number or boolean false too — numbers and booleans keep their own rule
+    /// below, untouched.
     pub fn truthy(&self) -> bool {
         match self {
             Value::Undefined | Value::Null => false,
             Value::Bool(b) => *b,
             Value::Number(n) => *n != 0.0 && !n.is_nan(),
             Value::Str(s) => !s.is_empty(),
-            Value::Array(_) | Value::Object(_) | Value::Range(_) => true,
+            Value::Array(xs) => !xs.is_empty(),
+            Value::Object(obj) => !obj.is_empty(),
+            Value::Range(_) => true,
         }
     }
 

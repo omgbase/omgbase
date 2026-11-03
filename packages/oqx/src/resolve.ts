@@ -295,7 +295,7 @@ function mapExpr(e: Expr, f: (e: Expr) => Expr | null): Expr {
       const args = mapSame(e.args, go);
       return recv === e.recv && args === e.args ? e : { ...e, recv, args };
     }
-    case "unary": case "required": { const expr = go(e.expr); return expr === e.expr ? e : { ...e, expr }; }
+    case "unary": case "required": case "present": { const expr = go(e.expr); return expr === e.expr ? e : { ...e, expr }; }
     case "binary": case "logical": case "in": {
       const left = go(e.left);
       const right = go(e.right);

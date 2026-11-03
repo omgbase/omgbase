@@ -241,7 +241,7 @@ export function rebase(e: Expr, name: string): Expr {
     case "lit": case "outer": case "binding": return e;
     case "member": return { ...e, recv: r(e.recv) };
     case "call": return { ...e, recv: e.recv ? r(e.recv) : null, args: e.args.map(r) };
-    case "unary": case "required": return { ...e, expr: r(e.expr) };
+    case "unary": case "required": case "present": return { ...e, expr: r(e.expr) };
     case "binary": case "logical": case "in": return { ...e, left: r(e.left), right: r(e.right) };
     case "range": return { ...e, lo: e.lo ? r(e.lo) : null, hi: e.hi ? r(e.hi) : null };
     case "tuple": return { ...e, items: e.items.map(r) };

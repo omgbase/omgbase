@@ -381,7 +381,7 @@ pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
                 .is_some_and(|r| expr_reads_scope_in(r, at, up_to))
                 || args.iter().any(|a| expr_reads_scope_in(a, at, up_to))
         }
-        Expr::Unary { expr, .. } | Expr::Required { expr, .. } => {
+        Expr::Unary { expr, .. } | Expr::Required { expr, .. } | Expr::Present { expr, .. } => {
             expr_reads_scope_in(expr, at, up_to)
         }
         Expr::Op(op) => op_reads_scope_in(op, at, up_to),
@@ -500,7 +500,8 @@ pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
         Expr::Lit { .. } | Expr::Ident { .. } | Expr::Outer { .. } => true,
         Expr::Binding { index, .. } => *index < ctx.binding_count,
         Expr::Call { .. } => false,
-        Expr::Required { .. } => false,         // raises when absent
+        Expr::Required { .. } => false, // raises when absent
+        Expr::Present { expr, .. } => expr_raise_free(expr, ctx), // total — never raises itself (SEMANTICS §5c)
         Expr::Op(op) => op_raise_free(op, ctx), // a value-position directive projects: never raise-free
         Expr::Member { recv, .. } => expr_raise_free(recv, ctx),
         Expr::Unary { expr, .. } => expr_raise_free(expr, ctx),

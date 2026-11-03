@@ -5676,6 +5676,139 @@
           }
         ]
       }
+    },
+    {
+      "name": "present: a scalar is unchanged, present or absent",
+      "tags": ["present", "sugar"],
+      "notes": "x? over a scalar is identity (SEMANTICS §5c): present stays present, absent stays absent — no filter, no coercion.",
+      "roots": {
+        "people": [
+          { "weapon": "sword" },
+          {}
+        ]
+      },
+      "query": "weapon? values from people",
+      "expect": {
+        "result": ["sword", null]
+      }
+    },
+    {
+      "name": "present: an array keeps its present elements",
+      "tags": ["present", "sugar"],
+      "roots": {
+        "r": [{ "tags": ["a", null, "b"] }]
+      },
+      "query": "tags? values from r",
+      "expect": {
+        "result": [["a", "b"]]
+      }
+    },
+    {
+      "name": "present: an array with nothing present is absent, not []",
+      "tags": ["present", "sugar"],
+      "notes": "Filtered down to nothing and started empty are the same state (SEMANTICS §5c) — both collapse to absent, never [].",
+      "roots": {
+        "r": [
+          { "tags": [null, null] },
+          { "tags": [] },
+          {}
+        ]
+      },
+      "query": "tags? values from r",
+      "expect": {
+        "result": [null, null, null]
+      }
+    },
+    {
+      "name": "present: a group's per-row list, some rows present",
+      "tags": ["present", "sugar", "group-by"],
+      "roots": {
+        "r": [
+          { "p": "x", "weapon": "sword" },
+          { "p": "x" },
+          { "p": "x", "weapon": "bow" }
+        ]
+      },
+      "query": "r { select p, weapon? group by p }",
+      "expect": {
+        "result": [
+          { "p": "x", "weapon": ["sword", "bow"] }
+        ]
+      }
+    },
+    {
+      "name": "present: a group where no row has it reads absent, and has() agrees",
+      "tags": ["present", "sugar", "group-by"],
+      "notes": "Before this rule, weapon? was always a present (if empty) array at a group scope, so has(weapon?) was unconditionally true. Collapsing to absent makes has() mean what it looks like it means.",
+      "roots": {
+        "r": [
+          { "p": "y" },
+          { "p": "y" }
+        ]
+      },
+      "query": "r { select p, weapon?, has_weapon: has(weapon?) group by p }",
+      "expect": {
+        "result": [
+          { "p": "y", "has_weapon": false }
+        ]
+      }
+    },
+    {
+      "name": "present: having reads \"some row has it\" with no bespoke grammar",
+      "tags": ["present", "sugar", "group-by"],
+      "roots": {
+        "r": [
+          { "p": "x", "weapon": "sword" },
+          { "p": "y" },
+          { "p": "y" }
+        ]
+      },
+      "query": "r { select p group by p having weapon? }",
+      "expect": {
+        "result": [
+          { "p": "x" }
+        ]
+      }
+    },
+    {
+      "name": "present: composes transparently with reductions (? changes nothing for them)",
+      "tags": ["present", "sugar", "group-by"],
+      "notes": "A reduction already sees only the present elements (SEMANTICS §24), so count(weapon?) and count(weapon) agree.",
+      "roots": {
+        "r": [
+          { "p": "x", "weapon": "sword" },
+          { "p": "x" }
+        ]
+      },
+      "query": "r { select p, a: count(weapon?), b: count(weapon) group by p }",
+      "expect": {
+        "result": [
+          { "p": "x", "a": 1, "b": 1 }
+        ]
+      }
+    },
+    {
+      "name": "present: an object is unchanged (not treated as a collection)",
+      "tags": ["present", "sugar"],
+      "roots": {
+        "r": [{ "meta": { "a": 1 } }]
+      },
+      "query": "meta? values from r",
+      "expect": {
+        "result": [{ "a": 1 }]
+      }
+    },
+    {
+      "name": "present: binds tightest, like required",
+      "tags": ["present", "sugar"],
+      "notes": "-a? is -(a?); over a present scalar ? is a no-op so the arithmetic reads through unchanged (SEMANTICS §5c, GRAMMAR §4).",
+      "roots": {
+        "r": [{ "n": 5 }]
+      },
+      "query": "s: -n? values from r",
+      "expect": {
+        "result": [-5]
+      }
     }
   ]
 }

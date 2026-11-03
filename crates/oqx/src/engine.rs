@@ -2120,6 +2120,23 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 }
                 Ok(v)
             }
+            // `x?` — the present elements of an array, in order; absent when
+            // none survive (never `[]`, even when the array started empty);
+            // anything else (a scalar, an object, absent itself) unchanged
+            // (SEMANTICS §5c, since 0.30). Total: never an error, never a
+            // filter on anything but an array.
+            Expr::Present { expr, .. } => {
+                let v = self.eval_expr(expr, scope)?;
+                let Value::Array(xs) = v else {
+                    return Ok(v);
+                };
+                let present: Vec<Value> = xs.into_iter().filter(|x| !x.is_absent()).collect();
+                Ok(if present.is_empty() {
+                    Value::Undefined
+                } else {
+                    Value::Array(present)
+                })
+            }
             // A value-position directive (`jobs first { … }.pay`, the desugared `x[…]`).
             Expr::Op(op) => self.eval_collect_value(op, scope),
             Expr::Binary {
@@ -2532,7 +2549,9 @@ fn expr_has_recur(e: &Expr) -> bool {
         Expr::Call { recv, args, .. } => {
             recv.as_deref().is_some_and(expr_has_recur) || args.iter().any(expr_has_recur)
         }
-        Expr::Unary { expr, .. } | Expr::Required { expr, .. } => expr_has_recur(expr),
+        Expr::Unary { expr, .. } | Expr::Required { expr, .. } | Expr::Present { expr, .. } => {
+            expr_has_recur(expr)
+        }
         Expr::Op(_) => false,
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }

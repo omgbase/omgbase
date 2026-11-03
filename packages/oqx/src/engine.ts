@@ -1018,6 +1018,17 @@ export class InMemoryEngine implements Engine {
         if (v == null) throw new OqxError(`\`${describe(e.expr)}!\` is absent${this.rowIdentity(scope)}`, "eval");
         return v;
       }
+      // `x?` — the present elements of an array, in order; absent when none
+      // survive (never `[]`, even when the array started empty); anything
+      // else (a scalar, an object, absent itself) unchanged (SEMANTICS §5c,
+      // since 0.30). Total: never an error, never a filter on anything but an
+      // array.
+      case "present": {
+        const v = this.evalExpr(e.expr, scope);
+        if (!Array.isArray(v)) return v;
+        const present = v.filter((x: unknown) => x != null);
+        return present.length > 0 ? present : undefined;
+      }
       // A value-position directive (`jobs first { … }.pay`, the desugared `x[…]`).
       case "op": return this.evalCollectValue(e, scope);
       case "binary": {
@@ -1300,7 +1311,7 @@ function exprHasRecur(e: Expr): boolean {
     case "ident": return RECUR.has(e.name);
     case "member": return exprHasRecur(e.recv);
     case "call": return (e.recv ? exprHasRecur(e.recv) : false) || e.args.some(exprHasRecur);
-    case "unary": case "required": return exprHasRecur(e.expr);
+    case "unary": case "required": case "present": return exprHasRecur(e.expr);
     case "binary": case "logical": case "in": return exprHasRecur(e.left) || exprHasRecur(e.right);
     case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
     case "tuple": return e.items.some(exprHasRecur);

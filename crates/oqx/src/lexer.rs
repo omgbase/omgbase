@@ -127,7 +127,7 @@ const KEYWORDS: [&str; 7] = ["from", "where", "select", "is", "not", "and", "or"
 // `name!` — and `~*` before `~`, so `x~*y` is `x ~* y`.
 const TRIPLE_OPS: [&str; 1] = ["!~*"];
 const MULTI_OPS: [&str; 8] = ["==", "!=", "<=", ">=", "&&", "||", "!~", "~*"];
-const SINGLE_OPS: [char; 9] = ['<', '>', '!', '+', '-', '*', '/', '%', '~'];
+const SINGLE_OPS: [char; 10] = ['<', '>', '!', '?', '+', '-', '*', '/', '%', '~'];
 
 fn is_ident_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_' || c == '$'

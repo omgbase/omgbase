@@ -77,7 +77,7 @@ const KEYWORDS = new Set(["from", "where", "select", "is", "not", "and", "or"]);
 // `name!` — and `~*` before `~`, so `x~*y` is `x ~* y`.
 const TRIPLE_OPS = ["!~*"];
 const MULTI_OPS = ["==", "!=", "<=", ">=", "&&", "||", "!~", "~*"];
-const SINGLE_OPS = new Set(["<", ">", "!", "+", "-", "*", "/", "%", "~"]);
+const SINGLE_OPS = new Set(["<", ">", "!", "?", "+", "-", "*", "/", "%", "~"]);
 
 const isIdentStart = (c: string): boolean => /^[A-Za-z_$]$/.test(c);
 const isIdentPart = (c: string): boolean => /^[A-Za-z0-9_$]$/.test(c);

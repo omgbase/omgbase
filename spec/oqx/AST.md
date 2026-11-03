@@ -44,6 +44,7 @@ guess the default of.
 | `call` | `name(args)` (`recv: null`) or `recv.name(args)` | expressions |
 | `unary` | `!x`, `-x` (also what `is x` ≡ `!!x` and `not x` ≡ `!x` parse to) | expressions |
 | `required` | `x!` — the value, or an eval error when absent (since 0.17) | expressions |
+| `present` | `x?` — the present elements of an array (absent if none survive), unchanged otherwise (since 0.30) | expressions |
 | `binary` | arithmetic, comparison, identity (`is`, `is not`), or a regex match (`~`, `~*`, `!~`, `!~*` — since 0.22), `op` the source operator | expressions |
 | `logical` | `&&`, `||` in value position | expressions |
 | `in` | membership | expressions |
@@ -114,6 +115,7 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | `call` | `recv: Expr \| null`; `name: string`; `args: Expr[]` |
 | `unary` | `op: "!" \| "-"`; `expr: Expr` |
 | `required` | `expr: Expr` |
+| `present` | `expr: Expr` |
 | `binary` | `op: "==" \| "!=" \| "<" \| "<=" \| ">" \| ">=" \| "is" \| "is not" \| "~" \| "~*" \| "!~" \| "!~*" \| "+" \| "-" \| "*" \| "/" \| "%"`; `left: Expr`; `right: Expr`. The four regex operators (since 0.22) are sugar over `matches` (SEMANTICS §11) but are **not desugared in the tree**: the node carries the operator as written, so `print` writes `a ~ b` back and a tool sees what the user wrote; evaluation is `a.matches(b)` / `a.matches(b, "i")` and the negations |
 | `logical` | `op: "&&" \| "\|\|"`; `left: Expr`; `right: Expr` |
 | `in` | `left: Expr`; `right: Expr` |
@@ -148,7 +150,7 @@ Shape rules the parser guarantees (and `cases/ast.json`, `cases/group-by.json` p
   produced it (`boss: ^people[id == ^manager]`); one that navigates or operates
   on a directive (`jobs[0].pay`) is a `field` whose expression contains the
   `op`. An unaliased `field` keys by the last segment of the navigation under
-  any `required` (`name!` → `name`, `jobs[0].pay` → `pay`). Parentheses around
+  any `required` or `present` (`name!` → `name`, `name?` → `name`, `jobs[0].pay` → `pay`). Parentheses around
   one expression leave no node; around two or more they are a `tuple`.
 - Flatten (0.25): `flatten tags` and `flatten tags as tags` are one tree (the
   `flatten` node's `name` is always filled); `flatten tags { where p } as t` is a

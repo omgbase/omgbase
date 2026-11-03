@@ -1,6 +1,6 @@
 {
   "languageId": "oqx",
-  "languageVersion": "0.29",
+  "languageVersion": "0.30",
   "defaultToken": "invalid",
   "tokenPostfix": ".oqx",
   "ignoreCase": false,
@@ -249,7 +249,7 @@
         "identifier"
       ],
       [
-        "!~\\*|!=|!~|&&|<=|==|>=|\\|\\||~\\*|!|%|\\*|\\+|-|\\/|<|>|~",
+        "!~\\*|!=|!~|&&|<=|==|>=|\\|\\||~\\*|!|%|\\*|\\+|-|\\/|<|>|\\?|~",
         "operator"
       ],
       [

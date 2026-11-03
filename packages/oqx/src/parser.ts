@@ -713,7 +713,7 @@ class Parser {
         if (e.recv) this.checkGroupExpr(e.recv, valid, where, inCall);
         for (const a of e.args) this.checkGroupExpr(a, valid, where, e.recv === null ? e.name : inCall);
         return;
-      case "unary": case "required": this.checkGroupExpr(e.expr, valid, where, inCall); return;
+      case "unary": case "required": case "present": this.checkGroupExpr(e.expr, valid, where, inCall); return;
       case "binary": case "logical": case "in":
         this.checkGroupExpr(e.left, valid, where, inCall);
         this.checkGroupExpr(e.right, valid, where, inCall);
@@ -1612,6 +1612,11 @@ class Parser {
         // never places two operands side by side, so it cannot begin one here.
         const bang = this.next();
         expr = { kind: "required", span: [start, bang.end], expr };
+      } else if (this.atOp("?")) {
+        // Postfix `?`: the present operator (0.30, SEMANTICS §5c). `?` was a lex
+        // error through 0.29, so it competes with nothing here.
+        const q = this.next();
+        expr = { kind: "present", span: [start, q.end], expr };
       } else if (this.atValueDirective() || this.at("lbrace") || (this.at("ident", "distinct") && this.peekAt(1)?.type === "lbrace")) {
         // A value-position directive, `recv first { … }` — how a bracket chain
         // prints back — or the implicit `collect` of a bare `{ … }` / `distinct
@@ -1770,7 +1775,7 @@ function exprReadsRows(e: Expr): boolean {
     case "lit": case "outer": case "binding": return false;
     case "member": return exprReadsRows(e.recv);
     case "call": return (e.recv ? exprReadsRows(e.recv) : false) || e.args.some(exprReadsRows);
-    case "unary": case "required": return exprReadsRows(e.expr);
+    case "unary": case "required": case "present": return exprReadsRows(e.expr);
     case "binary": case "logical": case "in": return exprReadsRows(e.left) || exprReadsRows(e.right);
     case "range": return (e.lo !== null && exprReadsRows(e.lo)) || (e.hi !== null && exprReadsRows(e.hi));
     case "tuple": return e.items.some(exprReadsRows);
@@ -1787,7 +1792,7 @@ function whereIdents(w: Where, out: Expr[]): void {
       case "lit": case "outer": case "binding": return;
       case "member": walk(e.recv); return;
       case "call": if (e.recv) walk(e.recv); e.args.forEach(walk); return;
-      case "unary": case "required": walk(e.expr); return;
+      case "unary": case "required": case "present": walk(e.expr); return;
       case "binary": case "logical": case "in": walk(e.left); walk(e.right); return;
       case "range": if (e.lo) walk(e.lo); if (e.hi) walk(e.hi); return;
       case "tuple": e.items.forEach(walk); return;
@@ -1810,7 +1815,7 @@ function navKey(e: Expr): string | null {
     case "ident": return e.name;
     case "outer": return e.name;
     case "member": return e.name;
-    case "required": return navKey(e.expr);
+    case "required": case "present": return navKey(e.expr);
     default: return null;
   }
 }

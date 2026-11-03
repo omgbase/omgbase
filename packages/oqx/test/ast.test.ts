@@ -98,7 +98,7 @@ test("CHILDREN names every node kind and every child slot", () => {
   const kinds = Object.keys(CHILDREN).sort();
   assert.deepEqual(kinds, [
     "and", "binary", "binding", "call", "collect", "field", "flatten", "follow", "groupBy", "ident", "in", "key", "lit", "logical",
-    "member", "not", "op", "or", "order", "outer", "query", "range", "required", "scalar", "subquery", "template", "tuple", "unary",
+    "member", "not", "op", "or", "order", "outer", "present", "query", "range", "required", "scalar", "subquery", "template", "tuple", "unary",
   ]);
   // Every node reached by the walk has exactly the children the table names
   // (no slot holding a node is missing from the table).

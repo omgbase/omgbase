@@ -65,6 +65,13 @@ pub fn required(expr: Expr) -> Expr {
         span: Span::EMPTY,
     }
 }
+/// `expr?` — the present value (SEMANTICS §5c).
+pub fn present(expr: Expr) -> Expr {
+    Expr::Present {
+        expr: Box::new(expr),
+        span: Span::EMPTY,
+    }
+}
 
 pub fn unary(op: UnaryOp, expr: Expr) -> Expr {
     Expr::Unary {

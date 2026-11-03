@@ -69,7 +69,7 @@ const OR = 1, AND = 2, CMP = 3, RANGE = 4, ADD = 5, MUL = 6, UNARY = 7, POSTFIX 
 function prec(e: Expr): number {
   switch (e.kind) {
     case "lit": case "ident": case "outer": case "binding": case "tuple": case "template": return PRIMARY;
-    case "member": case "call": case "required": case "op": return POSTFIX;
+    case "member": case "call": case "required": case "present": case "op": return POSTFIX;
     case "unary": return UNARY;
     // Comparison, identity and the regex operators (0.22) share the cmp level.
     case "binary": return e.op === "+" || e.op === "-" ? ADD : e.op === "*" || e.op === "/" || e.op === "%" ? MUL : CMP;
@@ -134,7 +134,7 @@ function canHeadBlock(e: Expr): boolean {
     case "ident": case "outer": case "binding": case "tuple": return true;
     case "call": return e.recv === null || chainHead(e.recv);
     case "member": return chainHead(e.recv);
-    case "required": return chainHead(e.expr);
+    case "required": case "present": return chainHead(e.expr);
     case "op": return chainHead(e.receiver);
     default: return false;
   }
@@ -290,6 +290,7 @@ function expr(e: Expr): Out {
     case "unary": return cat(e.op, operand(e.expr, UNARY));
     // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
     case "required": return cat(operand(e.expr, POSTFIX), "!");
+    case "present": return cat(operand(e.expr, POSTFIX), "?");
     case "op": return op(e);
     case "binary": {
       const p = prec(e);

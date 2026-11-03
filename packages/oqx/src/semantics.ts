@@ -139,7 +139,15 @@ export function rangeCovers(range: OqxRange, x: unknown): boolean {
   return geLo && leHi;
 }
 
+// SEMANTICS §4 (0.30): falsy is absent, or the empty/zero form of its own
+// type. `[]`/`{}` are tested the same way `size()` tests them (array length,
+// object own-key count) — NOT a bare `size(x) == 0`, which falls back to 0
+// for "absent or any scalar" and would wrongly call `5`/`true` falsy too.
+// Numbers, booleans, strings and absent keep the native `Boolean` rule
+// unchanged (already correct: `0`/`-0`/`""`/`false`/absent falsy).
 export function truthy(v: unknown): boolean {
+  if (Array.isArray(v)) return v.length > 0;
+  if (v !== null && typeof v === "object") return Object.keys(v).length > 0;
   return Boolean(v);
 }
 

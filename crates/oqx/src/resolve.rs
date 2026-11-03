@@ -621,6 +621,10 @@ where
             expr: go(expr)?,
             span,
         },
+        Expr::Present { expr, span } => Expr::Present {
+            expr: go(expr)?,
+            span,
+        },
         Expr::Binary {
             op,
             left,
@@ -732,7 +736,9 @@ fn alias_refs(it: &SelectItem, index: &HashMap<&str, usize>) -> Vec<String> {
                 }
                 args.iter().for_each(|a| visit(a, own, index, out));
             }
-            Expr::Unary { expr, .. } | Expr::Required { expr, .. } => visit(expr, own, index, out),
+            Expr::Unary { expr, .. } | Expr::Required { expr, .. } | Expr::Present { expr, .. } => {
+                visit(expr, own, index, out)
+            }
             Expr::Binary { left, right, .. }
             | Expr::Logical { left, right, .. }
             | Expr::In { left, right, .. } => {

@@ -269,6 +269,9 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
         // `x!` raises when absent; a value-position directive may `single`-fail
         // or read anything its block reads.
         Expr::Required { .. } => true,
+        // `x?` (oqx 0.30) is total — it never raises itself, only through what
+        // it wraps.
+        Expr::Present { expr, .. } => again(expr),
         Expr::Op(op) => op_may_raise(op, target, root),
         // A regex operator (oqx 0.22) is a `matches` call: an invalid pattern
         // raises, exactly as the call would.

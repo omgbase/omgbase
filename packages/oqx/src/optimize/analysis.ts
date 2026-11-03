@@ -31,7 +31,7 @@ export function exprReadsScopeIn(e: Expr, at: number, upTo: number): boolean {
     case "outer": { const d = at - e.levels; return d >= 1 && d <= upTo; }
     case "member": return exprReadsScopeIn(e.recv, at, upTo);
     case "call": return (e.recv !== null && exprReadsScopeIn(e.recv, at, upTo)) || e.args.some((a) => exprReadsScopeIn(a, at, upTo));
-    case "unary": case "required": return exprReadsScopeIn(e.expr, at, upTo);
+    case "unary": case "required": case "present": return exprReadsScopeIn(e.expr, at, upTo);
     case "op": return opReadsScopeIn(e, at, upTo);
     case "binary": case "logical": case "in": return exprReadsScopeIn(e.left, at, upTo) || exprReadsScopeIn(e.right, at, upTo);
     case "range": return (e.lo !== null && exprReadsScopeIn(e.lo, at, upTo)) || (e.hi !== null && exprReadsScopeIn(e.hi, at, upTo));
@@ -102,6 +102,7 @@ export function exprRaiseFree(e: Expr, ctx: RuleContext): boolean {
     case "binding": return e.index < ctx.bindingCount;
     case "call": return false;
     case "required": return false; // raises when absent
+    case "present": return exprRaiseFree(e.expr, ctx); // total — never raises itself (SEMANTICS §5c)
     case "op": return opRaiseFree(e, ctx); // a value-position directive projects: never raise-free
     case "member": return exprRaiseFree(e.recv, ctx);
     case "unary": return exprRaiseFree(e.expr, ctx);

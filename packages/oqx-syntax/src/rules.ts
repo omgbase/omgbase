@@ -170,7 +170,7 @@ export const RULES: readonly Rule[] = [
   // and `~*` over `~` (GRAMMAR §1, the lexer's rule).
   {
     name: "operator",
-    regex: alternation([...OPERATORS.comparison, ...OPERATORS.regex, ...OPERATORS.logical, ...OPERATORS.arithmetic]),
+    regex: alternation([...OPERATORS.comparison, ...OPERATORS.regex, ...OPERATORS.logical, ...OPERATORS.arithmetic, ...OPERATORS.present]),
     groups: ["operator"],
   },
   { name: "lift", regex: "\\^", groups: ["lift"] },

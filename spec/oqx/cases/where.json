@@ -563,7 +563,7 @@
     },
     {
       "name": "truthiness: falsy values",
-      "notes": "Absent, false, 0, and the empty string are falsy; everything else — including an empty array or object — is truthy.",
+      "notes": "Falsy: absent, or the empty/zero form of its own type — false, 0, \"\", [], {} (since 0.30; through 0.29 an empty array or object was truthy). Everything else is truthy.",
       "roots": {
         "xs": [
           0,
@@ -579,8 +579,6 @@
       "query": "$it values from xs where $it",
       "expect": {
         "result": [
-          [],
-          {},
           1,
           "a"
         ]
@@ -606,7 +604,9 @@
           0,
           "",
           null,
-          false
+          false,
+          [],
+          {}
         ]
       }
     },

@@ -15,7 +15,7 @@ whitespace may — between any two tokens, inside a block, inside a template's
 `${ … }` interpolation — and neither is recognised inside a string literal or a
 template's text. An unterminated `/*` is the lex error `unterminated comment at
 <offset>`. A single `/` is the division operator. `#` is not a comment: it is a
-lex error, as are `=`, `&`, `|`, `@`, `;`, `?`, `\` [`comments`, `errors-lex`].
+lex error, as are `=`, `&`, `|`, `@`, `;`, `\` [`comments`, `errors-lex`].
 The tree records no trivia (AST.md §2), so the canonical printer drops comments.
 
 Tokens:
@@ -29,7 +29,7 @@ Tokens:
 | template literal | `` `…` `` — a backtick-delimited string with **interpolations** `${expr}` (since 0.21, §4). The text between the backticks and the interpolations is decoded with the **same escapes as a string** (`\n` `\t` `\r` `\0`, `\<c>` for any other `<c>` itself), so `` \` `` keeps a backtick, `\$` a dollar that no longer opens an interpolation (`\${` is text), `\\` a backslash; **newlines are kept verbatim** (a literal may span lines). A `$` not followed by `{`, a `{` or `}` outside an interpolation, and quotes are ordinary text. An interpolation holds one full value expression — braces inside it are balanced, so it may hold a `{ … }` block or another template literal — and is lexed as ordinary source until the `}` that closes it. An unterminated literal (`unterminated template literal at N`) and an unterminated interpolation (`unterminated ${…} interpolation …`) are lex errors; an empty interpolation `${}` is a parse error naming its offset |
 | punctuation | `(` `)` `{` `}` `[` `]` `,` `:` `.` `^` — `[`/`]` since 0.17 (brackets, §4); `^` is the outer-reference / lift marker, relative (`^^name`) or, after an integer, absolute (`0^name`, §4) |
 | range | `..` (inclusive) and `...` (exclusive high end), scanned before `.` |
-| operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `+` `-` `*` `/` `%` and the regex operators `~` `~*` `!~` `!~*` (since 0.22, §4) — scanned **longest first**, so each is one token: `!=` is one token, so `a! == b` (a required value compared) needs the space (`a!==b` lexes as `a`, `!=`, `=`); `!~` and `!~*` win over `!`, so `name!~"B"` is `name !~ "B"` and not a required `name!` (write `name! ~ "B"` for that); `~*` wins over `~`, so `x~*y` is `x ~* y`, while `*` alone is still multiplication (`x*y`) [`regex-operators`] |
+| operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `?` `+` `-` `*` `/` `%` and the regex operators `~` `~*` `!~` `!~*` (since 0.22, §4) — scanned **longest first**, so each is one token: `!=` is one token, so `a! == b` (a required value compared) needs the space (`a!==b` lexes as `a`, `!=`, `=`); `!~` and `!~*` win over `!`, so `name!~"B"` is `name !~ "B"` and not a required `name!` (write `name! ~ "B"` for that); `~*` wins over `~`, so `x~*y` is `x ~* y`, while `*` alone is still multiplication (`x*y`) [`regex-operators`]. `?` (since 0.30) competes with nothing — it was a lex error through 0.29, so no existing text changes meaning |
 | binding | a `${…}` interpolation of the tagged-template form; index `n` names the n-th bound value |
 
 Any other character (`=`, `&`, `\|`, `@`, `;`, `#`, …) is a lex error
@@ -585,7 +585,7 @@ grammar; the collection before a body is a receiver (§5), not a value. Preceden
 | add | `+ -` | left-assoc |
 | mul | `* / %` | left-assoc |
 | unary | `!` `-` `is` `not` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3). `is x` ≡ `!!x`, `not x` ≡ `!x` — pure sugar, desugared in the parser (since 0.17) |
-| postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call (or an **aggregate** call when the name is an aggregate's — `count()`, `sum(e)`, `collect(distinct e)`; below, since 0.24), the required operator, a bracket lookup, a value-position directive (`collect`/`first`/`single`, and since 0.24 `count`; the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
+| postfix | `.name` `.name(args)` `name(args)` `x!` `x?` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call (a **reduction** call when the name is one of `count sum min max avg collect first last any all` — ordinary calls since 0.29, below), the required operator, the **present** operator (`x?`, since 0.30, below), a bracket lookup, a value-position directive (`collect`/`first`/`single`, and since 0.24 `count`; the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
 | primary | literal, template literal, identifier, `^…name`, `N^name`, binding, `( expr )`, `( expr, expr, … )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18); two or more comma-separated expressions in parentheses are a **tuple** (below; since 0.20), one is grouping; a template literal `` `…${expr}…` `` is a string value (below; since 0.21) |
 
 ```
@@ -607,6 +607,7 @@ redname  = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last
                                                             ; reserved (§1); one argument, the collection
 suffix   = "." ident [ "(" args ")" ]                       ; navigation, method call
          | "!"                                               ; required (0.17)
+         | "?"                                                ; present (0.30)
          | bracket                                           ; lookup (0.17)
          | ("collect" | "first" | "single" | "count") [ "distinct" ] [ "{" body "}" ]   ; value-position directive (0.17; `count` 0.24; the block omitted ≡ `{ }`, 0.26: `jobs first.pay`, `n: jobs count`)
          | [ "distinct" ] "{" body "}"                        ; ≡ collect [distinct] { body }   (0.20)
@@ -774,6 +775,17 @@ operand cannot start one. Hence `age! - 1` is `(age!) - 1`, `-a!` is `-(a!)`,
 one token (`a! == b` needs its space). In `where`, a `!` before a consumer test or
 a group is still the predicate negation (`!jobs exists { }`, `!(a > 1)`); `x[p]!`
 is the bracket's own `!` (below). Precedence: postfix, tightest of all.
+
+### Postfix `?` — present (since 0.30)
+
+`x?` is `x` unchanged over a scalar or an object; over an **array** it is the
+**present elements**, in order — **absent when none survive**, including an
+array that started empty (SEMANTICS §5c). It competes with nothing (`?` was a
+lex error through 0.29, §1), so it is simply postfix, tightest of all, exactly
+like `!`: `-a?` is `-(a?)`, `a.b?` navigates then filters. Retired from the
+design before it shipped: `x?!` as its own atom
+("raise when nothing survives") — `first(x)!` / `last(x)!` already say that,
+more capably (a choice of end), with zero new syntax (SEMANTICS §5c).
 
 ### Brackets (since 0.17)
 

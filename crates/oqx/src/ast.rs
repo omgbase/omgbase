@@ -458,6 +458,9 @@ pub enum Expr {
     },
     /// `x!` — the value of `expr`, or an eval error when it is absent (since 0.17).
     Required { expr: Box<Expr>, span: Span },
+    /// `x?` — the present elements of `expr` when it is an array (absent if
+    /// none survive), `expr` unchanged otherwise (since 0.30).
+    Present { expr: Box<Expr>, span: Span },
     /// Arithmetic, comparison, identity.
     Binary {
         op: BinaryOp,
@@ -528,6 +531,7 @@ impl Expr {
             | Expr::Call { span, .. }
             | Expr::Unary { span, .. }
             | Expr::Required { span, .. }
+            | Expr::Present { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
@@ -555,6 +559,7 @@ impl Expr {
             | Expr::Call { span, .. }
             | Expr::Unary { span, .. }
             | Expr::Required { span, .. }
+            | Expr::Present { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
@@ -576,6 +581,7 @@ impl Expr {
             Expr::Call { .. } => "call",
             Expr::Unary { .. } => "unary",
             Expr::Required { .. } => "required",
+            Expr::Present { .. } => "present",
             Expr::Op(_) => "op",
             Expr::Binary { .. } => "binary",
             Expr::Logical { .. } => "logical",
