@@ -407,10 +407,11 @@ arithmetic and general `in` are supported.]**
 - **Relational `< <= > >=`:** if either operand is absent, the result is **false**
   (never orders, never throws). Present operands compare with native ordering
   (numbers numerically, strings lexicographically).
-- **Truthiness (`where <expr>`, `!x`):** JavaScript truthiness — falsy is
-  `false`, `0`, `""`, `null`, `undefined`, `NaN`; everything else (including `[]`,
-  `{}`, and the non-empty string `"false"`) is truthy. **[was CEL: the string
-  `"false"` was falsy.]**
+- **Truthiness (`where <expr>`, `!x`):** falsy is absent, or the empty/zero
+  form of its own type — `false`, `0`, `""`, `[]`, `{}` (OQX 0.30; through 0.29
+  an empty array or object was truthy, plain JavaScript truthiness); everything
+  else (including the non-empty string `"false"`) is truthy. **[was CEL: the
+  string `"false"` was falsy.]**
 - **Arithmetic:** `+` concatenates when either side is a string, else numeric;
   other operators coerce via `Number()`.
 
@@ -474,6 +475,7 @@ parser** (the AST, `print`, the planner and the optimizer see the explicit form)
 | `^docs[_path == ^company]` | `^docs first { where _path == ^company }` — the first match or absent |
 | `^docs[_path == ^company]!` | `^docs single { where _path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
 | `_title!` | required: `_title`, or `filter_invalid` naming the expression (`` `_title!` is absent on "d_…" ``). Never a filter, never a coercion (`0!`, `""!` are values); tightest precedence (`refs(c)[0]!._name` vs `refs(c)[0]._name!`). `docs { select _id!, status }` insists on identity before a write. |
+| `tags?` | present (OQX 0.30): over an array, its present elements — absent when none survive, including an array that started empty (never `[]`); over anything else, unchanged. Scope-polymorphic — `weapon?` is a no-op at a row scope, the present per-row list at a group scope (spec/oqx §24); `having weapon?` reads "some row in this group has one" with no bespoke grammar. |
 | `is x`, `not x` | `!!x`, `!x` (truthiness) |
 | `x is y`, `x is not y` | identity (`$key`, spec/oqx §16): a store row's id, a plain value structurally — so `$it is ^$it` compares rows (which `==` leaves unspecified); `owner is null` is absent; for scalars `is` ≡ `==`. Comparison precedence, no chaining. Never pushed down (residual). |
 | `a and b`, `a or b` | the connectives — exactly `a && b`, `a || b` (precedence, short-circuit, value: `_title or _path` coalesces); the words are canonical |
@@ -737,7 +739,9 @@ collection, usable as a receiver (`$rows { select _title }`,
 `$rows first { _title values order by _updated_at desc }`). A key name reads
 the key (one value — the group is defined by it); any other bare name reads
 the **list of that property's value across the group's rows**, one element
-per row (0.29). Through 0.28 a non-key bare name was instead the parse error
+per row (0.29) — `name?` (0.30, §3.6) reads the same list filtered to its
+present elements, absent if none survive, so `having name?` reads "some row
+in this group has one." Through 0.28 a non-key bare name was instead the parse error
 `` `title` is not a group key or aggregate ``, and the group's rows were
 reached only through an aggregate's argument or the bare `rows`. The
 reductions — reserved free-function names, ordinary **collection functions**

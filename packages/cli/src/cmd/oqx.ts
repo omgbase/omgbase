@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type OqxResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp, renderHits, renderBareHits } from "../output.js";
+import { truncationFooter, CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp, renderHits, renderBareHits, hasEnvelope } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteCall } from "./_remote.js";
 import { readStdin } from "./_mutate.js";
@@ -176,7 +176,7 @@ export function renderOqxResult(cli: Cli, result: OqxResult, bare = false): numb
     const list = result.values ?? (result.consumer === "collect" || result.consumer === "first" || result.consumer === "single" ? result.hits : undefined);
     return emitMachine(cli, result, {
       ...(list ? { items: list } : {}),
-      ...(list && !result.values && !bare ? { ids: result.hits.map((h) => h._id) } : {}),
+      ...(list && !result.values && !bare && hasEnvelope(result.hits) ? { ids: result.hits.map((h) => h._id) } : {}),
       cursor,
     });
   }

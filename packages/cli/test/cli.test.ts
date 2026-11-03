@@ -174,6 +174,22 @@ describe("query (oqx)", () => {
     expect(refused.code).toBe(1);
   });
 
+  // A grouped row carries no `_id`/`_path` (spec/surface §1.4) — the default
+  // human table used to assume the envelope unconditionally and crash
+  // (`TypeError: Cannot read properties of undefined (reading 'replace')`,
+  // surfaced through the CLI's repo-resolution error path); it now falls back
+  // to the same envelope-free table `--bare` renders explicitly.
+  it("a grouped query's default table has no _id/_path column (no envelope to assume)", () => {
+    const { stdout } = omg(["query", "docs { group by status }"]);
+    expect(stdout.trimEnd().split("\n")).toEqual(["status  count", "active  1", "        1"]);
+    const withSelect = omg(["query", "docs { select status, n: count($rows) group by status }"]).stdout.trimEnd().split("\n");
+    expect(withSelect).toEqual(["status  n", "active  1", "        1"]);
+    // --ids makes no sense without an envelope either — it is simply absent, not a crash.
+    const json = JSON.parse(omg(["query", "docs { group by status }", "--json"]).stdout) as { hits: unknown[]; ids?: unknown };
+    expect(json.ids).toBeUndefined();
+    expect(json.hits).toEqual([{ status: "active", count: 1 }, { count: 1 }]);
+  });
+
   it("a nested collect renders as compact JSON; an absent field is an empty cell", () => {
     const { stdout } = omg([
       "query",

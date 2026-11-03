@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.28"`); the patch digit is this implementation's own.
+> `"0.30"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -413,8 +413,11 @@ oqx`${people} { select name where tags.contains("admin") }`;       // array memb
 ```
 
 - `has(x)` is true when `x` is **present** — anything other than `null` /
-  `undefined`. `has(0)`, `has("")`, and `has(false)` are all true; use bare
-  truthiness (`where active`) when you mean truthy.
+  `undefined`. `has(0)`, `has("")`, `has(false)`, `has([])` and `has({})` are
+  all true; use bare truthiness (`where active`) when you mean truthy.
+- **Truthiness** (0.30): falsy is absent, or the empty/zero form of its own
+  type — `false`, `0`, `""`, `[]`, `{}` (through 0.29 an empty array or
+  object was truthy); everything else is truthy.
 - `.contains(v)` works on strings (substring) **and arrays** (an element equal
   to `v` under OQX's strict equality); on anything else it is false.
 - `.size()` / `size(x)` is the length of a string or array, the key count of
@@ -636,43 +639,64 @@ oqx`${people} { select name where jobs exists { offset 1 } }`;              // h
 A storage adapter that pushes the whole query may translate them to SQL
 `LIMIT`/`OFFSET`; the shipped `SqliteTable` leaves them to the residual.
 
-### 8c. Grouping and aggregates (0.24)
+### 8c. Grouping and reductions (0.24; `$rows` and reductions as ordinary functions since 0.29)
 
 `group by <key>, …` — after `where`/`follow`, before `order by` — turns the rows
 a body yields into **one row per distinct key tuple**. A key is a bare name
 (`city`), a dotted navigation named by its last segment (`meta.region`), or an
 aliased expression (`decade: (age - age % 10) / 10`); key values compare as
 identities (absent ≡ `null`), groups come in first-appearance order. After the
-grouping the body reads the **group**: a select item, `having` and `order by`
-may name a key, an **aggregate** over the group's rows, or `rows` — the group's
-rows, a value and a receiver (`rows { name values }`, `rows count { where
-active }`, `rows first { … }`); any other bare name is a parse error naming it.
-Without a `select` the projection is the keys plus `count: count()`.
+grouping the body reads the **group**: `$it` is the key record, `$key` its
+identity, and **`$rows`** is the group's rows — a value and a receiver
+(`$rows { name values }`, `$rows count { where active }`, `$rows first { … }`).
+A key name reads the key; **any other bare name reads the list of that
+property's value across the group's rows** (0.29) — `product` over a two-row
+group is `["baseball", "mitt"]` — which is what makes a reduction an ordinary
+function: `sum(pay)` works because `pay` **is** the list. Through 0.28 a
+non-key bare name was a parse error and the group's rows were reached only
+through `rows` (bare, no `$`) or an aggregate's argument. Without a `select`
+the projection is the keys plus `count: count($rows)`.
 
 ```js
 oqx`${people} { group by city }`;
 // [{ city: "NYC", count: 2 }, { city: "SF", count: 1 }]
-oqx`${people} { select city, n: count(), oldest: max(age), names: collect(name) group by city order by count() desc }`;
-oqx`${people} { select city, active: rows count { where active } group by city having count() > 1 }`;
-oqx`${people} { select decade, n: count() group by decade: (age - age % 10) / 10 order by decade }`;
+oqx`${people} { select city, n: count($rows), oldest: max(age), names: collect(name) group by city order by count($rows) desc }`;
+oqx`${people} { select city, active: $rows count { where active } group by city having count($rows) > 1 }`;
+oqx`${people} { select decade, n: count($rows) group by decade: (age - age % 10) / 10 order by decade }`;
 oqx`${people} count { group by city }`;   // the number of groups
 ```
 
-The aggregates are reserved free-function names, legal only in a grouped body's
-select, `having` or `order by`: `count()` counts the group's rows; every other
-aggregate sees the **present** values of its argument — `count(e)`, `sum(e)`
-(`0` of none; a non-number is an eval error), `avg(e)`, `min(e)`, `max(e)`
-(OQX ordering; absent of none), `collect(e)` (the list, in group order),
-`first(e)`, `last(e)` — with `distinct` as a modifier (`count(distinct e)`,
-`collect(distinct e)`); `any(p)` / `all(p)` test truthiness over the rows.
-Aggregates do not nest. `having` is the post-group `where` (it may name a select
-alias: `having n > 1`); `order by` reads the group scope, aliases included
-(`order by n` with `n: count()` is `order by count()`; 0.27); `limit`/`offset` bound
-the groups; `distinct` with `group by` is an error (redundant). `count { … }` is
-now a value wherever a value stands (`n: jobs count { pay > 1 }`), in or
-out of a group. A nested block may group too (`jobs { employer, total:
+**Reductions** (0.24; ordinary collection functions since 0.29) — `count sum
+min max avg collect first last any all` — are reserved free-function names,
+but no longer a syntactic category: each takes **one collection** and is legal
+**wherever a call is legal**, grouped or not. `count($rows)` counts rows;
+`count(pay)` counts the present values of the per-row list `pay`. Every value
+reduction sees only the **present** elements of its argument — `sum(e)` (`0`
+of none; a non-number is an eval error), `avg(e)`, `min(e)`, `max(e)` (OQX
+ordering; absent of none), `collect(e)` (the present values, in order), `first(e)`,
+`last(e)`; `any(p)` / `all(p)` test truthiness over the elements (absent is
+false). Reductions **nest** (`sum(collect(…))`) and **`$rows` is total**
+(0.29): in an ungrouped body `$rows` is `[$it]` — a row is a group of one —
+so `sum($rows { quantity * price values })` is an ordinary per-row
+expression even with no `group by` at all. `distinct` is not a call modifier:
+dedupe with the collection's own `select distinct`
+(`count($rows { select distinct e values })` — through 0.28 this was
+`count(distinct e)`).
+
+`having` is the post-group `where` (it may name a select alias: `having n >
+1`); `order by` reads the group scope, aliases included (`order by n` with
+`n: count($rows)` is `order by count($rows)`; 0.27); `limit`/`offset` bound
+the groups; `distinct` with `group by` is an error (redundant). `count { … }`
+is a value wherever a value stands (`n: jobs count { pay > 1 }`), in or out
+of a group. A nested block may group too (`jobs { employer, total:
 sum(pay) group by employer }`), and every consumer reduces the groups (`jobs
-count { group by employer }`). Spec: `spec/oqx/SEMANTICS.md` §24.
+count { group by employer }`). One staging rule: `$rows` is legal in every
+clause (it's `[$it]` before `group by`, the group's rows after), but a
+pre-group clause (`where`, a group key, …) may not read a **select alias**
+whose definition reads `$rows` — that item was written for the group scope,
+and inlining it pre-group would silently answer the same thing for every row
+(`select n: count($rows) … where n > 1` names the fix: move it to `having`).
+Spec: `spec/oqx/SEMANTICS.md` §24.
 
 ### 8d. Flatten (0.25)
 
@@ -697,11 +721,35 @@ runs before them, `group by` groups the flattened rows (a bound name is a key),
 oqx`${people} { select name, tags flatten tags }`;
 // [{ name: "Bob", tags: "a" }, { name: "Bob", tags: "b" }, { name: "Carol" }]   (Carol has no tags)
 oqx`${people} { select name, t flatten tags { $it != "b" } as t }`;
-oqx`${people} { select t, n: count() flatten tags as t group by t order by count() desc }`;
+oqx`${people} { select t, n: count($rows) flatten tags as t group by t order by count($rows) desc }`;
 oqx`${people} count { flatten tags as t }`;   // the number of (person, tag) rows
 ```
 
 Spec: `spec/oqx/SEMANTICS.md` §25.
+
+### 8e. The present operator `?` (0.30)
+
+`x?` is postfix, tightest of all (like `!`): over an **array** it is the
+**present elements**, in order — **absent when none survive**, including an
+array that started empty (never `[]`); over anything else (a scalar, an
+object, absent itself) it is unchanged. Its job is letting one expression
+mean the right thing whether a name is a row-scope scalar or a group-scope
+per-row list (§8c): `weapon?` is just `weapon` at row scope, and the
+present-filtered list at group scope.
+
+```js
+oqx`${characters} { select name, weapon? }`;                      // row scope: weapon unchanged
+oqx`${characters} { select city, weapon? group by city }`;        // group scope: the present weapons
+oqx`${characters} { select city group by city having weapon? }`;  // "some row in this group has one"
+```
+
+Because `[]` is now falsy (0.30, §4 below), `has(x?)` finally agrees with
+`!x?` / `where x?` on "did anything survive" — before 0.30, `has(x?)` was
+unconditionally true, since an empty array was present. Reductions are
+unaffected: `count`/`sum`/`collect`/etc. already skip absent elements, so
+`count(weapon?)` and `count(weapon)` agree. There is no `x?!` ("raise when
+nothing survives") — `first(x)!` / `last(x)!` already say that, with a
+choice of end. Spec: `spec/oqx/SEMANTICS.md` §5c.
 
 ### 9. Recursion: `follow`
 
@@ -887,7 +935,7 @@ unterminated-literal error).
 Every form below is shorthand for an explicit directive — it **desugars in the
 parser** to the nodes you already know (`print` writes the explicit form, the
 optimizer and any pushdown planner see it), so nothing here has semantics of its
-own except the postfix `!` and the infix `is`. (`print` writes the explicit
+own except the postfix `!` and `?` (§8e) and the infix `is`. (`print` writes the explicit
 form — `where` for a leading predicate, `first { offset 0 }` for `[0]` — except
 that `collect` itself prints as the bare brace, 0.26.)
 
@@ -916,6 +964,11 @@ oqx`${people} { name, first_job: jobs[0], primary: jobs[pay > 2]! }`
 // (and the row's `$key` when scalar). Never a filter, never a coercion: 0! and ""! are values.
 oqx`${docs} { select id!, title }`            // insist on an identity before a write
 // Tightest precedence: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name.
+
+// Postfix `?` (0.30) — present: an array's present elements (absent, never [],
+// when none survive); unchanged otherwise. Scope-polymorphic: `weapon?` is a
+// no-op at row scope, the present per-row list at group scope (§8c, §8e).
+oqx`${people} { select city group by city having weapon? }`  // "some row in this group has one"
 
 // `is` / `is not` compare IDENTITY (`$key`: the host's, else structural — §9):
 oqx`${people} { name where manager is null }`             // absent (same as == null)

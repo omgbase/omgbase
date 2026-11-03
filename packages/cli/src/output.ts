@@ -237,10 +237,20 @@ function indent(s: string, pad: string): string {
 // trailing whitespace trimmed (render.ts `columns`). Styling goes through
 // `cli.style`, so NO_COLOR / non-TTY degrade to plain text like everything else.
 
+/** `_id`/`_path` are optional: a grouped row (spec/surface §1.4) carries
+ *  neither — "a grouped row is not a store row" — so every renderer below
+ *  must check before assuming the envelope. */
 export interface HitLike {
-  _id: string;
-  _path: string;
+  _id?: string;
+  _path?: string;
   [k: string]: unknown;
+}
+
+/** Does every hit carry the store envelope (`_id`/`_path`)? False for a
+ *  grouped query's hits (spec/surface §1.4) — empty counts as enveloped
+ *  (nothing to contradict it), matching the bare-render decision below. */
+export function hasEnvelope(hits: readonly HitLike[]): boolean {
+  return hits.every((h) => h._id !== undefined);
 }
 
 export const HIT_CELL_MAX = 60;
@@ -283,9 +293,14 @@ export function hitColumns(hits: HitLike[]): string[] {
  *  (header `_id`, `_path`, then the projected keys — spec/cli §4, 5.0). */
 export function renderHits(cli: { io: IO; style: Style }, hits: HitLike[]): void {
   const { io, style } = cli;
+  // A grouped query's hits carry no envelope at all (spec/surface §1.4) — the
+  // projection-only table is the only correct rendering for them, same as
+  // `--bare` chooses explicitly for an enveloped result.
+  if (!hasEnvelope(hits)) return renderBareHits(cli, hits);
   const projected = hitColumns(hits);
   if (projected.length === 0) {
-    for (const h of hits) io.out(`${style.id(h._id)}  ${style.accent(h._path)}`.trimEnd());
+    // hasEnvelope guarantees every hit's `_id`/`_path` are defined here.
+    for (const h of hits) io.out(`${style.id(h._id!)}  ${style.accent(h._path!)}`.trimEnd());
     return;
   }
   const cols = ["_id", "_path", ...projected];
@@ -293,8 +308,8 @@ export function renderHits(cli: { io: IO; style: Style }, hits: HitLike[]): void
   for (const h of hits) {
     rows.push(
       cols.map((c) => {
-        if (c === "_id") return style.id(h._id);
-        if (c === "_path") return style.accent(h._path);
+        if (c === "_id") return style.id(h._id!);
+        if (c === "_path") return style.accent(h._path!);
         return hitCell(h[c]);
       }),
     );

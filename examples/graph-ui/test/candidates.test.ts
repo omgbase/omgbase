@@ -524,7 +524,7 @@ describe("nested bodies (rule 6) — OQX 0.26 allows `follow` in every body", ()
   it("yields no candidate for a nested body over a non-relation receiver: a list field, entries(), rows, a plain name, an uncorrelated structural walk", () => {
     const only = ["_out_links", "_in_links"];
     expect(inferCandidates(parse(`docs { select _path, t: tags count, e: entries(meta) collect { key }, j: jobs collect { where x == 1 } }`), []).map((x) => x.name)).toEqual(only);
-    expect(inferCandidates(parse(`docs { select phase, n: rows count { where x == 1 } group by phase }`), []).map((x) => x.name)).toEqual(only);
+    expect(inferCandidates(parse(`docs { select phase, n: $rows count { where x == 1 } group by phase }`), []).map((x) => x.name)).toEqual(only);
     expect(inferCandidates(parse(`docs { select _path, j: jobs collect { follow $it._blocks { where kind == "x" } } }`), []).map((x) => x.name)).toEqual(only);
     // a nested root block whose where does not correlate with the enclosing row names nothing either
     expect(inferCandidates(parse(`docs { select _path, n: 0^docs count { where phase == "x" } }`), []).map((x) => x.name)).toEqual(only);

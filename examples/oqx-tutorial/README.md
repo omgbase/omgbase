@@ -21,9 +21,13 @@ Read in order:
    the repository as the root row (`^_id`, `0^docs`, `entries(^$it)`).
 6. **[aggregates.md](./aggregates.md)** — folding a query to a value
    (`count`/`exists`/`first`/`single`) and full-text `text()`.
-7. **[graph-traversal.md](./graph-traversal.md)** — `follow` over the link and
+7. **[grouping-and-reductions.md](./grouping-and-reductions.md)** — `group
+   by`, `$rows`, a non-key name as its per-row list, reductions
+   (`count`/`sum`/`collect`/…) as ordinary functions, and the present
+   operator `?`.
+8. **[graph-traversal.md](./graph-traversal.md)** — `follow` over the link and
    structure graphs, with `$depth` / `$stop` / `$ordinal`, `frontier`, and `$key`.
-8. **[sugar.md](./sugar.md)** — the shorthand forms: a block without a consumer
+9. **[sugar.md](./sugar.md)** — the shorthand forms: a block without a consumer
    is `collect`, where-first bodies, brackets `x[p]` / `x[p]!` / `x[n]`, postfix
    `!`, `is` / `is not`, alias reuse; and `refs()` for document references held
    in frontmatter.

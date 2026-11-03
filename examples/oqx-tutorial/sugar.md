@@ -1,6 +1,6 @@
 <!-- recital include: ../_fragments/attached-alchemy.md -->
 
-# OQX tutorial · 8. Sugar — brackets, `!`, where-first blocks, `is` — and `refs()`
+# OQX tutorial · 9. Sugar — brackets, `!`, where-first blocks, `is` — and `refs()`
 
 The previous pages already leaned on one shorthand — a filter that leads the
 body needs no `where`. OQX 0.17 added it, and the rest of the shorthand for the
@@ -122,6 +122,10 @@ error[filter_invalid]: `era!` is absent on "d_0vsapzt"
 
 `!` binds tightest: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!`
 the name.
+
+Its counterpart, postfix `?` (0.30) — the present elements of an array, or
+`x` unchanged otherwise — belongs with grouping, where it earns its keep:
+**[grouping-and-reductions.md](./grouping-and-reductions.md)**.
 
 ## `is`, `is not`, and the word operators
 

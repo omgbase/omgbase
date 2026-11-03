@@ -1,6 +1,6 @@
 <!-- recital include: ../_fragments/attached-alchemy.md -->
 
-# OQX tutorial · 7. Graph traversal: `follow`
+# OQX tutorial · 8. Graph traversal: `follow`
 
 `follow <relation>` walks a relation **recursively**, so a query closed over its
 row type expands along that relation. omgbase exposes a few:

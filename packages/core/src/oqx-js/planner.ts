@@ -116,6 +116,8 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
     // `x!` raises when absent; a value-position directive may `single`-fail or
     // read anything its block reads.
     case "required": return true;
+    // `x?` (oqx 0.30) is total — it never raises itself, only through what it wraps.
+    case "present": return exprMayRaise(e.expr, target, root);
     case "op": return opMayRaise(e, target, root);
     // A regex operator (oqx 0.22) is a `matches` call: an invalid pattern
     // raises, exactly as the call would.

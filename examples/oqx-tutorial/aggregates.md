@@ -91,5 +91,5 @@ d_w18c2st  /lab/2026-02-notes.md
 d_jtnqxt2  /processes/coagulation.md
 ```
 
-Next: **[graph-traversal.md](./graph-traversal.md)** — walking the link and
-structure graphs with `follow`.
+Next: **[grouping-and-reductions.md](./grouping-and-reductions.md)** — `group
+by`, `$rows`, and the present operator `?`.

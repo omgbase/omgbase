@@ -37,7 +37,7 @@ carry it.
 2. **[search-and-navigation.md](./search-and-navigation.md)** — `find`, `outline`, `show`, and the link/backlink graph.
 3. **[editing-and-history.md](./editing-and-history.md)** — structured edits (completing tasks) and reading history back.
 4. **[interactive-shell.md](./interactive-shell.md)** — `omg shell`: a persistent session with `@`-addressable results.
-5. **[oqx-tutorial/](./oqx-tutorial/README.md)** — the OQX query language, end to end: filtering, targets, shaping, correlated subqueries, joins & lifts (and the repository as the root row), aggregates, full-text, graph traversal, and the sugar forms with `refs()` (eight pages).
+5. **[oqx-tutorial/](./oqx-tutorial/README.md)** — the OQX query language, end to end: filtering, targets, shaping, correlated subqueries, joins & lifts (and the repository as the root row), aggregates, full-text, grouping & reductions (`group by`, `$rows`, the present operator `?`), graph traversal, and the sugar forms with `refs()` (nine pages).
 
 Not tutorials, but also here:
 
