@@ -694,10 +694,14 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
 /// The nearest match of `name` among `candidates` (§1.5). First, the one hint
 /// the name rule makes certain: a candidate that is exactly `name` with the
 /// engine prefix added or removed (`id` → `_id`, `_layer` → `layer`) wins
-/// outright, whatever its length. Otherwise case-insensitive and
-/// **prefix-blind** — the `_` is a declaration, not spelling, so `commited` is
-/// one edit from `_commit` and `titel` one from `_title` as from `title`: a
-/// candidate qualifies when its distance is ≤ 2, or when one of the two is a
+/// outright, whatever its length — and a leading `$` strips the same way as a
+/// leading `_` (never the reverse: candidates are never `$`-spelled), since a
+/// `$`-name is omgbase's pre-5.0 (in fact pre-3.0) engine-attribute spelling
+/// (`$path`, `$title`, …): `$path` is one `_` away from `_path` exactly as the
+/// bare `path` is. Otherwise case-insensitive and **prefix-blind** — the `_`
+/// (or legacy `$`) is a declaration, not spelling, so `commited` is one edit
+/// from `_commit` and `titel` one from `_title` as from `title`: a candidate
+/// qualifies when its distance is ≤ 2, or when one of the two is a
 /// substring of the other and the shorter has at least three characters. One
 /// typo (distance 1) wins first; then a substring match outranks a distance-2
 /// match (`_via` → `_via_id`, not `_id`; `_dst_pth` → `_dst_path`, not
@@ -710,15 +714,20 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
 pub fn nearest<'c>(name: &str, candidates: impl IntoIterator<Item = &'c str>) -> Option<String> {
     let candidates: Vec<&str> = candidates.into_iter().collect();
     let lower = name.to_lowercase();
-    let prefixed = format!("_{lower}");
-    let unprefixed = lower.strip_prefix('_');
+    let had_prefix = lower.starts_with(['_', '$']);
+    let bare = if had_prefix {
+        &lower[1..]
+    } else {
+        lower.as_str()
+    };
+    let prefixed = format!("_{bare}");
     for c in &candidates {
         let hay = c.to_lowercase();
-        if hay == prefixed || unprefixed == Some(hay.as_str()) {
+        if hay == prefixed || (had_prefix && hay == bare) {
             return Some((*c).to_owned());
         }
     }
-    let needle = lower.strip_prefix('_').unwrap_or(&lower).to_owned();
+    let needle = bare.to_owned();
     let needle_len = needle.chars().count();
     if needle_len < 3 {
         return None;
