@@ -28,6 +28,16 @@
 //! real collision, not an obvious mistake), the bare name is still the
 //! refusal below, unchanged — aliasing there would mean silently picking a
 //! side.
+//!
+//! (6.7) A SEPARATE, small per-tool alias table (`TOOL_ARGUMENT_ALIASES`)
+//! catches the same class of mistake for an argument name that is common
+//! elsewhere in the catalog but is not an engine-field confusion: the
+//! `query` tool takes `query`, but `blocks_search` takes `q` for the same
+//! role, so a caller reaching for `q` on `query` out of habit is treated the
+//! same way — safely respelled with a correction when the real name is
+//! absent, refused as a collision when both are given. This is deliberately
+//! its own mechanism, not an extension of `BARE_ENGINE_ARGUMENTS`: it has
+//! nothing to do with the `_`-prefix convention.
 
 use serde_json::{Map, Value as Json, json};
 
@@ -184,43 +194,58 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Vali
     let mut given: Vec<&String> = obj.keys().collect();
     given.sort_unstable();
     let mut corrections = Vec::new();
-    let mut to_respell: Vec<&str> = Vec::new();
+    // Each respelled key's real name — `_<key>` for a bare engine-field alias
+    // (6.6), or the per-tool alias table's real name (6.7).
+    let mut to_respell: Vec<(&str, String)> = Vec::new();
     for key in given {
         if props.contains_key(key) {
             continue;
         }
         if safe_to_alias_engine_argument(key, props, obj) {
-            to_respell.push(key);
+            to_respell.push((key, format!("_{key}")));
             corrections.push(bare_engine_argument_correction(tool, key));
             continue;
         }
-        // (5.0) A bare engine-field name where the tool takes its `_`
-        // spelling, but the `_` form is also given (a collision, not
-        // aliased — see above): the error still carries the corrected call
-        // (every bare `id`/`path`/`ids` the call holds respelled at once),
-        // never a silent acceptance.
-        let fix = bare_engine_argument(key, props).then(|| {
-            omgbase_mutate::canonical_json(&Json::Object(respell_engine_arguments(obj, props)))
-        });
+        if safe_to_alias_tool_argument(tool, key, props, obj) {
+            let real = tool_argument_alias(tool, key, props).expect("checked above");
+            to_respell.push((key, real.to_owned()));
+            corrections.push(tool_argument_alias_correction(tool, key, props));
+            continue;
+        }
+        // (5.0 / 6.7) A bare engine-field name, or a per-tool alias, where
+        // the real spelling is also given (a collision, not aliased — see
+        // above): the error still carries the corrected call (every such
+        // key the call holds respelled at once), never a silent acceptance.
+        let fix = if bare_engine_argument(key, props) {
+            Some(omgbase_mutate::canonical_json(&Json::Object(
+                respell_engine_arguments(obj, props),
+            )))
+        } else if tool_argument_alias(tool, key, props).is_some() {
+            Some(omgbase_mutate::canonical_json(&Json::Object(
+                respell_tool_arguments(tool, obj, props),
+            )))
+        } else {
+            None
+        };
         return Err(argument_error_fix(
             tool,
-            &unknown_argument_message(key, props),
+            &unknown_argument_message(tool, key, props),
             schema,
             fix,
         ));
     }
-    // A safely-aliased key is respelled into its own map (6.6), kept separate
-    // from `normalized` (4.5/4.11's own lazily-cloned copy below) so the two
-    // compose — a call needing both ends up respelled AND string-list-fixed —
-    // without `obj` ever borrowing out of the thing `normalized` mutates.
+    // A safely-aliased key is respelled into its own map (6.6/6.7), kept
+    // separate from `normalized` (4.5/4.11's own lazily-cloned copy below) so
+    // the two compose — a call needing both ends up respelled AND
+    // string-list-fixed — without `obj` ever borrowing out of the thing
+    // `normalized` mutates.
     let respelled: Option<Map<String, Json>> = (!to_respell.is_empty()).then(|| {
         obj.iter()
             .map(|(k, v)| {
-                let key = if to_respell.contains(&k.as_str()) {
-                    format!("_{k}")
-                } else {
-                    k.clone()
-                };
+                let key = to_respell
+                    .iter()
+                    .find(|(mistaken, _)| *mistaken == k.as_str())
+                    .map_or_else(|| k.clone(), |(_, real)| real.clone());
                 (key, v.clone())
             })
             .collect()
@@ -362,25 +387,104 @@ pub fn respell_engine_arguments(
     out
 }
 
+// ---- per-tool argument aliases (`spec/surface` §4 "Arguments", 6.7) ---------------------
+//
+// A mistake that is NOT an engine-field confusion: an argument name familiar
+// from one tool, reached for on another tool that means the same thing by a
+// different name. Kept as its own small, explicit table (one entry today)
+// rather than folded into `BARE_ENGINE_ARGUMENTS` — the `_`-prefix mechanism
+// above is specifically about the bare/engine-field split, and this is not.
+
+/// The real argument name `key` is a known alias for on `tool`, when `tool`
+/// actually takes that name (`props` has it) — `None` otherwise (no alias
+/// for this tool/key, or the table names a real argument the tool doesn't
+/// have).
+#[must_use]
+pub fn tool_argument_alias(
+    tool: &str,
+    key: &str,
+    props: &Map<String, Json>,
+) -> Option<&'static str> {
+    let real: &'static str = match (tool, key) {
+        // `blocks_search` takes `q`; `query` (the tool) takes `query` for
+        // the same role (the search/filter expression) — an easy habit to
+        // carry over.
+        ("query", "q") => "query",
+        _ => return None,
+    };
+    props.contains_key(real).then_some(real)
+}
+
+/// Whether `key` is a per-tool alias safe to silently respell on `tool`'s
+/// call: a known alias the tool takes AND the call does not already give —
+/// no collision to resolve silently.
+#[must_use]
+pub fn safe_to_alias_tool_argument(
+    tool: &str,
+    key: &str,
+    props: &Map<String, Json>,
+    args: &Map<String, Json>,
+) -> bool {
+    tool_argument_alias(tool, key, props).is_some_and(|real| !args.contains_key(real))
+}
+
+/// The success-path notice for a per-tool alias safely respelled
+/// (`spec/surface` §4, 6.7) — the same shape as
+/// [`bare_engine_argument_correction`], for a mistake that is a borrowed
+/// argument name rather than a bare engine field.
+#[must_use]
+pub fn tool_argument_alias_correction(tool: &str, key: &str, props: &Map<String, Json>) -> String {
+    let real = tool_argument_alias(tool, key, props).expect("checked by the caller");
+    format!(
+        "`{tool}` was called with `{key}` instead of `{real}` — `{key}` is another tool's argument name, `{real}` is `{tool}`'s. This call ran as `{real}` on your behalf; update your memory to use `{real}` (not `{key}`) with `{tool}`."
+    )
+}
+
+/// The call with every per-tool alias on `tool` respelled to its real name
+/// (the `fix` of the collision error).
+#[must_use]
+pub fn respell_tool_arguments(
+    tool: &str,
+    args: &Map<String, Json>,
+    props: &Map<String, Json>,
+) -> Map<String, Json> {
+    let mut out = Map::new();
+    for (k, v) in args {
+        let key = tool_argument_alias(tool, k, props)
+            .map(str::to_owned)
+            .unwrap_or_else(|| k.clone());
+        out.insert(key, v.clone());
+    }
+    out
+}
+
 /// What to say about an argument name the tool does not take. A bare engine
 /// field (`id`, `path`, `ids`) where the tool takes its `_` spelling is the
 /// no-tolerance error of 5.0 (`spec/surface` §4 "Arguments": the bare
-/// namespace is the user's, an engine field is matched by its exact name).
-/// The names 3.0 retired are called out with their replacement (`doc` →
-/// `_id`/`_path`, `block`/`node` → `_id`, `heading` → `section`, `markdown`
-/// → `text`) when the tool has the replacement, and so are the inputs 4.0
-/// retired — `ops` (where the tool takes `effects`: the kernel ops are a
-/// library/fixture contract), `dry_run` (every preview is `plan`), `attrs`
-/// (where the tool takes `checked`); otherwise the nearest valid name
-/// (Levenshtein ≤ 2, or one a prefix of the other).
+/// namespace is the user's, an engine field is matched by its exact name);
+/// a per-tool alias (6.7, [`tool_argument_alias`]) whose real name `tool`
+/// ALSO takes is the same kind of refusal, for a mistake that borrows
+/// another tool's argument name. The names 3.0 retired are called out with
+/// their replacement (`doc` → `_id`/`_path`, `block`/`node` → `_id`,
+/// `heading` → `section`, `markdown` → `text`) when the tool has the
+/// replacement, and so are the inputs 4.0 retired — `ops` (where the tool
+/// takes `effects`: the kernel ops are a library/fixture contract), `dry_run`
+/// (every preview is `plan`), `attrs` (where the tool takes `checked`);
+/// otherwise the nearest valid name (Levenshtein ≤ 2, or one a prefix of the
+/// other).
 #[must_use]
-pub fn unknown_argument_message(key: &str, props: &Map<String, Json>) -> String {
+pub fn unknown_argument_message(tool: &str, key: &str, props: &Map<String, Json>) -> String {
     let has = |n: &str| props.contains_key(n);
     let retired =
         |replacement: &str| format!("`{key}` is no longer an argument — pass {replacement}");
     if bare_engine_argument(key, props) {
         return format!(
             "`{key}` is not an argument — the engine field is `_{key}` (the bare namespace is the user's); pass `_{key}`"
+        );
+    }
+    if let Some(alias) = tool_argument_alias(tool, key, props) {
+        return format!(
+            "`{key}` is not an argument on `{tool}` — `{key}` is a different tool's argument name; pass `{alias}`"
         );
     }
     if key == "doc" && has("_id") && has("_path") {
@@ -668,6 +772,50 @@ mod tests {
         let d = e.data.unwrap();
         assert_eq!(d["hint"], "arguments");
         assert_eq!(d["fix"], r#"{"_id":"d_1"}"#);
+    }
+
+    /// (6.7) A per-tool alias — `query` (the tool) called with `q` instead
+    /// of `query` (the `blocks_search` habit) — is safely respelled exactly
+    /// like a bare engine-field argument: aliased with a correction when
+    /// `query` is absent, refused as a collision when both are given.
+    #[test]
+    fn a_per_tool_argument_alias_is_safely_aliased_or_refused_as_a_collision() {
+        let s = json!({ "type": "object", "properties": {
+            "query": { "type": "string" }, "limit": { "type": "integer" }
+        }, "required": ["query"] });
+        let v = validate_arguments("query", &s, &json!({ "q": "docs { }" })).unwrap();
+        assert_eq!(v.args, Some(json!({ "query": "docs { }" })));
+        assert_eq!(
+            v.corrections,
+            [
+                "`query` was called with `q` instead of `query` — `q` is another tool's argument name, `query` is `query`'s. This call ran as `query` on your behalf; update your memory to use `query` (not `q`) with `query`."
+            ]
+        );
+        // both given: a real collision, refused exactly like the bare
+        // engine-field case, `data.fix` the same call respelled.
+        let e = validate_arguments(
+            "query",
+            &s,
+            &json!({ "q": "docs { }", "query": "blocks { }" }),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.message,
+            "`q` is not an argument on `query` — `q` is a different tool's argument name; pass `query` (query takes limit?, query)"
+        );
+        // bytewise order: `q` < `query`, so `query`'s own given value is the
+        // one applied last and wins — the same last-key-wins rule the bare
+        // `_id`/`id` collision fix follows above.
+        assert_eq!(e.data.unwrap()["fix"], r#"{"query":"blocks { }"}"#);
+        // a tool without the alias (e.g. `blocks_search` itself, which takes
+        // `q` natively): unaffected, the plain unknown-argument message.
+        let bs = json!({ "type": "object", "properties": { "q": { "type": "string" } }, "required": ["q"] });
+        let e = validate_arguments("blocks_search", &bs, &json!({ "q": "x", "query": "y" }))
+            .unwrap_err();
+        assert!(
+            e.message
+                .starts_with("unknown argument `query`; did you mean `q`?")
+        );
     }
 
     /// The inputs 4.0 retired name their replacement (`spec/surface` §4).
