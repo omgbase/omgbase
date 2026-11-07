@@ -12368,7 +12368,11 @@
             ],
             "truncated": false,
             "cursor": null,
-            "consumer": "collect"
+            "consumer": "collect",
+            "hints": [
+              "no document in this repository carries a property `$id`; did you mean `_id`?",
+              "no document in this repository carries a property `$path`; did you mean `_path`?"
+            ]
           },
           {
             "hits": [
