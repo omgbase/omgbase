@@ -47,7 +47,7 @@ pub const QUERY_SYNTAX: &str = r#"query_syntax — The OQX reference: a card (cl
 Call the card before a non-trivial query; every other tool's examples end here, at query_syntax."#;
 
 /// `query`
-pub const QUERY: &str = r#"query — rows (_id, _path, projection) from docs, blocks, nodes or links.
+pub const QUERY: &str = r#"query — hits (_id, _path, projection) from docs, blocks, nodes or links.
 {"query":"docs { select _title, stage where \"process\" in tags order by _path limit 5 }"}   frontmatter; in; order, limit
 {"query":"blocks { select _type, _text where _path == \"/processes/calcination.md\" }"}   a document's blocks in order
 {"query":"nodes { select _block_id where _kind == \"md:section\" and _name == \"Tasks\" and _path == \"/processes/calcination.md\" }"}   a heading's block id
@@ -71,8 +71,8 @@ Open questions or passages: query with text("...") or order by semantic("...") d
 /// `apply`
 pub const APPLY: &str = r###"apply — plan and commit in one call: the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.
 {"effects":[{"op":"set","target":"/substances/salt.md","field":"_frontmatter.verified","value":false}],"reason":"re-check salt"}   a bare path is a document target
-{"effects":[{"op":"insert","into":"/lab/2026-02-notes.md","at":"end","markdown":"## Follow-ups\n\n- [ ] re-run cycle 4"}]}   append at a doc's end
-{"select":"blocks { _type == \"task\" and not checked and _path == \"/processes/calcination.md\" }","effects":[{"op":"set","field":"_attrs.checked","value":true}],"expect":{"max":10}}   bulk check-off; expect.max required with select
+{"effects":[{"op":"insert","into":"/lab/2026-02-notes.md","at":"end","markdown":"## Follow-ups\n\n- [ ] re-run cycle 4"}]}   at end; also {before|after: \"b_1\"}
+{"select":"blocks { _type == \"task\" and not checked and _path == \"/processes/calcination.md\" }","effects":[{"op":"set","field":"_attrs.checked","value":true}],"expect":{"max":10}}   bulk check-off (expect.max required)
 {"effects":[{"op":"set","target":"/log.md","field":"content","value":"---\ntype: x\n---\n\n# A\n"}]}   whole document, fence included
 Plan first for anything hard to undo; every error's data.fix is the corrected call. Grammar: query_syntax."###;
 

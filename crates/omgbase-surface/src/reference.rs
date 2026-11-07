@@ -287,7 +287,9 @@ revisions:  (history as rows — one per stored revision of every document of th
                             object → key exists; range → coverage. Any list
                             property works directly: "pricing" in tags. list(f)
                             coerces scalar-or-list (absent → []) — use it when a
-                            key is sometimes scalar, sometimes a list.
+                            key is sometimes scalar, sometimes a list. A literal
+                            list is a TUPLE, not brackets — (a, b), never [a, b]:
+                            docs { type in ("lab-note", "hub") }
   ranges       lo..hi (inclusive)  lo...hi (exclusive hi)  ..hi  lo..
                era in 800..1680; works over ISO dates. range(prop) reads a
                range-shaped STRING property as an interval: "2026-01-15" in range(window).
@@ -381,6 +383,10 @@ revisions:  (history as rows — one per stored revision of every document of th
   count     a number    _nodes count { _kind == "md:task" } >= 2
   collect   rows (default) — in select for nested results; in where with a lift
   first / single   zero-or-one (single errors on >1) — lookups in select
+  position  exists/none are WHERE-position TESTS ONLY — never a select projection; collect/first/single/count
+            project in select — count is a value since oqx 0.24 (exists/none in a projection are refused,
+            naming collect/first/single/count as the fix):
+            docs { select n: _nodes count { _kind == "md:task" } }
   distinct  on any consumer: dedup by projected value — _nodes count distinct { select _kind }
   limit/offset  bound the block's rows AFTER where/order/distinct, BEFORE the
             consumer reduces: _nodes exists { offset 1 } = at least two;
@@ -627,6 +633,7 @@ One OQX string; limit/cursor page the hits; bare: true drops the { _id, _path } 
 The collection (docs blocks nodes links revisions) heads the body; nothing follows its closing brace.
 CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset.
 and / or / not. Comparisons strict and typed; null == a missing field. A list key: "x" in tags, never tags == "x".
+A literal list is a tuple, not brackets: docs { type in ("lab-note", "hub") }
 Strings .contains("s") .startsWith("p") .lower(); x ~* "re" (ci regex), x !~ "re". Dates date("today"),
 date(due) < date("today").minus(dur("30 days")), _updated_at >= "2026-08-01".
 
@@ -643,6 +650,8 @@ out; ^docs ^blocks ^nodes ^links the repository from a row. An unknown bare name
 
 NESTED: <receiver> collect|exists|none|count|first|single { [select …] [where …] [order by …] [limit N] } over a
 relation, a list key, entries(x) or ^docs; no consumer = collect, a leading predicate = where: docs { type == "x" }.
+exists/none are WHERE-only tests, never a select projection; count/collect/first/single project in select:
+docs { select n: _nodes count { _kind == "md:task" } }
 FOLLOW: docs { where <seed> follow _out_links { from _dst depth 3 } }   links out; _in_links { from _doc }
 backlinks; refs(before) a property's documents; $depth per row. SEARCH: text("words") prunes; order by semantic("…") desc.
 
