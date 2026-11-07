@@ -30,6 +30,14 @@
 //     kind. The vocabulary is read once per (repository, kind) and cached on the
 //     repository's head commit (`MAX(commits.seq)`), the one thing every
 //     property or attrs change moves.
+//
+// A `$`-prefixed name that is not one of the language's recognized intrinsics
+// (`@omgbase/oqx`'s `references` already excludes `$it`/`$key`/`$rows`/
+// `$depth`/`$stop`/`$leaf`/`$frontier`/`$ordinal`) reaches this pass as an
+// ordinary bare name — notably the pre-5.0 (in fact pre-3.0) `$`-spelled
+// engine attributes (`$path`, `$title`, …): `nearest` treats a leading `$`
+// the same way it treats a leading `_` (both strip to the same bare form), so
+// `$path` is pointed at `_path` exactly as the bare `path` would be.
 
 import type { Expr, Follow, Query, ReferenceStep } from "@omgbase/oqx";
 import { references } from "@omgbase/oqx";
@@ -311,9 +319,13 @@ export function editDistance(a: string, b: string): number {
  * The nearest match of `name` among `candidates` (§1.5). First, the one hint
  * the name rule makes certain: a candidate that is exactly `name` with the
  * engine prefix added or removed (`id` → `_id`, `_layer` → `layer`) wins
- * outright, whatever its length. Otherwise case-insensitive and **prefix-blind**
- * — the `_` is a declaration, not spelling, so `commited` is one edit from
- * `_commit` and `titel` one from `_title` as from `title`: a candidate
+ * outright, whatever its length — and a leading `$` strips the same way as a
+ * leading `_` (never the reverse: candidates are never `$`-spelled), since a
+ * `$`-name is omgbase's pre-5.0 (in fact pre-3.0) engine-attribute spelling
+ * (`$path`, `$title`, …): `$path` is one `_` away from `_path` exactly as the
+ * bare `path` is. Otherwise case-insensitive and **prefix-blind** — the `_`
+ * (or legacy `$`) is a declaration, not spelling, so `commited` is one edit
+ * from `_commit` and `titel` one from `_title` as from `title`: a candidate
  * qualifies when its distance is ≤ 2, or when one of the two is a substring of
  * the other and the shorter has at least three characters; the lowest distance
  * wins, ties broken by the shorter candidate (so the bare authored `title`
@@ -322,13 +334,14 @@ export function editDistance(a: string, b: string): number {
  */
 export function nearest(name: string, candidates: readonly string[]): string | null {
   const lower = name.toLowerCase();
-  const prefixed = `_${lower}`;
-  const unprefixed = lower.startsWith("_") ? lower.slice(1) : null;
+  const hadPrefix = /^[_$]/.test(lower);
+  const bare = hadPrefix ? lower.slice(1) : lower;
+  const prefixed = `_${bare}`;
   for (const c of candidates) {
     const hay = c.toLowerCase();
-    if (hay === prefixed || (unprefixed !== null && hay === unprefixed)) return c;
+    if (hay === prefixed || (hadPrefix && hay === bare)) return c;
   }
-  const needle = lower.replace(/^_/, "");
+  const needle = bare;
   // A name under three characters is within distance 2 of nearly anything, so
   // only a substring match (which needs three characters anyway) could qualify.
   if (needle.length < 3) return null;
@@ -367,10 +380,43 @@ function candidates(store: Store, repoId: string, target: Kind): string[] {
   return out;
 }
 
+/** The dotted reach-through names of a kind: each handle (`_doc`, `_block`, …)
+ * paired with every attribute of the kind it reaches (`_block._ordinal`).
+ * A name that belongs to a RELATED kind, not this one (`_ordinal` on a node —
+ * the attribute is the owner block's), is best corrected by naming the
+ * reach-through, not by a coincidental match among this kind's own authored
+ * keys (§1.5; the bug a `nodes { select _ordinal }` surfaced: without this,
+ * the nearest match was drawn from an unrelated authored key like
+ * `last_ordinal` instead of the real `_block._ordinal`). */
+function reachThroughNames(target: Kind): string[] {
+  const out: string[] = [];
+  for (const [handle, via] of Object.entries(HANDLES[target])) {
+    for (const attr of ATTRIBUTES[via]) out.push(`${handle}.${attr}`);
+  }
+  return out;
+}
+
+/** An exact reach-through correction for an unknown engine name (`_ordinal` on
+ * nodes → `_block._ordinal`): the name, stripped of its engine prefix, equals
+ * the final segment of a reach-through name exactly. Certain by construction
+ * (no fuzzy distance), so it is tried before the general `suggestion` fuzzy
+ * match over flat candidates, and wins over any coincidental substring match
+ * among this kind's own authored vocabulary. */
+function reachThroughSuggestion(target: Kind, name: string): string | null {
+  const bare = name.toLowerCase().replace(/^[_$]/, "");
+  for (const dotted of reachThroughNames(target)) {
+    const tail = dotted.slice(dotted.lastIndexOf(".") + 1).toLowerCase().replace(/^_/, "");
+    if (tail === bare) return dotted;
+  }
+  return null;
+}
+
 /** The error of an unknown engine name: `` `_target` is not an engine name of links (engine names: _id, _path, …); did you mean `_dst_path`? ``
- * — the nearest match drawn from the engine names and the authored keys, so a `_layer` written for the authored `layer` is pointed at it. */
+ * — the nearest match drawn, in order, from an exact reach-through correction, then the engine names and the authored keys, so a `_layer` written for the authored `layer` is pointed at it. */
 export function engineNameErrorMessage(store: Store, repoId: string, target: Kind, name: string): string {
-  return `\`${name}\` is not an engine name of ${target} (engine names: ${engineNames(target).join(", ")})${suggestion(name, candidates(store, repoId, target))}`;
+  const reach = reachThroughSuggestion(target, name);
+  const hint = reach !== null ? `; did you mean \`${reach}\`?` : suggestion(name, candidates(store, repoId, target));
+  return `\`${name}\` is not an engine name of ${target} (engine names: ${engineNames(target).join(", ")})${hint}`;
 }
 
 /** The error of a bare name on a closed kind: `` `target` reads an authored property, and a link carries none (engine names: _id, _path, …); did you mean `_dst_path`? ``. */

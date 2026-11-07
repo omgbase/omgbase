@@ -270,7 +270,11 @@ key is read by its bare name like any other (`reads::bare-attributes`; the
 5.0 case `doc-on-a-document-is-an-authored-key`). `$` belongs to OQX:
 `$it`, `$key`, `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values
 the LANGUAGE injects into a scope (`spec/oqx` §2), and omgbase adds **no `$`
-names** — a `$id` or `$path` in a query is an unknown OQX identifier, absent
+names** — a `$id` or `$path` in a query is an unknown OQX identifier, absent,
+and (conformance fix, 0.30 patch: `references()` no longer excludes a
+non-intrinsic `$`-name from the pass, so the surface's existing unknown-name
+hint judges it like any bare name — a leading `$` strips the same way a
+leading `_` does) hinted exactly like the bare `id`/`path` would be
 (`query-errors::dollar-names-are-not-omgbase-names`), and so is `$self`: the
 runner spells a bare row function as a method on `$it` (`text("x")` →
 `$it.text("x")`), the language's own name for the scope's row, and keeps no

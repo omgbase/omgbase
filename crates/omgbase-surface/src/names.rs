@@ -34,6 +34,15 @@
 //! (`MAX(commits.seq)`), the one thing every property or attrs change moves —
 //! the cache ([`VocabularyCache`]) lives beside the store it describes (the
 //! `Surface` holds one; a bare `query` call judges with a cache of its own).
+//!
+//! A `$`-prefixed name that is not one of the language's recognized
+//! intrinsics (`oqx`'s `references` already excludes
+//! `$it`/`$key`/`$rows`/`$depth`/`$stop`/`$leaf`/`$frontier`/`$ordinal`)
+//! reaches this pass as an ordinary bare name — notably the pre-5.0 (in fact
+//! pre-3.0) `$`-spelled engine attributes (`$path`, `$title`, …): `nearest`
+//! treats a leading `$` the same way it treats a leading `_` (both strip to
+//! the same bare form), so `$path` is pointed at `_path` exactly as the bare
+//! `path` would be.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -116,6 +125,43 @@ pub fn engine_names(t: Target) -> Vec<&'static str> {
 
 fn lookup(table: &[(&str, Target)], name: &str) -> Option<Target> {
     table.iter().find(|(n, _)| *n == name).map(|(_, t)| *t)
+}
+
+/// The dotted reach-through names of a kind: each handle (`_doc`, `_block`,
+/// …) paired with every attribute of the kind it reaches (`_block._ordinal`).
+/// A name that belongs to a RELATED kind, not this one (`_ordinal` on a node
+/// — the attribute is the owner block's), is best corrected by naming the
+/// reach-through, not by a coincidental match among this kind's own authored
+/// keys (§1.5; the bug a `nodes { select _ordinal }` surfaced: without this,
+/// the nearest match was drawn from an unrelated authored key like
+/// `last_ordinal` instead of the real `_block._ordinal`).
+fn reach_through_names(target: Target) -> Vec<String> {
+    let mut out = Vec::new();
+    for &(handle, via) in handles(target) {
+        for attr in attributes(via) {
+            out.push(format!("{handle}.{attr}"));
+        }
+    }
+    out
+}
+
+/// An exact reach-through correction for an unknown engine name (`_ordinal`
+/// on nodes → `_block._ordinal`): the name, stripped of its engine prefix,
+/// equals the final segment of a reach-through name exactly. Certain by
+/// construction (no fuzzy distance), so it is tried before the general
+/// fuzzy match over flat candidates, and wins over any coincidental
+/// substring match among this kind's own authored vocabulary.
+fn reach_through_suggestion(target: Target, name: &str) -> Option<String> {
+    let bare = name.to_lowercase();
+    let bare = bare.strip_prefix(['_', '$']).unwrap_or(&bare);
+    for dotted in reach_through_names(target) {
+        let tail = dotted.rsplit('.').next().unwrap_or(&dotted).to_lowercase();
+        let tail = tail.strip_prefix('_').unwrap_or(&tail);
+        if tail == bare {
+            return Some(dotted);
+        }
+    }
+    None
 }
 
 /// The kinds whose row shape is closed: no authored data reaches a row by bare
@@ -555,14 +601,18 @@ impl Judge<'_> {
 
     /// The error of an unknown engine name: `` `_target` is not an engine name
     /// of links (engine names: _id, _path, …); did you mean `_dst_path`? `` —
-    /// the nearest match drawn from the engine names and the authored keys, so
-    /// a `_layer` written for the authored `layer` is pointed at it.
+    /// the nearest match drawn, in order, from an exact reach-through
+    /// correction, then the engine names and the authored keys, so a `_layer`
+    /// written for the authored `layer` is pointed at it.
     fn engine_name_error_message(&self, target: Target, name: &str) -> Result<String> {
+        let hint = match reach_through_suggestion(target, name) {
+            Some(reach) => format!("; did you mean `{reach}`?"),
+            None => suggestion(name, &self.candidates(target)?),
+        };
         Ok(format!(
-            "`{name}` is not an engine name of {} (engine names: {}){}",
+            "`{name}` is not an engine name of {} (engine names: {}){hint}",
             target.as_str(),
             engine_names(target).join(", "),
-            suggestion(name, &self.candidates(target)?)
         ))
     }
 
@@ -1037,6 +1087,35 @@ mod tests {
     }
 
     #[test]
+    fn a_dollar_name_that_is_no_intrinsic_gets_the_same_hint_a_bare_name_does() {
+        let (store, repo) = fixture();
+        // the 2.x `$`-spelled engine attribute and a stray `$`-spelled
+        // authored-key typo get the SAME hint a bare name would — no longer a
+        // silent absence (spec/surface §1.2's `dollar-names-are-not-omgbase-
+        // names`: `$id` is still an unknown OQX identifier, but no longer mute).
+        assert_eq!(
+            hints(
+                &store,
+                &repo,
+                "select x: $id, y: $stag from docs where $stag == \"x\""
+            ),
+            [
+                "no document in this repository carries a property `$id`; did you mean `_id`?",
+                "no document in this repository carries a property `$stag`; did you mean `stage`?",
+            ]
+        );
+        // the language's own intrinsics stay silent
+        assert!(
+            hints(
+                &store,
+                &repo,
+                "select $key: _id, me: $it from docs where $depth > 0 and $it.kind == \"x\""
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
     fn an_unknown_engine_name_is_loud_in_either_mode() {
         let (store, repo) = fixture();
         let docs_err = format!(
@@ -1083,6 +1162,24 @@ mod tests {
             )
             .message
             .starts_with("`_nope` is not an engine name of docs")
+        );
+        // a name that belongs to a RELATED kind, not this one, is corrected by
+        // naming the reach-through — not by a coincidental match among this
+        // kind's own authored vocabulary (the fixture's nodes carry an
+        // authored `last_ordinal`, a closer-looking but wrong candidate: the
+        // bug `nodes { select _ordinal }` surfaced).
+        assert_eq!(
+            refusal(
+                &store,
+                &repo,
+                "select _ordinal from nodes",
+                UnknownNames::Hint
+            )
+            .message,
+            format!(
+                "`_ordinal` is not an engine name of nodes (engine names: {}); did you mean `_block._ordinal`?",
+                engine_names(Target::Nodes).join(", ")
+            )
         );
     }
 

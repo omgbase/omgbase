@@ -1269,6 +1269,65 @@
       }
     },
     {
+      "name": "a $-name that is no intrinsic is an ordinary reference, not a language value",
+      "tags": [
+        "dollar"
+      ],
+      "notes": "`$value` is not an intrinsic (SEMANTICS §2, since 0.15: an ordinary property name); `$path` is never the language's (omgbase's pre-5.0 — in fact pre-3.0 — engine-attribute spelling, a host's to judge). Only the closed set of recognized intrinsics ($it, $key, $rows, $depth, $stop, $leaf, $frontier, $ordinal) is skipped.",
+      "query": "select x: $value, y: $path from people where $value == 1",
+      "expect": {
+        "references": [
+          {
+            "name": "$value",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "$path",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "$value",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "a navigation headed by a value is not a reference; the head's own names are",
       "tags": [
         "member",
