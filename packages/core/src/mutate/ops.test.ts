@@ -136,6 +136,20 @@ describe("kernel ops", () => {
     expect(d.children.map((b) => b.type)).toEqual(["heading", "paragraph", "heading", "paragraph"]);
   });
 
+  it("a section target's heading_id must name a HEADING block: a paragraph is type_mismatch, not a silently-renamed section (spec/mutate §1.1)", () => {
+    const d = doc("# Title\n\nFirst.\n\n## Risks\n\nSecond.\n");
+    const before = renderDoc(d);
+    const para = idAt(d, 1); // "First." — a non-heading top-level block
+    let err: MutationError | undefined;
+    try { opInsert(d, { parent: { heading: para, scope: "section" }, at: "end" }, "x", undefined, 5); } catch (e) { err = e as MutationError; }
+    expect(err).toBeInstanceOf(MutationError);
+    expect(err!.code).toBe("type_mismatch");
+    expect(err!.data).toEqual({ op_index: 5, block: para, type: "paragraph" });
+    expect(err!.message).toBe(`${para} is a paragraph, not a heading; a section target's heading_id must name a heading block`);
+    // Nothing committed, and the paragraph's own text was never mistaken for a section name.
+    expect(renderDoc(d)).toBe(before);
+  });
+
   it("insert into a Markdown container by kind still works (list item, blockquote)", () => {
     const d = doc("- item\n\n> quoted\n");
     const item = d.children[0]!.children[0]!;

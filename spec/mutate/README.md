@@ -84,10 +84,13 @@ To   { parent: <block id> | { doc: true } | { heading: <block id>, scope: "secti
   range of the heading (its top-level index *h*, level *L* from `attrs.level`
   or 1; the range ends before the next top-level heading of level ≤ *L*, or
   at the end): `at: "start"` inserts at *h* + 1, `at: "end"` at the range
-  end, an anchor resolves against the top level. An unknown heading is
-  caught earlier, when the changeset infers the document from it:
-  `parent_missing` with no data (§4 step 1); inside a loaded document it
-  would be `target_missing`.
+  end, an anchor resolves against the top level. `heading` must resolve to a
+  **`heading`** block — since 4.2 (the sibling of the container rule below):
+  a non-heading block (a paragraph, a list…) is `type_mismatch { op_index,
+  block, type }`, not a section silently keyed to whatever text that block
+  holds. An unknown heading is caught earlier, when the changeset infers the
+  document from it: `parent_missing` with no data (§4 step 1); inside a
+  loaded document it would be `target_missing`.
 - `at: { before | after: <id> }` → the anchor's index (+ 1 for `after`) in
   the resolved sibling list; unknown → `target_missing`.
 
@@ -1798,6 +1801,21 @@ key-less part; the new key goes before the closing fence and the body's
 bytes stay), `::unset-fm-keeps-comments-and-fences`.
 
 ## Decisions
+
+- 2026-11-07, mutate 4.2: **a section target's `heading_id` must resolve to
+  a HEADING block** — the sibling of 1.2's "the destination parent of
+  `insert`/`move` must be a container": before, `resolveSection` computed
+  the range from whatever top-level block the id named, defaulting its
+  level to 1 when the block had no `attrs.level` (any non-heading block
+  lacks one), so a stale or re-targeted `heading_id` that now pointed at a
+  paragraph or a list silently became "the section" — its own text reported
+  as the section's name in `preview.summary`/the Receipt, and a sibling
+  insert placed relative to it instead of the intended heading. Least
+  surprising: an error over a wrong-looking commit. `{ kind: "section",
+  heading_id }` is `type_mismatch { op_index, block, type }` when the
+  resolved block is not a `heading` (§1.1); a behavior change (a
+  `heading_id` that used to be silently accepted is now refused), so a
+  minor. Fixtures: `ops::insert-into-section-heading-not-a-heading`.
 
 - 2026-10-26, mutate 4.1 (store 17.3, Phase 5a of `docs/modular-core/`): **a
   `docs_delete` leaves no `blocks` row** (D2 step two — the store's §5.6
