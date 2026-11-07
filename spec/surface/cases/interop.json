@@ -7028,7 +7028,7 @@
               {
                 "_id": "d_7",
                 "_path": "/processes/calcination.md",
-                "_hash": "cd27849756ebe9781e027959fc2f8ade46d07985e0cb71ff0252f9bbad43a356"
+                "_hash": "a0b819297f9cb082200b476955d447a63c2626a7de66732badc3cd112a766f79"
               }
             ],
             "new_ids": {
@@ -7051,7 +7051,7 @@
               }
             ],
             "new_ids": {
-              "$new.0": "b_333"
+              "$new.0": "b_329"
             },
             "committed": true,
             "summary": [
@@ -7079,8 +7079,8 @@
               }
             ],
             "new_ids": {
-              "$new.0": "b_334",
-              "$new.1": "b_335"
+              "$new.0": "b_330",
+              "$new.1": "b_331"
             },
             "committed": true,
             "summary": [
@@ -7098,7 +7098,7 @@
               }
             ],
             "new_ids": {
-              "$new.0": "b_336"
+              "$new.0": "b_332"
             },
             "committed": true,
             "summary": [
@@ -7140,7 +7140,7 @@
                 "_title": "Calcination"
               }
             },
-            "_raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n- calcined tin → white putty powder\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n"
+            "_raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n* calcined tin → white putty powder\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n"
           },
           {
             "_id": "d_0",
@@ -7264,7 +7264,7 @@
                 "_id": "d_7",
                 "_path": "/processes/calcination.md",
                 "_updated_at": "2026-09-27T00:00:00.000Z",
-                "blocks": 21
+                "blocks": 22
               },
               {
                 "_id": "d_8",
@@ -7356,7 +7356,7 @@
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "cd27849756ebe9781e027959fc2f8ade46d07985e0cb71ff0252f9bbad43a356",
+                    "_hash": "a0b819297f9cb082200b476955d447a63c2626a7de66732badc3cd112a766f79",
                     "kind": "changed"
                   }
                 ]

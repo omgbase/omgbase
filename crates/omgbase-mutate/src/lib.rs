@@ -19,7 +19,7 @@
 //! let mut doc = MutDoc::new("d_0", "a.md", vec![MutBlock::new("b_0", "heading", "# Title", "\n")]);
 //! let mut minter = SequentialMinter::new("b");
 //! let to = To { parent: Parent::Doc, at: At::End };
-//! let result = op_insert(&mut doc, &to, "A paragraph.", 0, None, &mut minter).unwrap();
+//! let result = op_insert(&mut doc, &to, "A paragraph.", 0, None, &mut minter, None).unwrap();
 //! assert_eq!(result.ids, ["b_0"]);
 //! assert_eq!(render(&doc), "# Title\n\nA paragraph.\n");
 //! ```
@@ -67,7 +67,7 @@ pub use summary::{
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "4.1";
+pub const SPEC_VERSION: &str = "4.2";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

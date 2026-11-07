@@ -2,7 +2,7 @@ import { mintId } from "../core/ids.js";
 import { parseTree } from "../core/parse/tree.js";
 import { adapterForFormat, isContainerBlock } from "../format/index.js";
 import { codeUnitIndexOf } from "../core/utf8.js";
-import { MutationError, locate, rawHashHex, parentChildrenHash, markContainerDirty, ownerOf, type MutBlock, type MutDoc } from "./tree.js";
+import { MutationError, locate, rawHashHex, parentChildrenHash, markContainerDirty, ownerOf, listsWouldMerge, disambiguateListMarker, type MutBlock, type MutDoc } from "./tree.js";
 
 // Kernel ops (04 §1). Six operations over a MutDoc. Ops mutate the tree in
 // place and return minted ids where relevant. Placement addressing per §1.1.
@@ -176,7 +176,7 @@ function markSubtreeClean(b: MutBlock): void {
 
 // ---- the six ops ------------------------------------------------------------
 
-export function opInsert(doc: MutDoc, to: To, markdown: string, expect?: Expect, opIndex = 0): { ids: string[] } {
+export function opInsert(doc: MutDoc, to: To, markdown: string, expect?: Expect, opIndex = 0, priorIds?: Set<string>): { ids: string[] } {
   const { siblings, index } = resolveTarget(doc, to, opIndex);
   // §1.2: the destination parent's order CAS — `siblings` IS the resolved parent
   // list (a section scope or a `{ doc: true }` anchor both name the top level).
@@ -214,6 +214,35 @@ export function opInsert(doc: MutDoc, to: To, markdown: string, expect?: Expect,
       const last = blocks[blocks.length - 1]!;
       if (!separatesBlocks(last.trivia, doc.format)) last.trivia = sep;
     }
+    // A blank line is a block boundary for EVERY pair except two lists that
+    // share a marker — CommonMark re-merges those into one list on reparse
+    // regardless of blank lines between them (listsWouldMerge). Left alone,
+    // the next commit's known-id resolver would positionally misassign every
+    // block from the merge point on (the reported bug: an inserted list
+    // right after a heading absorbed the section's existing list, and every
+    // id after it shifted). Disambiguate the NEW edge list(s) only, and only
+    // against a neighbor that PRE-EXISTED this changeset (`priorIds`, threaded
+    // from ChangesetPlanner) — the untouched neighbor's bytes/id never change.
+    // A neighbor minted earlier THIS changeset (absent from priorIds, e.g. a
+    // prior insert effect's own list — the row-template "rollup" pattern,
+    // spec/mutate §11.8) is intentionally left free to merge: both sides are
+    // new, so there is no carried identity to lose. `priorIds === undefined`
+    // (bare kernel calls with no changeset context) defaults to protecting
+    // every existing neighbor, the conservative choice.
+    if (doc.format === "markdown" && blocks.length > 0) {
+      const isPrior = (b: MutBlock): boolean => priorIds === undefined || priorIds.has(b.id);
+      const prevList = index > 0 && isPrior(siblings[index - 1]!) ? siblings[index - 1]! : null;
+      const nextList = index < siblings.length && isPrior(siblings[index]!) ? siblings[index]! : null;
+      const first = blocks[0]!;
+      const last = blocks[blocks.length - 1]!;
+      if (first === last) {
+        const against = [prevList, nextList].filter((n): n is MutBlock => n !== null && listsWouldMerge(first, n));
+        if (against.length > 0) disambiguateListMarker(first, against);
+      } else {
+        if (prevList && listsWouldMerge(first, prevList)) disambiguateListMarker(first, [prevList]);
+        if (nextList && listsWouldMerge(last, nextList)) disambiguateListMarker(last, [nextList]);
+      }
+    }
   }
   siblings.splice(index, 0, ...blocks);
   // A nested insert (into a blockquote/table/list item) changes the owning
@@ -230,7 +259,7 @@ function separatesBlocks(trivia: string, format: string): boolean {
   return format === "markdown" ? trivia.includes("\n\n") : trivia !== "";
 }
 
-export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown?: string, attrs?: Record<string, unknown>, expect?: Expect, trivia?: string, childIds?: Record<string, string>): { ids: string[] } {
+export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown?: string, attrs?: Record<string, unknown>, expect?: Expect, trivia?: string, childIds?: Record<string, string>, priorIds?: Set<string>): { ids: string[] } {
   const found = locate(doc, blockId);
   if (!found) throw new MutationError("block_missing", `block ${blockId} not found`, { op_index: opIndex, block: blockId });
   // Content CAS is required only for a content edit (`markdown`). Attr- and
@@ -330,6 +359,22 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
       const sep = defaultTrivia(doc.format);
       if (!separatesBlocks(found.block.trivia, doc.format)) found.block.trivia = sep;
       for (const b of extra.slice(0, -1)) if (!separatesBlocks(b.trivia, doc.format)) b.trivia = sep;
+      // Same list-merge hazard opInsert guards against: the run's two outer
+      // edges (the retargeted block, now possibly a list, and the run's last
+      // new sibling) must not share a marker with a neighbor that PRE-EXISTED
+      // this changeset, or that untouched neighbor re-merges with this run on
+      // the next reparse (listsWouldMerge; spec/mutate round-trip law). A
+      // neighbor minted this same changeset is left free to merge (opInsert's
+      // `isPrior` rationale).
+      if (doc.format === "markdown") {
+        const isPrior = (b: MutBlock): boolean => priorIds === undefined || priorIds.has(b.id);
+        const prevSibling = found.index > 0 && isPrior(found.siblings[found.index - 1]!) ? found.siblings[found.index - 1]! : null;
+        // pre-splice: the block `extra` will now precede.
+        const nextSibling = found.siblings[found.index + 1] && isPrior(found.siblings[found.index + 1]!) ? found.siblings[found.index + 1]! : null;
+        if (prevSibling && listsWouldMerge(found.block, prevSibling)) disambiguateListMarker(found.block, [prevSibling]);
+        const lastNew = extra[extra.length - 1]!;
+        if (nextSibling && listsWouldMerge(lastNew, nextSibling)) disambiguateListMarker(lastNew, [nextSibling]);
+      }
     }
     extra[extra.length - 1]!.trivia = tail;
     found.siblings.splice(found.index + 1, 0, ...extra);

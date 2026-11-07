@@ -662,13 +662,15 @@ impl OpsRunner {
                 let d = self.ensure_doc(store, &doc_id)?;
                 let mut mint = store.ids.at(&store.conn);
                 let mut minter = mint.deferred("b");
+                let LoadedDoc { doc, prior_ids, .. } = &mut self.loaded[d];
                 let result = op_insert(
-                    &mut self.loaded[d].doc,
+                    doc,
                     to,
                     markdown,
                     i,
                     expect.as_ref(),
                     &mut minter,
+                    Some(prior_ids.as_slice()),
                 );
                 minter.finish()?;
                 result?
@@ -694,7 +696,15 @@ impl OpsRunner {
                 };
                 let mut mint = store.ids.at(&store.conn);
                 let mut minter = mint.deferred("b");
-                let result = op_update(&mut self.loaded[d].doc, block, i, &args, &mut minter);
+                let LoadedDoc { doc, prior_ids, .. } = &mut self.loaded[d];
+                let result = op_update(
+                    doc,
+                    block,
+                    i,
+                    &args,
+                    &mut minter,
+                    Some(prior_ids.as_slice()),
+                );
                 minter.finish()?;
                 result?
             }

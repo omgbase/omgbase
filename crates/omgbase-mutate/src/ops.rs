@@ -12,7 +12,19 @@ use omgbase_reconcile::Minter;
 use serde_json::{Map, Value, json};
 
 use crate::error::{ErrorCode, MutationError, Result};
+use crate::render::{disambiguate_list_marker, lists_would_merge};
 use crate::tree::{BlockPath, MutBlock, MutDoc, parent_children_hash, raw_hash_hex};
+
+/// Whether `b` existed before this changeset (`prior_ids`, threaded from the
+/// store's changeset planner). `None` (bare kernel calls with no changeset
+/// context, e.g. direct tests) defaults to protecting every neighbor — the
+/// conservative choice; see `op_insert`'s list-merge guard.
+fn is_prior(prior_ids: Option<&[String]>, b: &MutBlock) -> bool {
+    match prior_ids {
+        None => true,
+        Some(ids) => ids.iter().any(|id| id == &b.id),
+    }
+}
 
 /// §1.1 `To.parent`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -470,7 +482,9 @@ fn wrap_as_item(b: &MutBlock, minter: &mut dyn Minter) -> MutBlock {
 
 // ---- the six ops --------------------------------------------------------------------
 
-/// §2.1 `insert`.
+/// §2.1 `insert`. `prior_ids`: ids present in the document before this
+/// changeset (threaded by the store's changeset planner) — see
+/// `is_prior`/the list-merge guard below.
 pub fn op_insert(
     doc: &mut MutDoc,
     to: &To,
@@ -478,6 +492,7 @@ pub fn op_insert(
     op_index: usize,
     expect: Option<&Expect>,
     minter: &mut dyn Minter,
+    prior_ids: Option<&[String]>,
 ) -> Result<OpResult> {
     let Target { parent, index } = resolve_target(doc, to, op_index)?;
     // §1.2: the destination parent's order CAS — `parent` IS the resolved
@@ -517,6 +532,59 @@ pub fn op_insert(
                 last.trivia = sep.to_owned();
             }
         }
+        // A blank line is a block boundary for EVERY pair except two lists
+        // that share a marker — CommonMark re-merges those into one list on
+        // reparse regardless of blank lines between them (lists_would_merge).
+        // Left alone, the next commit's known-id resolver would positionally
+        // misassign every block from the merge point on (the reported bug: an
+        // inserted list right after a heading absorbed the section's existing
+        // list, and every id after it shifted). Disambiguate the NEW edge
+        // list(s) only, and only against a neighbor that PRE-EXISTED this
+        // changeset (`is_prior`) — a neighbor minted earlier THIS changeset
+        // (the row-template "rollup" pattern) is left free to merge: both
+        // sides are new, so there is no carried identity to lose.
+        if format == "markdown" && !blocks.is_empty() {
+            let prev_list = if index > 0 && is_prior(prior_ids, &doc.children[index - 1]) {
+                Some(index - 1)
+            } else {
+                None
+            };
+            let next_list =
+                if index < doc.children.len() && is_prior(prior_ids, &doc.children[index]) {
+                    Some(index)
+                } else {
+                    None
+                };
+            let first_is_last = blocks.len() == 1;
+            if first_is_last {
+                let mut against: Vec<&MutBlock> = Vec::new();
+                if let Some(pi) = prev_list
+                    && lists_would_merge(&blocks[0], &doc.children[pi])
+                {
+                    against.push(&doc.children[pi]);
+                }
+                if let Some(ni) = next_list
+                    && lists_would_merge(&blocks[0], &doc.children[ni])
+                {
+                    against.push(&doc.children[ni]);
+                }
+                if !against.is_empty() {
+                    disambiguate_list_marker(&mut blocks[0], &against);
+                }
+            } else {
+                if let Some(pi) = prev_list
+                    && lists_would_merge(&blocks[0], &doc.children[pi])
+                {
+                    disambiguate_list_marker(&mut blocks[0], &[&doc.children[pi]]);
+                }
+                let last_idx = blocks.len() - 1;
+                if let Some(ni) = next_list
+                    && lists_would_merge(&blocks[last_idx], &doc.children[ni])
+                {
+                    disambiguate_list_marker(&mut blocks[last_idx], &[&doc.children[ni]]);
+                }
+            }
+        }
     }
     let ids: Vec<String> = blocks.iter().map(|b| b.id.clone()).collect();
     let siblings = doc.siblings_mut(&parent);
@@ -539,13 +607,14 @@ pub struct UpdateArgs {
     pub child_ids: Option<BTreeMap<String, String>>,
 }
 
-/// §2.2 `update`.
+/// §2.2 `update`. `prior_ids`: see `op_insert`'s doc comment.
 pub fn op_update(
     doc: &mut MutDoc,
     block_id: &str,
     op_index: usize,
     args: &UpdateArgs,
     minter: &mut dyn Minter,
+    prior_ids: Option<&[String]>,
 ) -> Result<OpResult> {
     let path = doc.locate(block_id).ok_or_else(|| {
         err_data(
@@ -673,6 +742,31 @@ pub fn op_update(
             for b in &mut extra[..n - 1] {
                 if !separates_blocks(&b.trivia, &format) {
                     b.trivia = sep.to_owned();
+                }
+            }
+            // Same list-merge hazard op_insert guards against: the run's two
+            // outer edges (the retargeted block, now possibly a list, and the
+            // run's last new sibling) must not share a marker with a neighbor
+            // that PRE-EXISTED this changeset, or that untouched neighbor
+            // re-merges with this run on the next reparse (lists_would_merge;
+            // round-trip law). A neighbor minted this same changeset is left
+            // free to merge (op_insert's `is_prior` rationale).
+            if format == "markdown" {
+                let siblings = doc.siblings_mut(&parent);
+                if index > 0 && is_prior(prior_ids, &siblings[index - 1]) {
+                    let (left, right) = siblings.split_at_mut(index);
+                    let prev = left.last().expect("index > 0");
+                    if lists_would_merge(&right[0], prev) {
+                        disambiguate_list_marker(&mut right[0], &[prev]);
+                    }
+                }
+                // Pre-splice: `extra` will now precede `siblings[index + 1]`.
+                if index + 1 < siblings.len() && is_prior(prior_ids, &siblings[index + 1]) {
+                    let next = &siblings[index + 1];
+                    let last_new = extra.last_mut().expect("non-empty");
+                    if lists_would_merge(last_new, next) {
+                        disambiguate_list_marker(last_new, &[next]);
+                    }
                 }
             }
         }
@@ -1178,12 +1272,13 @@ pub fn cross_doc_move(
 /// The six ops as methods (two-phase borrows let a caller compute ids from
 /// the document inside the argument list).
 impl MutDoc {
-    /// [`op_insert`] without the §1.2 order CAS (`op_index` 0).
+    /// [`op_insert`] without the §1.2 order CAS (`op_index` 0) or changeset
+    /// context (`prior_ids: None` — every existing neighbor is protected).
     pub fn insert(&mut self, to: &To, markdown: &str, minter: &mut dyn Minter) -> Result<OpResult> {
-        op_insert(self, to, markdown, 0, None, minter)
+        op_insert(self, to, markdown, 0, None, minter, None)
     }
 
-    /// [`op_update`].
+    /// [`op_update`] with no changeset context (`prior_ids: None`).
     pub fn update(
         &mut self,
         block_id: &str,
@@ -1191,7 +1286,7 @@ impl MutDoc {
         args: &UpdateArgs,
         minter: &mut dyn Minter,
     ) -> Result<OpResult> {
-        op_update(self, block_id, op_index, args, minter)
+        op_update(self, block_id, op_index, args, minter, None)
     }
 
     /// [`op_move`] without the §1.2 order CAS.
@@ -1317,6 +1412,38 @@ mod tests {
         assert!(r.ids.is_empty());
         // The seam before the (empty) run is still healed, as the reference does.
         assert_eq!(render(&d), "a\n\n");
+    }
+
+    #[test]
+    fn insert_disambiguates_marker_against_an_untouched_sibling_list() {
+        // Regression: `insert at { after: <heading> }` lands new content right
+        // before the section's existing list. A blank line alone does not stop
+        // CommonMark from re-merging two adjacent `-` lists into one on
+        // reparse, which would scramble every id from that point on (the
+        // round-trip law). The untouched list (and everything after it) must
+        // keep its exact bytes and id; the new list renders with `*` instead.
+        let (mut d, mut m) =
+            doc("# Note\n\n## Decisions\n\n- old1\n- old2\n\n## Open loops\n\n- loop1\n");
+        let decisions_heading = id_at(&d, 1);
+        let decisions_list = id_at(&d, 2);
+        let open_loops_heading = id_at(&d, 3);
+        let open_loops_list = id_at(&d, 4);
+        let old_decisions_raw = d.children[2].raw.clone();
+        d.insert(
+            &top(At::After(decisions_heading)),
+            "## Consumers\n\n- item",
+            &mut m,
+        )
+        .unwrap();
+        assert_eq!(
+            render(&d),
+            "# Note\n\n## Decisions\n\n## Consumers\n\n* item\n\n- old1\n- old2\n\n## Open loops\n\n- loop1\n"
+        );
+        // The untouched sibling list and everything after it keep their ids.
+        assert_eq!(d.children[4].id, decisions_list);
+        assert_eq!(d.children[4].raw, old_decisions_raw);
+        assert_eq!(d.children[5].id, open_loops_heading);
+        assert_eq!(d.children[6].id, open_loops_list);
     }
 
     #[test]
@@ -2121,6 +2248,7 @@ mod tests {
             3,
             Some(&Expect::order(&top_hash)),
             &mut m,
+            None,
         )
         .unwrap_err();
         assert_eq!(e.code, ErrorCode::StaleExpectation);
@@ -2157,13 +2285,13 @@ mod tests {
             }),
             ..UpdateArgs::default()
         };
-        let e = op_update(&mut d, &a, 0, &args, &mut m).unwrap_err();
+        let e = op_update(&mut d, &a, 0, &args, &mut m, None).unwrap_err();
         assert_eq!(e.data["block"], json!(a), "content CAS reported first");
         args.expect = Some(Expect {
             content_hash: Some(raw_hash_hex("a")),
             parent_children_hash: Some(top_hash.clone()),
         });
-        let e = op_update(&mut d, &a, 0, &args, &mut m).unwrap_err();
+        let e = op_update(&mut d, &a, 0, &args, &mut m, None).unwrap_err();
         let live = parent_children_hash(&d.children[1].children);
         assert_eq!(e.data["current"]["parent_children_hash"], json!(live));
         let ok = Expect {
