@@ -892,7 +892,7 @@ composition=<name>: compared=<n> mapped=<n> skipped=<n>` for
 
 ## 10. Reference oddities surfaced while specifying, and decisions
 
-- **Fixed (4.2) — an insert landing next to a same-marker list silently
+- **Fixed (4.3) — an insert landing next to a same-marker list silently
   absorbed it.** `insert`/`update` healed a missing blank line between the
   run and its new top-level neighbor (§2.1) but never checked whether the
   neighbor was ALSO a list the new one would re-merge with on the next

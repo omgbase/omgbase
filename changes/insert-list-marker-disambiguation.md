@@ -29,8 +29,9 @@ whenever it would otherwise merge with a neighbor that existed before the
 changeset — the untouched neighbor's bytes and id are never touched. A
 neighbor minted earlier in the SAME changeset (the row-template "rollup"
 insert pattern) is left free to merge, since both sides are new. `spec/mutate`
-4.1 → 4.2 (§2.1 disambiguation rule, §3 `attrs.bullet`/`attrs.delim`
-override, §10 write-up); `spec/reconcile` is unaffected — `docs_update`'s
+4.2 → 4.3 (§2.1 disambiguation rule, §3 `attrs.bullet`/`attrs.delim`
+override, §10 write-up — stacked on 4.2's section-target fix);
+`spec/reconcile` is unaffected — `docs_update`'s
 probabilistic matcher degrades gracefully on an already-merged list and was
 never exposed, which is why "docs_update the whole note" was a working
 workaround in the original report.
