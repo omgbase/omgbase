@@ -4,6 +4,93 @@ All notable changes to `omgbase-mutate` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [4.4.0] - 2026-11-07
+
+### Minor
+- Fix a structural-corruption bug: `insert`/`update` landing new content right
+  next to an existing top-level list of the same marker (e.g. `blocks_insert`
+  at `{ after: <heading> }` with that heading's existing list right after it,
+  or `blocks_append`/`docs_append`/CLI `append` into a section that already
+  ends in a list) rendered the new list directly against the old one with
+  nothing but a blank line between them. CommonMark does not split two
+  adjacent `-`/`*`/`+` (or ordered) lists that share a marker just because a
+  blank line sits between them, so the next commit's reparse read them as ONE
+  list — and the known-id resolver, which assigns ids by position on the
+  assumption that `parse(render(tree))` stays structurally identical to the op
+  tree, then misassigned every id from the merge point on: the untouched
+  list's items absorbed the new content under one id, and every block after it
+  (a following heading included) silently inherited an id that used to belong
+  to its next sibling. Confirmed independently in the existing fixture corpus,
+  not just a constructed repro — `spec/surface`'s `reads::diff-unified-list-
+  append` / `reads::append-into-blocks` and `spec/cli`'s `mutate::append-stdin`
+  all already exercised this path and had the corruption baked into their
+  `expect` until this fix's regeneration.
+
+  `insert` (and `update`'s extra-sibling path) now give the newly inserted
+  edge list a different marker (`-`/`*`/`+`, or `.`/`)`  for ordered lists)
+  whenever it would otherwise merge with a neighbor that existed before the
+  changeset — the untouched neighbor's bytes and id are never touched. A
+  neighbor minted earlier in the SAME changeset (the row-template "rollup"
+  insert pattern) is left free to merge, since both sides are new. `spec/mutate`
+  4.2 → 4.3 (§2.1 disambiguation rule, §3 `attrs.bullet`/`attrs.delim`
+  override, §10 write-up — stacked on 4.2's section-target fix);
+  `spec/reconcile` is unaffected — `docs_update`'s
+  probabilistic matcher degrades gracefully on an already-merged list and was
+  never exposed, which is why "docs_update the whole note" was a working
+  workaround in the original report.
+- Replacing a document's whole body with `set { field: "content" }` is, by
+  spec, a complete-document write — frontmatter fence included — so a value
+  with no fence silently clears whatever frontmatter the document currently
+  carries. That behavior was already correct; the only real gap was that
+  nothing *said* so at the moment of the mistake.
+
+  Two fixes, in both engines:
+
+  - The shape-check refusal for an invalid `set`/`unset` `field` on a document
+    now spells out what `content` means: `` …or `content` (the complete
+    document, frontmatter included)`` — previously it just said `` …or
+    `content` ``, which read as "a frontmatter half and a body half" rather
+    than "the whole file."
+  - `plan`/`apply`/`execute` (and the `docs_update` sugar built on them) now
+    carry a `frontmatter_dropped: [{ effect_index, _id, _path }]` advisory on
+    the Plan's preview and the Receipt: present whenever a `set content`
+    effect's value has no frontmatter fence while the target document's
+    current frontmatter is non-empty. This is advisory, not a refusal — a
+    deliberate frontmatter-clearing replacement still commits — but an agent
+    now sees the consequence before (via `plan`) or at (via the Receipt)
+    commit time instead of discovering it afterward.
+
+  `spec/mutate` moves to 4.4 (additive: one new Plan/Receipt field — stacked
+  on 4.2's section-target fix and 4.3's list-marker disambiguation). The
+  `apply`/`plan`/`docs_update` tool descriptions also gained a compact
+  side-by-side example: a document's `set content` with a `---` fence next to
+  the existing block `set markdown` contrast, so the two mutation vocabularies
+  read as distinct at a glance.
+- A `{ kind: "section", heading_id }` effect target did not check that
+  `heading_id` resolved to a HEADING block. `resolveSection`/`resolve_section`
+  computed the section's range from whatever top-level block the id named,
+  defaulting its level to 1 when the block had no `attrs.level` — which every
+  non-heading block lacks — so a stale or re-targeted `heading_id` that later
+  pointed at a paragraph or a list was silently accepted as "the section": its
+  own text was reported as the section's name in `preview.summary` and the
+  Receipt, and the insert landed relative to it rather than to the heading the
+  caller meant (observed in the field: a journal's Log heading id resolved,
+  after other edits, to the log list itself; a companion sibling insert then
+  landed after the list instead of before the heading).
+
+  `insert`/`move` into a section whose `heading_id` names a non-heading block
+  now refuses with `type_mismatch { op_index, block, type }` — the sibling of
+  1.2's "the destination parent of `insert`/`move` must be a container" rule,
+  naming the block's real type instead of treating its text as a section name.
+  Fixed in both engines (`packages/core/src/mutate/ops.ts`,
+  `crates/omgbase-mutate/src/ops.rs`); `spec/mutate` 4.2 (§1.1, Decisions) —
+  a behavior change (a `heading_id` that used to be silently accepted now
+  errors), so a minor, not a conformance patch: the prior spec text computed
+  the section's level generically ("`attrs.level` or 1") without requiring the
+  resolved block's kind to be `heading`, so the gap was in the spec's own
+  wording, not only the implementation. New fixture:
+  `spec/mutate/cases/ops.json` `insert-into-section-heading-not-a-heading`.
+
 ## [4.1.0] - 2026-10-26
 
 ### Minor

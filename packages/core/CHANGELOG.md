@@ -4,6 +4,226 @@ All notable changes to `@omgbase/core` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.37.0] - 2026-11-07
+
+### Minor
+- Fix a structural-corruption bug: `insert`/`update` landing new content right
+  next to an existing top-level list of the same marker (e.g. `blocks_insert`
+  at `{ after: <heading> }` with that heading's existing list right after it,
+  or `blocks_append`/`docs_append`/CLI `append` into a section that already
+  ends in a list) rendered the new list directly against the old one with
+  nothing but a blank line between them. CommonMark does not split two
+  adjacent `-`/`*`/`+` (or ordered) lists that share a marker just because a
+  blank line sits between them, so the next commit's reparse read them as ONE
+  list — and the known-id resolver, which assigns ids by position on the
+  assumption that `parse(render(tree))` stays structurally identical to the op
+  tree, then misassigned every id from the merge point on: the untouched
+  list's items absorbed the new content under one id, and every block after it
+  (a following heading included) silently inherited an id that used to belong
+  to its next sibling. Confirmed independently in the existing fixture corpus,
+  not just a constructed repro — `spec/surface`'s `reads::diff-unified-list-
+  append` / `reads::append-into-blocks` and `spec/cli`'s `mutate::append-stdin`
+  all already exercised this path and had the corruption baked into their
+  `expect` until this fix's regeneration.
+
+  `insert` (and `update`'s extra-sibling path) now give the newly inserted
+  edge list a different marker (`-`/`*`/`+`, or `.`/`)`  for ordered lists)
+  whenever it would otherwise merge with a neighbor that existed before the
+  changeset — the untouched neighbor's bytes and id are never touched. A
+  neighbor minted earlier in the SAME changeset (the row-template "rollup"
+  insert pattern) is left free to merge, since both sides are new. `spec/mutate`
+  4.2 → 4.3 (§2.1 disambiguation rule, §3 `attrs.bullet`/`attrs.delim`
+  override, §10 write-up — stacked on 4.2's section-target fix);
+  `spec/reconcile` is unaffected — `docs_update`'s
+  probabilistic matcher degrades gracefully on an already-merged list and was
+  never exposed, which is why "docs_update the whole note" was a working
+  workaround in the original report.
+- `spec/surface` 6.7: the `query` MCP tool now accepts `q` as a safe alias for
+  its `query` argument. `blocks_search`'s own argument IS named `q`, so an
+  agent reaching for that habit on `query` (which takes `query`) was an
+  understandable mix-up, not a new argument — and getting a schema error for
+  it was an avoidable ergonomics trap. `query { q: "..." }` now runs as
+  `query { query: "..." }`, with the result's new `argument_corrections` array
+  naming the mistake and asking the caller to use `query` henceforth, the same
+  teaching mechanism surface 6.6 introduced for a bare `id`/`path`. Giving
+  *both* `q` and `query` in the same call is a real collision, not an obvious
+  typo, so it is still refused (`filter_invalid`, `data.fix` the same call
+  respelled) rather than silently picking one.
+
+  Implemented through a SEPARATE, small per-tool alias table
+  (`TOOL_ARGUMENT_ALIASES` in the TypeScript reference,
+  `tool_argument_alias` in the Rust port) rather than an extension of 6.6's
+  `_`-prefix bare-engine-argument mechanism — this is a different kind of
+  mistake (a name borrowed from another tool), not a `_`-prefix confusion.
+  Both engines verified against the shared `spec/surface` fixtures.
+
+  A second reported bug — the `plan` MCP tool's advertised input schema
+  including `reason`, which the validator then rejected — was investigated and
+  found already resolved in both engines and in `spec/surface/README.md`:
+  `plan`'s schema takes `effects`, `select?`, `expect?`, `diffs?` and nothing
+  else, so there is nothing to align. No change made for that report.
+- Replacing a document's whole body with `set { field: "content" }` is, by
+  spec, a complete-document write — frontmatter fence included — so a value
+  with no fence silently clears whatever frontmatter the document currently
+  carries. That behavior was already correct; the only real gap was that
+  nothing *said* so at the moment of the mistake.
+
+  Two fixes, in both engines:
+
+  - The shape-check refusal for an invalid `set`/`unset` `field` on a document
+    now spells out what `content` means: `` …or `content` (the complete
+    document, frontmatter included)`` — previously it just said `` …or
+    `content` ``, which read as "a frontmatter half and a body half" rather
+    than "the whole file."
+  - `plan`/`apply`/`execute` (and the `docs_update` sugar built on them) now
+    carry a `frontmatter_dropped: [{ effect_index, _id, _path }]` advisory on
+    the Plan's preview and the Receipt: present whenever a `set content`
+    effect's value has no frontmatter fence while the target document's
+    current frontmatter is non-empty. This is advisory, not a refusal — a
+    deliberate frontmatter-clearing replacement still commits — but an agent
+    now sees the consequence before (via `plan`) or at (via the Receipt)
+    commit time instead of discovering it afterward.
+
+  `spec/mutate` moves to 4.4 (additive: one new Plan/Receipt field — stacked
+  on 4.2's section-target fix and 4.3's list-marker disambiguation). The
+  `apply`/`plan`/`docs_update` tool descriptions also gained a compact
+  side-by-side example: a document's `set content` with a `---` fence next to
+  the existing block `set markdown` contrast, so the two mutation vocabularies
+  read as distinct at a glance.
+- A `{ kind: "section", heading_id }` effect target did not check that
+  `heading_id` resolved to a HEADING block. `resolveSection`/`resolve_section`
+  computed the section's range from whatever top-level block the id named,
+  defaulting its level to 1 when the block had no `attrs.level` — which every
+  non-heading block lacks — so a stale or re-targeted `heading_id` that later
+  pointed at a paragraph or a list was silently accepted as "the section": its
+  own text was reported as the section's name in `preview.summary` and the
+  Receipt, and the insert landed relative to it rather than to the heading the
+  caller meant (observed in the field: a journal's Log heading id resolved,
+  after other edits, to the log list itself; a companion sibling insert then
+  landed after the list instead of before the heading).
+
+  `insert`/`move` into a section whose `heading_id` names a non-heading block
+  now refuses with `type_mismatch { op_index, block, type }` — the sibling of
+  1.2's "the destination parent of `insert`/`move` must be a container" rule,
+  naming the block's real type instead of treating its text as a section name.
+  Fixed in both engines (`packages/core/src/mutate/ops.ts`,
+  `crates/omgbase-mutate/src/ops.rs`); `spec/mutate` 4.2 (§1.1, Decisions) —
+  a behavior change (a `heading_id` that used to be silently accepted now
+  errors), so a minor, not a conformance patch: the prior spec text computed
+  the section's level generically ("`attrs.level` or 1") without requiring the
+  resolved block's kind to be `heading`, so the gap was in the spec's own
+  wording, not only the implementation. New fixture:
+  `spec/mutate/cases/ops.json` `insert-into-section-heading-not-a-heading`.
+
+### Patch
+- Two conformance fixes to the "did you mean" unknown-name hint mechanism
+  (`spec/surface` §1.5), in both engines:
+
+  - **`nodes { select _ordinal }`** (an engine-name error) used to suggest a
+    coincidental, wrong authored vocabulary key (`last_ordinal`, a `md:section`
+    node's own computed-looking attrs key) instead of a real field. The nearest
+    match now also tries an exact reach-through correction first — `_ordinal`
+    is a block attribute, reached through `_block` — so the error now reads
+    `` …; did you mean `_block._ordinal`? ``, the actually reachable fix.
+  - **A `$`-prefixed name that is not one of the language's recognized
+    intrinsics** (`$it`, `$key`, `$rows`, `$depth`, `$stop`, `$leaf`,
+    `$frontier`, `$ordinal`) — notably the pre-5.0 (in fact pre-3.0) `$`-spelled
+    engine attributes (`$path`, `$title`, `$updated_at`, …) and `$value` (which
+    `spec/oqx/SEMANTICS.md` §2 already documents as "not an intrinsic... an
+    ordinary property name") — used to be silently excluded from the
+    `references()` static pass (`@omgbase/oqx` / `oqx`), so a stale 2.x client
+    typing `$path` got no diagnostic at all: the projection was just absent and
+    `order by $updated_at` silently did nothing. `references()` now treats any
+    non-intrinsic `$`-name as an ordinary reference, so the surface's existing
+    unknown-bare-name hint machinery judges it the same way it judges a bare
+    `path` — `hints` now reads `` no document in this repository carries a
+    property `$path`; did you mean `_path`? `` — and the nearest-match
+    algorithm treats a leading `$` the same way it already treats a leading `_`
+    (both are a stripped "engine declaration" prefix, `$path` being the
+    language's own historical spelling of the same field `_path` now names).
+
+  `spec/oqx/AST.md` §5b's "What is not" bullet is corrected to name the actual
+  closed set of intrinsics (it previously said "`$`-names ... are the
+  language's values", which conflated the closed set with `$value`, already
+  documented elsewhere as not one of them) — a conformance fix, not a language
+  change, so `spec/oqx/VERSION` does not move.
+
+  Fixtures: `spec/oqx/cases/references.json` (`$value`/`$path` are now ordinary
+  references), `spec/surface/cases/query-errors.json` (the reach-through case,
+  and `hints` added to `dollar-names-are-not-omgbase-names` /
+  `dollar-self-is-not-a-name`), `spec/surface/cases/reads.json` and
+  `examples.json` regenerated (`SURFACE_SPEC_UPDATE=1`) for the `query_syntax`
+  card/manual text and the one affected `reads` case. `docs/query-language.md`
+  and the `query_syntax` text (both engines, byte-identical) updated to match.
+
+### Notes
+- Investigated a report that `docs_read.properties.frontmatter.<list-of-mappings>`
+  comes back double-wrapped (`[[{…}, …]]`) and that using such a property as a
+  nested-query receiver (`people { select name where active == true }`) then
+  matches nothing, while `people[0] { … }` "fixes" it.
+
+  Confirmed this is working as designed, reproduced identically in both engines
+  (TypeScript `@omgbase/core` and the Rust `omgbase`/`omgbase-surface` binary):
+  a frontmatter list whose elements are mappings or lists is the properties
+  layer's named json-escape-hatch shape (`spec/properties` §5,
+  `shapes::json-escape-hatch-reads-as-nested-array`) — it is stored as one row
+  and its read shape wraps it in an extra array. OQX's receiver coercion then
+  sees that outer array's one element (the real list) as a single row; since an
+  array has no named properties of its own (`spec/oqx` SEMANTICS §1/§3), a
+  projection off it is absent, and `prop[0]` (a lookup, not special indexing)
+  is what reaches the real rows. Both the reference TypeScript engine and the
+  Rust twin behave identically, as expected from the shared spec.
+
+  No behavior changed. Added a clarifying `NOTE:` to the `query_syntax` tool's
+  "Nested queries & consumers" chapter (`packages/core/src/mcp/reference.ts`,
+  mirrored byte-for-byte in `crates/omgbase-surface/src/reference.rs`) and a
+  cross-reference from `spec/properties/README.md` §5 to the query-layer
+  consequence, so the next person hitting this does not mistake it for a bug.
+- Wording-only fixes from the "OMG MCP complaints" friction log, no behavior or
+  argument-shape changes:
+
+  - The `query` tool's own description said its result was "rows"; the wire
+    envelope is `hits` (`{ hits, truncated, cursor, consumer }`). Fixed to say
+    "hits" so a client reading the tool description doesn't look for
+    `result.rows` and come up empty.
+  - The `query_syntax` reference (both the full manual and the compact card) now
+    states explicitly that `exists`/`none` are WHERE-position tests only — never
+    a `select` projection — while `collect`/`first`/`single`/`count` project in
+    `select` (`count` has been a value there since oqx 0.24), with a worked
+    example (`docs { select n: _nodes count { _kind == "md:task" } }`).
+    Previously the consumers were listed generically, which made a scalar
+    computed-field projection with `count` look unsupported (or, going the other
+    way, made `exists`/`none` look select-safe when they are not).
+  - The `query_syntax` reference's membership section now shows a literal-tuple
+    example (`docs { type in ("lab-note", "hub") }`) alongside the existing
+    authored-array membership examples, so `in [...]` (brackets — refused) isn't
+    the first thing an agent reaches for; tuples are `(a, b)`, never `[a, b]`.
+  - The `apply` tool's one `insert` example previously showed only
+    `at: "end"`; its comment now also names the `{before|after: "<id>"}` forms
+    so position-before-a-heading isn't trial-and-error. (The client-portability
+    budget on minimal-tool descriptions — 900 chars — left no room for a second
+    full JSON rung; the existing rung's comment was extended instead, and a
+    neighboring rung's comment was tightened to make space. `plan`'s ladder
+    has the same `at` grammar via `blocks_insert`'s fuller description and
+    `docs/mcp-api.md`, which already worked examples for `at.before`/`at.after`.)
+
+  Checked and found already correct (no change made): the `select`-before-`where`
+  clause order is documented consistently everywhere a caller would read it as a
+  template (the collection-heads-the-body braces form, `docs { select … where … }`,
+  is canonical throughout `reference.ts`, `docs/query-language.md`, `docs/cli.md`
+  and `docs/decisions.md`; no surviving example shows the rejected
+  `from … where … select` order). `docs/mcp-api.md` already says "hits" for the
+  `query` tool's result shape and already documents `at: {before|after}` with a
+  worked example in its effects section. The `content`-vs-`markdown`
+  (document-vs-block) side-by-side example was left for the sibling change
+  covering that diagnostic/behavior work, to avoid a collision in the same
+  ladder text.
+
+  `spec/surface/cases/examples.json`, `reads.json` and `tool-descriptions.json`
+  regenerated (`SURFACE_SPEC_UPDATE=1` + `node scripts/gen-tool-descriptions.mjs`)
+  to match; `crates/omgbase-surface/src/reference.rs` hand-mirrored to stay byte
+  for byte with `packages/core/src/mcp/reference.ts` (its own test enforces this).
+
 ## [0.36.0] - 2026-11-06
 
 ### Minor
