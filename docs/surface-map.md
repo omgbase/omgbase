@@ -39,7 +39,9 @@
   corrected call and the result names the mistake in `argument_corrections`, unless
   the `_` form was also given (a real collision), which is still `filter_invalid`
   with the corrected call in `data.fix` (6.6; through 6.5, every bare form was
-  refused this way). Role arguments keep their names
+  refused this way). The same treatment covers a small per-tool table for a name
+  borrowed from a different tool (6.7) — `query { q }` (`blocks_search`'s own
+  argument name) aliases to `query { query }`. Role arguments keep their names
   (`docs`, `blocks`, `to`, `at`, `roots`, `rev`, `path_glob`, `docs_tree.path`,
   `docs_create.path`, `to_path`, `observe*.path`, `section`, `plan_id`, …). Every result
   key that carries a row attribute is `_`-prefixed (`_id`, `_path`, `_hash`, …) and the

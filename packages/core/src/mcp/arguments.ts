@@ -29,6 +29,16 @@ import { canonicalJson } from "../mutate/canonical.js";
 // absent when nothing was corrected). When the `_` form is ALSO given (a real
 // collision, not an obvious mistake), the bare name is still the refusal
 // below, unchanged — aliasing there would mean silently picking a side.
+//
+// (6.7) A SEPARATE, small per-tool alias table (`TOOL_ARGUMENT_ALIASES`)
+// catches the same class of mistake for an argument name that is common
+// elsewhere in the catalog but is not an engine-field confusion: the `query`
+// tool takes `query`, but `blocks_search` takes `q` for the same role, so a
+// caller reaching for `q` on `query` out of habit is treated the same way —
+// safely respelled with a correction when the real name is absent, refused
+// as a collision when both are given. This is deliberately its own
+// mechanism, not an extension of `BARE_ENGINE_ARGUMENTS`: it has nothing to
+// do with the `_`-prefix convention.
 
 /** One tool's argument shape: the zod raw shape it was registered with. */
 export type ArgShape = Record<string, z.ZodTypeAny>;
@@ -121,24 +131,33 @@ export function validateArguments(tool: string, shape: ArgShape, raw: unknown): 
   if (typeof raw !== "object" || Array.isArray(raw)) throw argumentError(tool, "arguments must be an object", shape);
   let args = raw as Record<string, unknown>;
   const corrections: string[] = [];
-  const toRespell = new Set<string>();
+  const respell = new Map<string, string>();
   for (const key of Object.keys(args).sort(cmpBytes)) {
     if (key in shape) continue;
     if (safeToAliasEngineArgument(key, shape, args)) {
-      toRespell.add(key);
+      respell.set(key, `_${key}`);
       corrections.push(bareEngineArgumentCorrection(tool, key));
       continue;
     }
-    // (5.0) A bare engine-field name where the tool takes its `_` spelling,
-    // but the `_` form is also given (a collision, not aliased — see above):
-    // the error still carries the corrected call (every bare `id`/`path`/`ids`
-    // the call holds respelled at once), never a silent acceptance.
-    const fix = bareEngineArgument(key, shape) ? canonicalJson(respellEngineArguments(args, shape)) : undefined;
-    throw argumentError(tool, unknownArgumentMessage(key, shape), shape, fix);
+    if (safeToAliasToolArgument(tool, key, shape, args)) {
+      respell.set(key, toolArgumentAlias(tool, key, shape)!);
+      corrections.push(toolArgumentAliasCorrection(tool, key, shape));
+      continue;
+    }
+    // (5.0 / 6.7) A bare engine-field name, or a per-tool alias, where the
+    // real spelling is also given (a collision, not aliased — see above): the
+    // error still carries the corrected call (every such key the call holds
+    // respelled at once), never a silent acceptance.
+    const fix = bareEngineArgument(key, shape)
+      ? canonicalJson(respellEngineArguments(args, shape))
+      : toolArgumentAlias(tool, key, shape) !== null
+        ? canonicalJson(respellToolArguments(tool, args, shape))
+        : undefined;
+    throw argumentError(tool, unknownArgumentMessage(tool, key, shape), shape, fix);
   }
-  if (toRespell.size > 0) {
+  if (respell.size > 0) {
     const respelled: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(args)) respelled[toRespell.has(k) ? `_${k}` : k] = v;
+    for (const [k, v] of Object.entries(args)) respelled[respell.get(k) ?? k] = v;
     args = respelled;
   }
   const out: Record<string, unknown> = {};
@@ -220,23 +239,74 @@ export function respellEngineArguments(args: Record<string, unknown>, shape: Arg
   return out;
 }
 
+// ---- per-tool argument aliases (spec/surface §4 "Arguments", 6.7) ---------------------
+//
+// A mistake that is NOT an engine-field confusion: an argument name familiar
+// from one tool, reached for on another tool that means the same thing by a
+// different name. Kept as its own small, explicit table (one entry today)
+// rather than folded into `BARE_ENGINE_ARGUMENTS` — the `_`-prefix mechanism
+// above is specifically about the bare/engine-field split, and this is not.
+
+/** Per-tool aliases for a common cross-tool mistake: `{ tool: { mistakenKey: realKey } }`. */
+const TOOL_ARGUMENT_ALIASES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  // `blocks_search` takes `q`; `query` (the tool) takes `query` for the same
+  // role (the search/filter expression) — an easy habit to carry over.
+  query: { q: "query" },
+};
+
+/** The real argument name `key` is a known alias for on `tool`, when `tool`
+ *  actually takes that name (`shape` has it) — null otherwise (no alias for
+ *  this tool/key, or the table names a real argument the tool doesn't have). */
+export function toolArgumentAlias(tool: string, key: string, shape: ArgShape): string | null {
+  const real = TOOL_ARGUMENT_ALIASES[tool]?.[key];
+  return real !== undefined && real in shape ? real : null;
+}
+
+/** Whether `key` is a per-tool alias safe to silently respell on `tool`'s
+ *  call: a known alias the tool takes AND the call does not already give —
+ *  no collision to resolve silently. */
+export function safeToAliasToolArgument(tool: string, key: string, shape: ArgShape, args: Record<string, unknown>): boolean {
+  const real = toolArgumentAlias(tool, key, shape);
+  return real !== null && args[real] === undefined;
+}
+
+/** The success-path notice for a per-tool alias safely respelled (spec/surface
+ *  §4, 6.7) — the same shape as {@link bareEngineArgumentCorrection}, for a
+ *  mistake that is a borrowed argument name rather than a bare engine field. */
+export function toolArgumentAliasCorrection(tool: string, key: string, shape: ArgShape): string {
+  const real = toolArgumentAlias(tool, key, shape)!;
+  return `\`${tool}\` was called with \`${key}\` instead of \`${real}\` — \`${key}\` is another tool's argument name, \`${real}\` is \`${tool}\`'s. This call ran as \`${real}\` on your behalf; update your memory to use \`${real}\` (not \`${key}\`) with \`${tool}\`.`;
+}
+
+/** The call with every per-tool alias on `tool` respelled to its real name (the `fix` of the collision error). */
+export function respellToolArguments(tool: string, args: Record<string, unknown>, shape: ArgShape): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) out[toolArgumentAlias(tool, k, shape) ?? k] = v;
+  return out;
+}
+
 /**
  * What to say about an argument name the tool does not take. A bare engine
  * field (`id`, `path`, `ids`) where the tool takes its `_` spelling is the
  * no-tolerance error of 5.0 (spec/surface §4 "Arguments": the bare namespace is
- * the user's, an engine field is matched by its exact name). The names 3.0
- * retired are called out with their replacement (`doc` → `_id`/`_path`,
- * `block`/`node` → `_id`, `heading` → `section`, `markdown` → `text`) when the
- * tool has the replacement, and so are the inputs 4.0 retired (spec/surface
- * §4; ADR-021's retirement release): `ops` on a tool that takes `effects`
- * (the kernel ops are a library/fixture contract), `dry_run` on any tool (the
- * preview is `plan`), `attrs` on a tool that takes `checked`. Otherwise the
- * nearest valid name (Levenshtein ≤ 2, or one a prefix of the other).
+ * the user's, an engine field is matched by its exact name); a per-tool alias
+ * (6.7, `TOOL_ARGUMENT_ALIASES`) whose real name `tool` ALSO takes is the same
+ * kind of refusal, for a mistake that borrows another tool's argument name.
+ * The names 3.0 retired are called out with their replacement (`doc` →
+ * `_id`/`_path`, `block`/`node` → `_id`, `heading` → `section`, `markdown` →
+ * `text`) when the tool has the replacement, and so are the inputs 4.0 retired
+ * (spec/surface §4; ADR-021's retirement release): `ops` on a tool that takes
+ * `effects` (the kernel ops are a library/fixture contract), `dry_run` on any
+ * tool (the preview is `plan`), `attrs` on a tool that takes `checked`.
+ * Otherwise the nearest valid name (Levenshtein ≤ 2, or one a prefix of the
+ * other).
  */
-export function unknownArgumentMessage(key: string, shape: ArgShape): string {
+export function unknownArgumentMessage(tool: string, key: string, shape: ArgShape): string {
   const has = (n: string) => n in shape;
   const retired = (replacement: string) => `\`${key}\` is no longer an argument — pass ${replacement}`;
   if (bareEngineArgument(key, shape)) return `\`${key}\` is not an argument — the engine field is \`_${key}\` (the bare namespace is the user's); pass \`_${key}\``;
+  const alias = toolArgumentAlias(tool, key, shape);
+  if (alias !== null) return `\`${key}\` is not an argument on \`${tool}\` — \`${key}\` is a different tool's argument name; pass \`${alias}\``;
   if (key === "doc" && has("_id") && has("_path")) return retired("`_id` or `_path`");
   if ((key === "block" || key === "node") && has("_id")) return retired("`_id`");
   if (key === "heading" && has("section")) return retired("`section` (the heading's text), or blocks_append with the heading's `id`");

@@ -1593,7 +1593,23 @@ document's id is `_id` (an engine field: the bare namespace is the user's)"
 `blocks_` tool, "the node's id" on a `nodes_` tool) and `data.fix` the same
 call respelled (`reads::arguments`'s last step); the bare argument name
 `doc` no longer exists and is never aliased
-(ambiguous which of `_id`/`_path` it would mean). Through 4.11 the arguments
+(ambiguous which of `_id`/`_path` it would mean). **A per-tool alias (6.7)**
+catches the same class of mistake for an argument name that is NOT an
+engine-field confusion — just a habit carried over from a different tool
+that means the same thing under a different name: the `query` tool takes
+`query`, but `blocks_search` takes `q` for the same role (the search/filter
+expression), and a caller reaching for `q` on `query` is an understandable
+mix-up, not a new argument. A small, explicit table (`{ query: { q: "query"
+} }` today — not an extension of the `_`-prefix mechanism, which is about a
+different kind of mistake) names each such pair; it is handled exactly like
+a bare engine-field alias — silently respelled with its own
+`argument_corrections` entry ("`query` was called with `q` instead of
+`query` — `q` is another tool's argument name, `query` is `query`'s. This
+call ran as `query` on your behalf; update your memory to use `query` (not
+`q`) with `query`.") when the real name is absent, refused as a real
+collision when both are given (`filter_invalid`, "`q` is not an argument on
+`query` — `q` is a different tool's argument name; pass `query`",
+`data.fix` the same call respelled). Through 4.11 the arguments
 were bare because the attributes were (the 3.0 flip); they move with the
 attributes, for the same reason. A
 `docs_*` locator takes at least one of `_id`/`_path` (else `filter_invalid`
@@ -2332,6 +2348,19 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Added (6.7) — a per-tool argument alias table, starting with `query`'s
+  `q`** (§4 "Arguments"): an agent supplying the OQX expression to the
+  `query` tool as `q` instead of `query` got a clear `filter_invalid`, but
+  the mismatch is an avoidable ergonomics trap — `blocks_search`'s own
+  argument IS named `q`, so reaching for that habit on `query` is an
+  understandable mix-up, not a new argument. Handled exactly like 6.6's bare
+  `id`/`path` alias (safely respelled with `argument_corrections` when the
+  real name is absent, refused as a collision when both are given) but
+  through a SEPARATE, small, explicit table (`TOOL_ARGUMENT_ALIASES` /
+  `tool_argument_alias`) rather than an extension of `BARE_ENGINE_ARGUMENTS`
+  — this is not a `_`-prefix confusion, it is a name borrowed from a
+  different tool. New: `reads::arguments` gains a `query { q }` step (safely
+  aliased) and a `query { q, query }` step (the collision, still refused).
 - **Changed (6.6) — a bare `id`/`path`/`ids`/`paths` argument is safely
   aliased, not refused** (§4 "Arguments"; Decisions 2026-11-06, Brendan,
   reading the omgbase-notes "OMG MCP complaints" log): since 5.0 the refusal

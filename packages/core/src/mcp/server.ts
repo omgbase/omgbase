@@ -69,7 +69,10 @@ import {
 // verb returns the row: `read`. A bare `id`/`path`/`ids` runs as the `_`-spelled
 // call, with the result's `argument_corrections` naming the mistake (6.6) — unless
 // the `_` form was ALSO given (a real collision), which is still `filter_invalid`
-// with a `fix`; there is no bare `doc` argument. Every call is validated by
+// with a `fix`; there is no bare `doc` argument. The same safe-alias/collision
+// treatment covers a small per-tool table for a name borrowed from a different
+// tool (6.7) — `query { q }` (`blocks_search`'s own argument name) aliases to
+// `query { query }`. Every call is validated by
 // `validateArguments` ahead of its handler (the `tool` wrapper + the
 // CallTool handler below), so a wrong name is a `filter_invalid` naming the
 // nearest valid one, never the SDK's generic validation text.
