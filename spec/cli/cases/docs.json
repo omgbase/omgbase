@@ -898,7 +898,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"be8ea327274333f1db46478682f00cd03a146c6b5b05d36c730b635d92dda1c1\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"29d7f9b63a70a8673dac9070255f6e12cd334a562f10a87614e36ffcc9357a43\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set content of /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"be8ea327274333f1db46478682f00cd03a146c6b5b05d36c730b635d92dda1c1\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"29d7f9b63a70a8673dac9070255f6e12cd334a562f10a87614e36ffcc9357a43\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set content of /texts/mutus-liber.md\"],\"frontmatter_dropped\":[{\"effect_index\":0,\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\"}]}\n"
       },
       "notes": "--json prints the Receipt (4.0; `{ opset, result }` before)"
     },

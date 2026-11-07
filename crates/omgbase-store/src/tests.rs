@@ -4203,7 +4203,7 @@ fn a_later_request_materializes_the_pending_row_before_reading() {
 // ---- the public Effect layer (spec/mutate §11, mutate 2.3) --------------------------------
 
 use crate::effects_plan::{EffectsOutcome, PlanContext, Receipt};
-use omgbase_mutate::effects::Target;
+use omgbase_mutate::effects::{FrontmatterDropWarning, Target};
 use omgbase_mutate::{Effect as Fx, ErrorCode};
 use serde_json::{Value, json};
 
@@ -4485,6 +4485,7 @@ fn plan_then_execute_and_one_shot_apply_leave_identical_footprints() {
                 "set _frontmatter.status = \"done\" in /a.md",
                 "insert 1 block at the end of section \"A\" in /a.md",
             ],
+            "frontmatter_dropped": [],
         })
     );
     assert_eq!(footprint(&a, &ds_a), footprint(&b, &ds_b));
@@ -5396,6 +5397,86 @@ fn set_content_previews_the_identity_decision_and_a_no_change_commits_nothing() 
     assert!(r.revisions.is_empty());
     assert_eq!(count(&store, "commits"), commits, "no commit row");
     assert_eq!(ds.read("a.md").unwrap().as_deref(), Some(FM_DOC));
+}
+
+/// `set document.content` whose value has no frontmatter fence while the
+/// target's CURRENT frontmatter is non-empty surfaces a non-fatal
+/// `preview.frontmatter_dropped[{ effect_index, _id, _path }]` advisory
+/// (4.2) — the complaint this flags (§11.2): `content` is the complete
+/// document, fences included, and a caller who forgets the fence silently
+/// clears whatever frontmatter the document currently has. Advisory only:
+/// the plan still executes and the Receipt carries the same list.
+#[test]
+fn set_content_with_no_fence_warns_frontmatter_dropped_but_still_commits() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
+    let no_fence = "# A\n\nAlpha, rewritten with no frontmatter.\n";
+    let set = |value: &str| Fx::Set {
+        target: doc_by_path("a.md"),
+        field: "content".into(),
+        value: json!(value),
+        expect: None,
+    };
+    let plan = store
+        .plan_effects(&ctx(&repo, T1), &[set(no_fence)], &ds)
+        .unwrap();
+    let preview = plan.preview.as_ref().unwrap();
+    assert_eq!(
+        preview.frontmatter_dropped,
+        vec![FrontmatterDropWarning {
+            effect_index: 0,
+            id: "d_0".to_owned(),
+            path: "a.md".to_owned(),
+        }]
+    );
+    let wire = plan.to_json(true);
+    assert_eq!(
+        wire["preview"]["frontmatter_dropped"],
+        json!([{ "effect_index": 0, "_id": "d_0", "_path": "a.md" }])
+    );
+    let back = Plan::from_json(&wire).unwrap();
+    assert_eq!(back.preview, plan.preview);
+
+    // Advisory, not a refusal: the commit still succeeds, and the Receipt
+    // carries the same warning.
+    let receipt = store
+        .execute_plan(&ctx(&repo, T1), &plan, &api_origin(), &mut ds)
+        .unwrap();
+    assert!(receipt.commit.is_some());
+    assert_eq!(receipt.frontmatter_dropped, preview.frontmatter_dropped);
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some(no_fence));
+
+    // No advisory when the new content keeps a fence, or when the document
+    // carries none to begin with.
+    let (mut store2, repo2, ds2) = seeded(&[("a.md", FM_DOC)]);
+    let refenced = "---\nstatus: closed\n---\n\n# A\n\nAlpha, refenced.\n";
+    let kept = store2
+        .plan_effects(&ctx(&repo2, T1), &[set(refenced)], &ds2)
+        .unwrap();
+    assert!(
+        kept.preview
+            .as_ref()
+            .unwrap()
+            .frontmatter_dropped
+            .is_empty()
+    );
+    let (mut store3, repo3, ds3) = seeded(&[("b.md", "# B\n\nNo frontmatter here.\n")]);
+    let set_b = Fx::Set {
+        target: doc_by_path("b.md"),
+        field: "content".into(),
+        value: json!("# B\n\nStill no frontmatter.\n"),
+        expect: None,
+    };
+    let no_fm = store3
+        .plan_effects(&ctx(&repo3, T1), &[set_b], &ds3)
+        .unwrap();
+    assert!(
+        no_fm
+            .preview
+            .as_ref()
+            .unwrap()
+            .frontmatter_dropped
+            .is_empty()
+    );
 }
 
 /// A `retarget` effect surfaces what `links_repair` found as

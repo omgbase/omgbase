@@ -10,7 +10,7 @@ import { resolveDocStore, type DocStore } from "./doc-store.js";
 import { parseNewDoc } from "./docs.js";
 import {
   ConflictTracker, SymbolTable, isNewSymbol, lowerEffect, symbolicMinter, effectInvalid,
-  type CreateEntry, type Effect, type LoweringContext, type ResolvedEffect, type RetargetPreview,
+  type CreateEntry, type Effect, type FrontmatterDropWarning, type LoweringContext, type ResolvedEffect, type RetargetPreview,
 } from "./effects.js";
 import type { IdentityPreview } from "./opset.js";
 import { compilePlain, compileSelection, selectionInvalid, type EffectOrigin, type Selection } from "./select.js";
@@ -69,6 +69,8 @@ export interface PlanPreview {
   identity?: Record<string, IdentityPreview>;
   /** (3.0) per `retarget` effect: its hits and pair counts; present when a plan has one */
   retarget?: RetargetPreview[];
+  /** (4.2) per `set content` effect that would clear the target's current frontmatter; present when a plan has one */
+  frontmatter_dropped?: FrontmatterDropWarning[];
   /** (3.3, §11.9) one line in words per resolved effect, in order — the plan as a worked example; `[]` for a zero-hit selection */
   summary: string[];
 }
@@ -105,6 +107,8 @@ export interface Receipt {
   committed: true;
   /** (3.3, §11.9) the plan's `preview.summary` — what was committed, in words (`[]` when the plan was handed back without its preview) */
   summary: string[];
+  /** (4.2) the plan's `preview.frontmatter_dropped` — advisory, not a refusal (`[]` when none, or when the plan was handed back without its preview) */
+  frontmatter_dropped: FrontmatterDropWarning[];
 }
 
 // ---- canonical JSON and the digest (§11.5) ----------------------------------------------
@@ -191,7 +195,7 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     const planner = new ChangesetPlanner(store, req.repoId, req.omgbaseDir);
     const ctx: LoweringContext = {
       store, repoId: req.repoId, docStore, planner, symbols,
-      blockSymbols: new Map(), creates: [], identity: new Map(), retargets: [], moves: [], tombstones: [], heads: new Map(), ops: [],
+      blockSymbols: new Map(), creates: [], identity: new Map(), retargets: [], frontmatterDropped: [], moves: [], tombstones: [], heads: new Map(), ops: [],
       pins: new Map(), parents: [], absentPaths: [], docBases: new Map(),
       tracker: new ConflictTracker(canonicalJson), canonical: canonicalJson, resolved: [], summary: [],
     };
@@ -264,6 +268,7 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     const preview: PlanPreview = { results: changeset.results, revisions, diffs, summary: ctx.summary };
     if (ctx.identity.size > 0) preview.identity = Object.fromEntries(ctx.identity);
     if (ctx.retargets.length > 0) preview.retarget = ctx.retargets;
+    if (ctx.frontmatterDropped.length > 0) preview.frontmatter_dropped = ctx.frontmatterDropped;
     return { ...core, plan_id, diagnostics: ctx.tracker.diagnostics, ...(templates !== undefined ? { templates } : {}), preview };
   });
 }
@@ -619,5 +624,8 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
     const id = s.kind === "block" ? minted.b[bi++] : minted.d[di++];
     if (id !== undefined) newIds[s.symbol] = id;
   }
-  return { plan_id: plan.plan_id, commit: outcome.commitId, revisions, new_ids: newIds, committed: true, summary: plan.preview?.summary ?? [] };
+  return {
+    plan_id: plan.plan_id, commit: outcome.commitId, revisions, new_ids: newIds, committed: true,
+    summary: plan.preview?.summary ?? [], frontmatter_dropped: plan.preview?.frontmatter_dropped ?? [],
+  };
 }

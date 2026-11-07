@@ -74,7 +74,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     const { payload: plan } = await call("plan", { effects: SLICE1 });
     const { payload: receipt, isError } = await call("execute", { plan, reason: "via mcp" });
     expect(isError).toBe(false);
-    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ _id: "d_0", _path: "/a.md", _hash: expect.any(String) }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true, summary: ['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
+    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ _id: "d_0", _path: "/a.md", _hash: expect.any(String) }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true, summary: ['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'], frontmatter_dropped: [] });
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("---\nstatus: active\n---\n\n# Title\n\nIntro.\n\n## Notes\n\nFirst note.\n\nSecond note.\n");
     expect(store.db.prepare("SELECT actor, reason FROM commits WHERE commit_id = 'c_1'").get()).toEqual({ actor: "agent:mcp", reason: "via mcp" });
     const again = await call("execute", { plan });

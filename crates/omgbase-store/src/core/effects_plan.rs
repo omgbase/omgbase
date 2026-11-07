@@ -50,10 +50,10 @@ use omgbase_format::hash::{hex, sha256};
 use omgbase_format::{FORMAT_MARKDOWN, format_for_path};
 use omgbase_mutate::effects::{
     self as fx, BlockPrecondition, ConflictTracker, DocPrecondition, Field, FocusInfo, FocusTarget,
-    IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, ParentPrecondition,
-    Plan, PlanCreate, PlanFrontmatter, PlanMove, PlanOpset, PlanPreview, PlanRevision,
-    PlanTombstone, Preconditions, RetargetHitPreview, RetargetPairPreview, RetargetPreview,
-    ScalarWrite, Selection, Target,
+    FrontmatterDropWarning, IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V,
+    ParentPrecondition, Plan, PlanCreate, PlanFrontmatter, PlanMove, PlanOpset, PlanPreview,
+    PlanRevision, PlanTombstone, Preconditions, RetargetHitPreview, RetargetPairPreview,
+    RetargetPreview, ScalarWrite, Selection, Target,
 };
 use omgbase_mutate::frontmatter_parts::{
     FrontmatterPart, join_frontmatter_parts, lead_of, line_ending_of, split_frontmatter_raw,
@@ -92,7 +92,7 @@ pub struct PlanContext {
 }
 
 /// §11.7 `Receipt`: `{ plan_id, commit, revisions, new_ids, committed: true,
-/// summary }`.
+/// summary, frontmatter_dropped }`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Receipt {
     pub plan_id: String,
@@ -105,6 +105,10 @@ pub struct Receipt {
     /// The plan's `preview.summary` (3.3): what was committed, in words —
     /// the confirmation text.
     pub summary: Vec<String>,
+    /// (4.2) the plan's `preview.frontmatter_dropped` — advisory, not a
+    /// refusal (`[]` when none, or when the plan was handed back without
+    /// its preview).
+    pub frontmatter_dropped: Vec<FrontmatterDropWarning>,
 }
 
 impl Receipt {
@@ -121,6 +125,7 @@ impl Receipt {
             "new_ids": new_ids,
             "committed": true,
             "summary": self.summary,
+            "frontmatter_dropped": self.frontmatter_dropped.iter().map(FrontmatterDropWarning::to_json).collect::<Vec<_>>(),
         })
     }
 }
@@ -240,6 +245,9 @@ struct Planning<'a> {
     identity: Vec<(String, IdentityPreview)>,
     /// `preview.retarget`: per `retarget` effect, its hits and pairs (3.0).
     retarget: Vec<RetargetPreview>,
+    /// `preview.frontmatter_dropped`: per `set content` effect that would
+    /// clear the target's current frontmatter (4.2).
+    frontmatter_dropped: Vec<FrontmatterDropWarning>,
     /// `preview.summary`: one line per resolved effect (3.3).
     summary: Vec<String>,
     /// Doc id → `(links, documents)` its `move` rewrote (`retarget_inbound`
@@ -1047,6 +1055,7 @@ impl Store {
     fn apply_lowering(
         &mut self,
         p: &mut Planning<'_>,
+        i: usize,
         e: &Effect,
         retarget_ops: Vec<Op>,
     ) -> Result<()> {
@@ -1113,12 +1122,12 @@ impl Store {
                 field,
                 value,
                 expect,
-            } => self.lower_set(p, target, field, Some(value), expect.as_ref())?,
+            } => self.lower_set(p, i, target, field, Some(value), expect.as_ref())?,
             Effect::Unset {
                 target,
                 field,
                 expect,
-            } => self.lower_set(p, target, field, None, expect.as_ref())?,
+            } => self.lower_set(p, i, target, field, None, expect.as_ref())?,
             Effect::MoveBlocks {
                 targets,
                 into,
@@ -1287,6 +1296,7 @@ impl Store {
     fn lower_set(
         &mut self,
         p: &mut Planning<'_>,
+        i: usize,
         target: &Target,
         field: &str,
         value: Option<&Value>,
@@ -1309,7 +1319,7 @@ impl Store {
                             "its content is the create's markdown",
                         ));
                     }
-                    return self.lower_content(p, doc_id, content);
+                    return self.lower_content(p, i, doc_id, content);
                 }
                 // `_frontmatter.<key>` — on a created document too (3.0): its
                 // tree is loaded, the patch is a head like any other — but
@@ -1591,7 +1601,13 @@ impl Store {
     /// planner's own dry runs mint under a throwaway symbol table. An opset
     /// with nothing to do — the content already current — loads nothing, so
     /// the plan commits nothing for it.
-    fn lower_content(&mut self, p: &mut Planning<'_>, doc_id: &str, content: &str) -> Result<()> {
+    fn lower_content(
+        &mut self,
+        p: &mut Planning<'_>,
+        i: usize,
+        doc_id: &str,
+        content: &str,
+    ) -> Result<()> {
         let config = p.ctx.config.clone();
         let prev = self.ids.set_capture(Some(Capture::Symbolic(Vec::new())));
         let planned = self.plan_update(&p.ctx.repo_id, doc_id, content, &config);
@@ -1652,6 +1668,19 @@ impl Store {
             );
             p.runner.set_head(self, doc_id, &head)?;
             set_head(p, doc_id, head);
+            // (4.2) `raw: None` here means the proposed content had no
+            // frontmatter fence while the stored one differs — i.e. is
+            // non-empty: this write would silently clear it (the complaint
+            // this flags: §11.2's error text was the only in-band hint
+            // before). Advisory only — a deliberate clear must still
+            // succeed.
+            if raw.is_none() {
+                p.frontmatter_dropped.push(FrontmatterDropWarning {
+                    effect_index: i,
+                    id: doc_id.to_owned(),
+                    path: p.runner.loaded[d].doc.path.clone(),
+                });
+            }
         }
         for planned in &opset.ops {
             self.push_op(p, fx::shift_placeholders(&planned.op, offset))?;
@@ -1749,7 +1778,7 @@ impl Store {
         }
         let after = matches!(e, Effect::Insert { .. } | Effect::MoveDocument { .. });
         let worded = (!after).then(|| self.summary_line(p, &e, None, retarget_counts));
-        self.apply_lowering(p, &e, retarget_ops)?;
+        self.apply_lowering(p, i, &e, retarget_ops)?;
         let line = worded.unwrap_or_else(|| {
             let inserted = match e {
                 Effect::Insert { .. } => p.runner.results.last().map(|r| r.ids.len()),
@@ -1856,6 +1885,7 @@ impl Store {
             resolved: Vec::new(),
             identity: Vec::new(),
             retarget: Vec::new(),
+            frontmatter_dropped: Vec::new(),
             summary: Vec::new(),
             move_retargets: Vec::new(),
         };
@@ -1877,6 +1907,7 @@ impl Store {
             resolved,
             identity,
             retarget,
+            frontmatter_dropped,
             summary,
             ..
         } = p;
@@ -2027,6 +2058,7 @@ impl Store {
                 diffs,
                 identity,
                 retarget,
+                frontmatter_dropped,
                 summary,
             }),
         })
@@ -2125,6 +2157,11 @@ impl Store {
                 .preview
                 .as_ref()
                 .map(|p| p.summary.clone())
+                .unwrap_or_default(),
+            frontmatter_dropped: plan
+                .preview
+                .as_ref()
+                .map(|p| p.frontmatter_dropped.clone())
                 .unwrap_or_default(),
         })
     }

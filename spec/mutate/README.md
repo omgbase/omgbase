@@ -27,8 +27,10 @@ and the prose gets fixed. Rationale: `docs/mutation-and-concurrency.md`,
 
 `VERSION` is `<major>.<minor>`; the `omgbase-mutate` crate is
 `<major>.<minor>.<patch>`. A change to what an op does, what it renders, or
-which error it raises bumps the minor; a change to the request/response or
-opset shapes bumps the major.
+which error it raises bumps the minor; of the request/response or opset
+shapes, a field, effect, target kind or result key ADDED bumps the minor
+(`spec/surface`'s rule for its own shapes, mirrored here — 4.2), one
+REMOVED or changed in meaning bumps the major.
 
 ## The rule for changing mutation
 
@@ -1190,7 +1192,13 @@ block `field` of `text`/`content`/`body`/`raw` (`markdown`).
 
 Through 3.x the fields were spelled `frontmatter.<key>` and `attrs.checked`
 (4.0 — Decisions). `content` and `markdown` name what is written, not a row
-attribute, and stay bare.
+attribute, and stay bare. A document's `content` is the WHOLE file — the
+frontmatter fence included, §7 — so a `content` value with no fence replaces
+a document's current frontmatter with nothing; the shape-check refusal for
+an invalid `field` says so in words (`"...or `content` (the complete
+document, frontmatter included)"`), and a `set content` whose value would
+silently drop the target's current (non-empty) frontmatter carries a
+`preview.frontmatter_dropped` advisory (4.2 — §11.4).
 
 `expect.content_hash` and `expect.parent_children_hash` go to the lowered
 op (§1.2); a mismatch at plan time is the kernel's `stale_expectation`

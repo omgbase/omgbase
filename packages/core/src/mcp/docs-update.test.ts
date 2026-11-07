@@ -87,4 +87,47 @@ describe("MCP docs_update (set-content sugar, 4.0)", () => {
     expect(nc.payload).toMatchObject({ error: "plan_not_convergent" });
     expect((nc.payload as { data: Record<string, unknown> }).data.effect_index).toBeUndefined();
   });
+
+  // The complaint this flags (§11.2): `content` is the COMPLETE document,
+  // frontmatter fence included — a caller who forgets the fence silently
+  // clears whatever frontmatter the document currently has. Advisory, not a
+  // refusal: the commit still succeeds (a deliberate clear is sometimes the
+  // intent), but `frontmatter_dropped` names it on both `plan` and the
+  // committing Receipt, before or at commit time.
+  describe("frontmatter_dropped advisory (4.2)", () => {
+    const FM_DOC = "---\nstatus: active\n---\n\n# Risks\n\nBody text.\n";
+    const NO_FENCE = "# Risks\n\nBody text, rewritten with no frontmatter.\n";
+    const setFmContent = (content: string) => [{ op: "set", target: { kind: "document", _path: "fm.md" }, field: "content", value: content }];
+
+    beforeEach(() => {
+      writeFileSync(join(dir, "fm.md"), FM_DOC);
+      processCheckpoint(store, repoId, dir, [{ path: "fm.md" }]);
+    });
+
+    it("plan surfaces preview.frontmatter_dropped { effect_index, _id, _path } when the new content has no fence and the document's current frontmatter is non-empty", async () => {
+      const { payload, isError } = await call("plan", { effects: setFmContent(NO_FENCE) });
+      expect(isError).toBe(false);
+      const p = payload as { effects: { target: { _id: string } }[]; preview: { frontmatter_dropped: { effect_index: number; _id: string; _path: string }[] } };
+      const docId = p.effects[0]!.target._id;
+      expect(p.preview.frontmatter_dropped).toEqual([{ effect_index: 0, _id: docId, _path: "/fm.md" }]);
+      expect(readFileSync(join(dir, "fm.md"), "utf8")).toBe(FM_DOC);
+    });
+
+    it("apply/docs_update still COMMITS the frontmatter-dropping write (advisory, not a refusal) and carries frontmatter_dropped on the Receipt", async () => {
+      const { payload, isError } = await call("docs_update", { _path: "fm.md", content: NO_FENCE });
+      expect(isError).toBe(false);
+      const r = payload as { committed: true; frontmatter_dropped: { effect_index: number; _id: string; _path: string }[]; revisions: { _id: string }[] };
+      expect(r.committed).toBe(true);
+      expect(r.frontmatter_dropped).toEqual([{ effect_index: 0, _id: r.revisions[0]!._id, _path: "/fm.md" }]);
+      expect(readFileSync(join(dir, "fm.md"), "utf8")).toBe(NO_FENCE);
+    });
+
+    it("no advisory when the new content keeps a fence, or when the document had no frontmatter to begin with", async () => {
+      const refenced = "---\nstatus: closed\n---\n\n# Risks\n\nBody text, refenced.\n";
+      const { payload: kept } = await call("plan", { effects: setFmContent(refenced) });
+      expect((kept as { preview: { frontmatter_dropped?: unknown[] } }).preview.frontmatter_dropped ?? []).toEqual([]);
+      const { payload: noFmPlan } = await call("plan", { effects: setContent(EDITED) });
+      expect((noFmPlan as { preview: { frontmatter_dropped?: unknown[] } }).preview.frontmatter_dropped ?? []).toEqual([]);
+    });
+  });
 });

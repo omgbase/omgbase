@@ -4061,7 +4061,8 @@
               "committed": true,
               "summary": [
                 "set content of /a.md"
-              ]
+              ],
+              "frontmatter_dropped": []
             }
           }
         ],
@@ -4342,7 +4343,8 @@
               "committed": true,
               "summary": [
                 "set content of /a.md"
-              ]
+              ],
+              "frontmatter_dropped": []
             }
           }
         ],
@@ -4594,6 +4596,13 @@
               "committed": true,
               "summary": [
                 "set content of /a.md"
+              ],
+              "frontmatter_dropped": [
+                {
+                  "effect_index": 0,
+                  "_id": "d_0",
+                  "_path": "a.md"
+                }
               ]
             }
           }

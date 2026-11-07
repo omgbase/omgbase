@@ -445,7 +445,7 @@ export const FRONTMATTER_FIELD = /^_frontmatter\.(.+)$/;
 function checkField(kind: EffectTarget["kind"], field: string, here: string, op: "set" | "unset", f?: EffectFixer): void {
   if (kind === "document") {
     if (FRONTMATTER_FIELD.test(field) || (op === "set" && field === "content")) return;
-    throw effectInvalid(`${here}: a document's \`field\` is \`_frontmatter.<key>\`${op === "set" ? " or `content`" : ""} (got "${field}")`);
+    throw effectInvalid(`${here}: a document's \`field\` is \`_frontmatter.<key>\`${op === "set" ? " or `content` (the complete document, frontmatter included)" : ""} (got "${field}")`);
   }
   if (kind === "block") {
     if (field === "markdown" || field === "_attrs.checked") return;
@@ -576,6 +576,21 @@ export interface RetargetPreview {
   pairs: LinkRepairCount[];
 }
 
+/**
+ * `preview.frontmatter_dropped[]` (§11.4, 4.2): a `set content` effect whose
+ * supplied value has no frontmatter fence while the target document's CURRENT
+ * frontmatter is non-empty — so committing it would silently clear that
+ * frontmatter (the `content` field is the complete document, fences included;
+ * §7 step 3). Advisory, not a refusal: a deliberate frontmatter-clearing
+ * replacement must still succeed. Carried on both the `plan` preview and the
+ * `apply`/`execute` Receipt, so an agent sees it before or at commit time.
+ */
+export interface FrontmatterDropWarning {
+  effect_index: number;
+  _id: string;
+  _path: string;
+}
+
 export interface MoveDraft {
   id: string;
   from: string;
@@ -606,6 +621,8 @@ export interface LoweringContext {
   identity: Map<string, IdentityPreview>;
   /** `preview.retarget`: per `retarget` effect, its hits and pair counts */
   retargets: RetargetPreview[];
+  /** `preview.frontmatter_dropped`: per `set content` effect that would clear the target's current frontmatter */
+  frontmatterDropped: FrontmatterDropWarning[];
   moves: MoveDraft[];
   tombstones: TombstoneDraft[];
   /** doc id → the file head (`set_frontmatter[].raw`), last write per document */
@@ -1253,7 +1270,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         if (e.field === "content") {
           if (e.op !== "set" || typeof e.value !== "string") throw effectInvalid("`content` takes a string value: the complete proposed document");
           if (isNewSymbol(docId)) throw new MutationError("target_missing", `${docId} is a document this plan creates; its content is the create's markdown`, { symbol: docId });
-          lowerContent(ctx, docId, e.value);
+          lowerContent(ctx, i, docId, e.value);
           ctx.summary.push(`set content of ${docPathOf(ctx, docId)}`);
           return;
         }
@@ -1414,7 +1431,7 @@ export function symbolicMinter(symbols: SymbolTable): IdMinter {
 }
 
 /** `set document.content`: the whole-document planner's opset, spliced in (placeholders shifted), its frontmatter as a file head. */
-function lowerContent(ctx: LoweringContext, docId: string, content: string): void {
+function lowerContent(ctx: LoweringContext, i: number, docId: string, content: string): void {
   // The whole-document planner verifies its candidates by dry-run applies,
   // which mint: give them a throwaway symbol table so the plan's own `$new.n`
   // sequence stays the one `execute`'s replay reproduces (the opset's ops carry
@@ -1450,6 +1467,13 @@ function lowerContent(ctx: LoweringContext, docId: string, content: string): voi
     const head = d.leadingTrivia + (opset.frontmatter.raw ?? "");
     ctx.planner.setHead(docId, head);
     ctx.heads.set(docId, head);
+    // (4.2) `raw: null` here means the proposed content had no frontmatter
+    // fence while the stored one differs — i.e. is non-empty: this write
+    // would silently clear it (the complaint this flags: §11.2's error text
+    // is the only in-band hint today). Advisory only — a deliberate clear
+    // must still succeed.
+    // Storage-form path (like `revisions[]._path`): the surface layer roots it (`surfacePlan`/`surfaceReceipt`).
+    if (opset.frontmatter.raw === null) ctx.frontmatterDropped.push({ effect_index: i, _id: docId, _path: d.path });
   }
   for (const p of opset.ops) pushOp(ctx, shiftPlaceholders(p.op, offset));
 }

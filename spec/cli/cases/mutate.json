@@ -233,7 +233,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"5f63989f01f0905d5e15284d95f4109153c6913e71be3ee00a0bf172fbd1404e\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"84dc0550503fbff7d6f22aa44d49b1537f6cd7d488b41bb971ba07ccd803399f\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"5f63989f01f0905d5e15284d95f4109153c6913e71be3ee00a0bf172fbd1404e\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"84dc0550503fbff7d6f22aa44d49b1537f6cd7d488b41bb971ba07ccd803399f\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -662,7 +662,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"af9b4022a52d5a1590fe30e83c630605c66497ef54e7417dfed55bf71f660347\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set markdown of paragraph b_309 in /texts/mutus-liber.md\"]}\n",
+        "stdout": "{\"plan_id\":\"af9b4022a52d5a1590fe30e83c630605c66497ef54e7417dfed55bf71f660347\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set markdown of paragraph b_309 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n",
         "stderr": "  updating b_309 (CAS pinned from current bytes)\n"
       }
     },
@@ -1000,7 +1000,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"15094eae75cd12807338501c3de4e88bd71bd51560b708cffc808ec72bb7fc6e\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"remove paragraph b_304 from /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"15094eae75cd12807338501c3de4e88bd71bd51560b708cffc808ec72bb7fc6e\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"remove paragraph b_304 from /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -1114,7 +1114,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"3a1c2701bb420a734240ea859b2c75bc9ccceaf179e84ce2ee53dcc9ffd9c678\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"check task b_311 in /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"3a1c2701bb420a734240ea859b2c75bc9ccceaf179e84ce2ee53dcc9ffd9c678\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"check task b_311 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -1737,7 +1737,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"_id\":\"b_26\",\"_path\":\"/index.md\",\"oldRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/texts/mutus-liber.md)\",\"newRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/x.md)\"}],\"pairs\":[{\"from\":\"/texts/mutus-liber.md\",\"to\":\"/x.md\",\"hits\":1}],\"plan_id\":\"73db32a13801e18242904258ef8105d44cac302b05f5d4b072031ace0e45be06\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_0\",\"_path\":\"/index.md\",\"_hash\":\"c6bb3ed295f236591d6ea821cadcaa801e7f849fe9d62a7c35eea6dbb343a2ec\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\",\"$new.2\":\"b_329\"},\"committed\":true,\"summary\":[\"retarget 1 link /texts/mutus-liber.md → /x.md in 1 document\"]}\n"
+        "stdout": "{\"hits\":[{\"_id\":\"b_26\",\"_path\":\"/index.md\",\"oldRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/texts/mutus-liber.md)\",\"newRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/x.md)\"}],\"pairs\":[{\"from\":\"/texts/mutus-liber.md\",\"to\":\"/x.md\",\"hits\":1}],\"plan_id\":\"73db32a13801e18242904258ef8105d44cac302b05f5d4b072031ace0e45be06\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_0\",\"_path\":\"/index.md\",\"_hash\":\"c6bb3ed295f236591d6ea821cadcaa801e7f849fe9d62a7c35eea6dbb343a2ec\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\",\"$new.2\":\"b_329\"},\"committed\":true,\"summary\":[\"retarget 1 link /texts/mutus-liber.md → /x.md in 1 document\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -1882,7 +1882,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"240a3b0c5ad372724492d11384ea55fe6f6ea39beb56164607181292d46f3d24\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"set checked = \\\"true\\\" on node n_5ebb7234aa44 in /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"240a3b0c5ad372724492d11384ea55fe6f6ea39beb56164607181292d46f3d24\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"set checked = \\\"true\\\" on node n_5ebb7234aa44 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -2059,7 +2059,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"db0c477e64213e41c5243e154168d66427eab96130762468e516b76d4d1fc1c4\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"c85268661b7d7a65dba2b58c6ed7b2c8b3504bed3ecfc1de0544b38fc27f7857\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set markdown of paragraph b_309 in /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"db0c477e64213e41c5243e154168d66427eab96130762468e516b76d4d1fc1c4\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"c85268661b7d7a65dba2b58c6ed7b2c8b3504bed3ecfc1de0544b38fc27f7857\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set markdown of paragraph b_309 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -2306,7 +2306,7 @@
       "stdin": "{\"effects\":[{\"op\":\"remove\",\"targets\":[{\"kind\":\"block\",\"_id\":\"b_304\"}]}]}",
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"15094eae75cd12807338501c3de4e88bd71bd51560b708cffc808ec72bb7fc6e\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"remove paragraph b_304 from /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"15094eae75cd12807338501c3de4e88bd71bd51560b708cffc808ec72bb7fc6e\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"remove paragraph b_304 from /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       },
       "notes": "§6 apply: `--json` prints the Receipt"
     },
@@ -2341,7 +2341,7 @@
       "stdin": "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"_id\":\"b_310\"},\"markdown\":\"- [ ] One\"},{\"op\":\"set\",\"target\":{\"kind\":\"block\",\"_id\":\"$new.1\"},\"field\":\"_attrs.checked\",\"value\":true}]}",
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"8dff8d0785c5a776aca2d7d3ceb135f529df9af18c1e40da04662f15368157f7\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"c62ca66c6e32bf96a3f5d44fea2fe29ed40d579053b7385ff0c53a9f2dc2ab7b\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\",\"check task $new.1 in /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"8dff8d0785c5a776aca2d7d3ceb135f529df9af18c1e40da04662f15368157f7\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"c62ca66c6e32bf96a3f5d44fea2fe29ed40d579053b7385ff0c53a9f2dc2ab7b\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\",\"check task $new.1 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -2514,7 +2514,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"524a59ea12eeca3c4964b0981ced042e33eba97e1cba4db0fd70a5744468b3a3\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"524a59ea12eeca3c4964b0981ced042e33eba97e1cba4db0fd70a5744468b3a3\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {
@@ -2626,7 +2626,7 @@
       "stdin": "{\"version\":1,\"planner_v\":\"p3\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"_id\":\"b_310\"},\"at\":\"end\",\"markdown\":\"- [ ] Via effects\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] Via effects\"}]},\"preconditions\":{\"docs\":[{\"_id\":\"d_17\",\"_path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"_hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"524a59ea12eeca3c4964b0981ced042e33eba97e1cba4db0fd70a5744468b3a3\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n- [ ] Via effects\\n\"}},\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"]}}",
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"524a59ea12eeca3c4964b0981ced042e33eba97e1cba4db0fd70a5744468b3a3\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"]}\n"
+        "stdout": "{\"plan_id\":\"524a59ea12eeca3c4964b0981ced042e33eba97e1cba4db0fd70a5744468b3a3\",\"commit\":\"c_20\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"],\"frontmatter_dropped\":[]}\n"
       }
     },
     {

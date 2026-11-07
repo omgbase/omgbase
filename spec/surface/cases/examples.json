@@ -1167,7 +1167,8 @@
             "committed": true,
             "summary": [
               "set _frontmatter.verified = false in /substances/salt.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
@@ -1187,7 +1188,8 @@
             "committed": true,
             "summary": [
               "insert 2 blocks at the end of /lab/2026-02-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "48d3e7d80ff454cbaf69b4a45e4b0c45c4f0cf1ffd735d9d1eab9d7588534cae",
@@ -1204,7 +1206,8 @@
             "summary": [
               "check task b_156 in /processes/calcination.md",
               "check task b_157 in /processes/calcination.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "doc_missing",
@@ -1594,7 +1597,8 @@
             "committed": true,
             "summary": [
               "set _frontmatter.verified = false in /processes/calcination.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "digests": [

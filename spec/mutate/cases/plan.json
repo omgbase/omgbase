@@ -2150,7 +2150,8 @@
                 "committed": true,
                 "summary": [
                   "set content of /a.md"
-                ]
+                ],
+                "frontmatter_dropped": []
               }
             }
           }
@@ -3447,7 +3448,8 @@
                 "committed": true,
                 "summary": [
                   "set content of /a.md"
-                ]
+                ],
+                "frontmatter_dropped": []
               }
             }
           }

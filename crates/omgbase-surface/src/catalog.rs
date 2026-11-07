@@ -3181,17 +3181,34 @@ pub fn plan_json(plan: &Plan) -> Json {
                 }
             }
         }
+        // (4.2) a `frontmatter_dropped` entry names its document's path.
+        if let Some(dropped) = preview
+            .get_mut("frontmatter_dropped")
+            .and_then(Json::as_array_mut)
+        {
+            for w in dropped {
+                root_field(w, "_path");
+            }
+        }
     }
     v
 }
 
-/// A receipt on the wire: `revisions[]._path` in the reference form.
+/// A receipt on the wire: `revisions[]._path` and `frontmatter_dropped[]._path` in the reference form.
 #[must_use]
 pub fn receipt_json(receipt: &Receipt) -> Json {
     let mut v = receipt.to_json();
     if let Some(revs) = v.get_mut("revisions").and_then(Json::as_array_mut) {
         for r in revs {
             root_field(r, "_path");
+        }
+    }
+    if let Some(dropped) = v
+        .get_mut("frontmatter_dropped")
+        .and_then(Json::as_array_mut)
+    {
+        for w in dropped {
+            root_field(w, "_path");
         }
     }
     v
@@ -3941,7 +3958,9 @@ mod tests {
         assert_eq!(bare_path.body["_path"], "/a.md");
         assert_eq!(
             bare_path.body["argument_corrections"],
-            json!(["`docs_read` was called with `path` instead of `_path` — the bare namespace is the user's, `_path` is the engine field. This call ran as `_path` on your behalf; update your memory to use `_path` (not `path`) with `docs_read`."])
+            json!([
+                "`docs_read` was called with `path` instead of `_path` — the bare namespace is the user's, `_path` is the engine field. This call ran as `_path` on your behalf; update your memory to use `_path` (not `path`) with `docs_read`."
+            ])
         );
         let collide = s.call("docs_read", json!({ "_path": "a.md", "path": "zzz" }));
         assert_eq!(
@@ -4187,12 +4206,17 @@ mod tests {
             collide.body["message"],
             "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
         );
-        assert_eq!(collide.body["data"]["fix"], r#"{"_id":"b_1","markdown":"x"}"#);
+        assert_eq!(
+            collide.body["data"]["fix"],
+            r#"{"_id":"b_1","markdown":"x"}"#
+        );
         let bare = s.call("blocks_update", json!({ "id": "b_1", "markdown": "x" }));
         assert!(!bare.is_error, "{}", bare.body);
         assert_eq!(
             bare.body["argument_corrections"],
-            json!(["`blocks_update` was called with `id` instead of `_id` — the bare namespace is the user's, `_id` is the engine field. This call ran as `_id` on your behalf; update your memory to use `_id` (not `id`) with `blocks_update`."])
+            json!([
+                "`blocks_update` was called with `id` instead of `_id` — the bare namespace is the user's, `_id` is the engine field. This call ran as `_id` on your behalf; update your memory to use `_id` (not `id`) with `blocks_update`."
+            ])
         );
         let app = s.call(
             "docs_append",
@@ -4244,7 +4268,7 @@ mod tests {
         assert!(!b.is_error, "{}", b.body);
         assert_eq!(
             b.body,
-            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "_id": "d_0", "_path": "/b.md", "_hash": b.body["revisions"][0]["_hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true, "summary": ["create /b.md (2 blocks)"] }),
+            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "_id": "d_0", "_path": "/b.md", "_hash": b.body["revisions"][0]["_hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true, "summary": ["create /b.md (2 blocks)"], "frontmatter_dropped": [] }),
             "the created document is revisions[0], its symbols the document then its blocks"
         );
         let a = s.call("docs_create", json!({ "path": "a.md", "markdown": a_src }));
@@ -4382,6 +4406,7 @@ mod tests {
                 "new_ids",
                 "committed",
                 "summary",
+                "frontmatter_dropped",
                 "retargeted",
                 "dangling"
             ]
