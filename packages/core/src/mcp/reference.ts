@@ -371,6 +371,11 @@ revisions:  (history as rows — one per stored revision of every document of th
     receiver = a relation (_nodes, _blocks, _doc._out_links, _section._blocks, …), a
                reach-through row (_dst, _doc: one row — _dst { _title }), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
+    NOTE: a list property whose elements are mappings or lists (not scalars) is
+          the properties layer's json escape hatch (spec/properties §5) and
+          reads as a ONE-element array wrapping the real list — \`people {
+          select name }\` sees that one row (an array has no \`name\` of its
+          own), so index it: \`people[0] { select name }\` reaches the rows.
     block    = [select …] [from E] [where …] [frontier …] [follow …] [flatten …] [group by …] [having …] [order by …] [limit N] [offset N]
                — the same fixed order as the whole query, whose body is a block
                too (the target is its receiver). A leading name/alias list is the

@@ -376,7 +376,13 @@ decoded rows sorted by source rank (`frontmatter` 0, `inline` 1, `computed`
 bare key with a frontmatter row and an inline row reads as a two-element
 array, and the json escape-hatch row (`card = list`) reads **wrapped**:
 `items: [{a: 1}]` is `[[{"a": 1}]]`
-(`shapes::json-escape-hatch-reads-as-nested-array`). Non-finite numbers read
+(`shapes::json-escape-hatch-reads-as-nested-array`). This is a storage-shape
+fact, not a query-layer bug: OQX's receiver coercion (spec/oqx SEMANTICS §3)
+sees the outer array's one element — the real list — as a single row, so
+`items { … }` as a nested receiver yields one degenerate row (an array has no
+named properties of its own) where `items[0] { … }` reaches the real rows
+(`query_syntax`'s "Nested queries & consumers" chapter carries the same note).
+Non-finite numbers read
 as `Infinity`/`-Infinity`; NaN reads as `null` (its `val_num` is NULL).
 
 - **grouped** (`docs_read.properties`): `{ frontmatter: {key: shape}, inline:
