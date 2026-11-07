@@ -3994,12 +3994,17 @@ mod tests {
         // §4 "Arguments" (6.7): `q` — `blocks_search`'s own argument name —
         // is a per-tool alias for `query`'s `query`, safely respelled with a
         // notice; both given is a real collision, refused with a fix.
-        let q_alias = s.call("query", json!({ "q": "from docs where layer == \"canon\"" }));
+        let q_alias = s.call(
+            "query",
+            json!({ "q": "from docs where layer == \"canon\"" }),
+        );
         assert!(!q_alias.is_error, "{}", q_alias.body);
         assert_eq!(q_alias.body["hits"][0]["_id"], "d_0");
         assert_eq!(
             q_alias.body["argument_corrections"],
-            json!(["`query` was called with `q` instead of `query` — `q` is another tool's argument name, `query` is `query`'s. This call ran as `query` on your behalf; update your memory to use `query` (not `q`) with `query`."])
+            json!([
+                "`query` was called with `q` instead of `query` — `q` is another tool's argument name, `query` is `query`'s. This call ran as `query` on your behalf; update your memory to use `query` (not `q`) with `query`."
+            ])
         );
         let q_collide = s.call("query", json!({ "q": "from docs", "query": "blocks { }" }));
         assert_eq!(q_collide.body["error"], "filter_invalid");
