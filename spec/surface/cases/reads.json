@@ -2466,7 +2466,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of /log.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "24771de36b4dde8eb4fc06623bf8a7a3d0da33797197bedd163b32a96f7107e5",
@@ -2485,7 +2486,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of /log.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "_id": "d_0",
@@ -6143,7 +6145,8 @@
             "committed": true,
             "summary": [
               "check task b_9 in /guide.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "51d4a93d6dc4c56e470b16c4bfa91102d8787fc507147ff95cc81d5f4f32ff9f",
@@ -6159,7 +6162,8 @@
             "committed": true,
             "summary": [
               "uncheck task b_10 in /guide.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "d8b140785408fe32a7ab9e93e09546132fc1df25d2866559e514862681e6167f",
@@ -6177,7 +6181,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of /guide.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "_id": "d_0",
@@ -6305,7 +6310,8 @@
             "committed": true,
             "summary": [
               "create /new.md (2 blocks)"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "path_taken",
@@ -6327,7 +6333,8 @@
             "summary": [
               "set _frontmatter.layer = \"draft\" in /new.md",
               "unset _frontmatter.kind in /new.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "487d3339243f069ad3bd5af960c787c16a676bf896ae7d8bce32f3a61e78e7cf",
@@ -6344,6 +6351,7 @@
             "summary": [
               "move /new.md → /moved/new.md"
             ],
+            "frontmatter_dropped": [],
             "retargeted": null,
             "dangling": []
           },
@@ -6370,7 +6378,8 @@
             "committed": true,
             "summary": [
               "remove /moved/new.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "doc_missing",
@@ -12021,7 +12030,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of section \"Ideas\" in /notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "_id": "d_0",
@@ -12988,6 +12998,7 @@
             "summary": [
               "move /notes/one.md → /notes/two.md"
             ],
+            "frontmatter_dropped": [],
             "retargeted": null,
             "dangling": []
           },
@@ -13538,7 +13549,8 @@
             "committed": true,
             "summary": [
               "set markdown of paragraph b_2 in /three.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "hits": [
@@ -14950,7 +14962,8 @@
               "create /attn/focus.yaml (5 blocks)",
               "create /config.json (4 blocks)",
               "create /attn/list.yaml (2 blocks)"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "hits": [
@@ -15164,7 +15177,8 @@
             "committed": true,
             "summary": [
               "create /attn/new.yaml (2 blocks)"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "hits": [
@@ -15196,7 +15210,8 @@
             "committed": true,
             "summary": [
               "set content of /attn/focus.yaml"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "hits": [
@@ -16127,7 +16142,8 @@
             "committed": true,
             "summary": [
               "set _frontmatter.verified = true in /guide.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "_id": "d_0",
@@ -16216,7 +16232,8 @@
             "committed": true,
             "summary": [
               "set _frontmatter.owner = \"bb\" in /notes/one.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "stale_plan",
@@ -16359,7 +16376,8 @@
             "committed": true,
             "summary": [
               "check task b_3 in /guide.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "_id": "d_0",
@@ -16621,7 +16639,8 @@
             "committed": true,
             "summary": [
               "set markdown of paragraph b_1 in /anchors.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "hits": [
@@ -17232,7 +17251,8 @@
             "committed": true,
             "summary": [
               "create /new.md (2 blocks)"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "19424ddb3b3ff0ea876d743302dc693c174f9dfdd306cba4e22baa8ecdf8c277",
@@ -17249,6 +17269,7 @@
             "summary": [
               "move /new.md → /moved/new.md"
             ],
+            "frontmatter_dropped": [],
             "retargeted": null,
             "dangling": []
           },
@@ -17260,7 +17281,8 @@
             "committed": true,
             "summary": [
               "remove /moved/new.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "digests": [
@@ -19859,6 +19881,7 @@
             "summary": [
               "move /guide.md → /notes/guide.md"
             ],
+            "frontmatter_dropped": [],
             "retargeted": null,
             "dangling": []
           },

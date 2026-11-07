@@ -300,7 +300,7 @@ describe("cardinality (§11.8 step 2)", () => {
     expect(p.preconditions).toEqual({ docs: [], blocks: [], parents: [], absent_paths: [] });
     expect(p.selection).toEqual({ query: 'from docs where type == "nope"', templates: MARK, cardinality: 0, identities: [] });
     const r = applyEffects(store, { repoId, docStore, select: 'from docs where type == "nope"', expect: { max: 10 }, effects: MARK, origin }) as Receipt;
-    expect(r).toEqual({ plan_id: expect.any(String), commit: null, revisions: [], new_ids: {}, committed: true, summary: [] });
+    expect(r).toEqual({ plan_id: expect.any(String), commit: null, revisions: [], new_ids: {}, committed: true, summary: [], frontmatter_dropped: [] });
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
   });
 

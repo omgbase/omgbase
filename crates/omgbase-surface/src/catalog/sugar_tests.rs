@@ -1035,7 +1035,8 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
             "revisions",
             "new_ids",
             "committed",
-            "summary"
+            "summary",
+            "frontmatter_dropped"
         ]
     );
     p.ok(
@@ -1501,6 +1502,7 @@ fn document_operations_are_the_stores_builders() {
             "new_ids",
             "committed",
             "summary",
+            "frontmatter_dropped",
             "retargeted",
             "dangling"
         ]

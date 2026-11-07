@@ -3181,17 +3181,34 @@ pub fn plan_json(plan: &Plan) -> Json {
                 }
             }
         }
+        // (4.2) a `frontmatter_dropped` entry names its document's path.
+        if let Some(dropped) = preview
+            .get_mut("frontmatter_dropped")
+            .and_then(Json::as_array_mut)
+        {
+            for w in dropped {
+                root_field(w, "_path");
+            }
+        }
     }
     v
 }
 
-/// A receipt on the wire: `revisions[]._path` in the reference form.
+/// A receipt on the wire: `revisions[]._path` and `frontmatter_dropped[]._path` in the reference form.
 #[must_use]
 pub fn receipt_json(receipt: &Receipt) -> Json {
     let mut v = receipt.to_json();
     if let Some(revs) = v.get_mut("revisions").and_then(Json::as_array_mut) {
         for r in revs {
             root_field(r, "_path");
+        }
+    }
+    if let Some(dropped) = v
+        .get_mut("frontmatter_dropped")
+        .and_then(Json::as_array_mut)
+    {
+        for w in dropped {
+            root_field(w, "_path");
         }
     }
     v
@@ -4273,7 +4290,7 @@ mod tests {
         assert!(!b.is_error, "{}", b.body);
         assert_eq!(
             b.body,
-            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "_id": "d_0", "_path": "/b.md", "_hash": b.body["revisions"][0]["_hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true, "summary": ["create /b.md (2 blocks)"] }),
+            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "_id": "d_0", "_path": "/b.md", "_hash": b.body["revisions"][0]["_hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true, "summary": ["create /b.md (2 blocks)"], "frontmatter_dropped": [] }),
             "the created document is revisions[0], its symbols the document then its blocks"
         );
         let a = s.call("docs_create", json!({ "path": "a.md", "markdown": a_src }));
@@ -4411,6 +4428,7 @@ mod tests {
                 "new_ids",
                 "committed",
                 "summary",
+                "frontmatter_dropped",
                 "retargeted",
                 "dangling"
             ]

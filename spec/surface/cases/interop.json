@@ -3917,7 +3917,8 @@
             "summary": [
               "insert 1 block at the end of /index.md",
               "set markdown of paragraph b_30 in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "version": 1,
@@ -4413,7 +4414,8 @@
             "committed": true,
             "summary": [
               "insert 2 blocks at the end of /processes/calcination.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "2a157dbf399f7de2b47150c2cfa08d8f83b80a4d80d5949de5224882b90a01e0",
@@ -4432,7 +4434,8 @@
             "committed": true,
             "summary": [
               "insert 1 block after list_item b_150 in /processes/calcination.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "block_missing",
@@ -4756,7 +4759,8 @@
             "committed": true,
             "summary": [
               "set markdown of paragraph b_1 in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "26b5d6aa10aa08e86dc4ed1cb26aff5ababad2ad093c1367224b700ea16636a4",
@@ -4772,7 +4776,8 @@
             "committed": true,
             "summary": [
               "check task b_56 in /lab/2026-01-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "stale_expectation",
@@ -5100,7 +5105,8 @@
             "committed": true,
             "summary": [
               "move list_item b_7 to the start of list b_4 in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "ca225cbbfe8539f097af77325e0f7b87e3103ed6b2d62be063f266d1bde340d1",
@@ -5116,7 +5122,8 @@
             "committed": true,
             "summary": [
               "move 2 blocks before heading \"The tria prima\" in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "target_missing",
@@ -5352,7 +5359,8 @@
             "committed": true,
             "summary": [
               "split paragraph b_1 at offset 98 in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "5be70fe67efd683f480bb7cfb93c6ae2f60a103e741f178389382abaaa6009f7",
@@ -5368,7 +5376,8 @@
             "committed": true,
             "summary": [
               "merge 2 blocks into paragraph b_43 in /lab/2026-01-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "0c2ac5781bfd639847678f2316feaa91a0cb5132e9606cbb3e024522eb24f6a5",
@@ -5384,7 +5393,8 @@
             "committed": true,
             "summary": [
               "remove 2 blocks from /lab/2026-01-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "block_missing",
@@ -5794,7 +5804,8 @@
             "summary": [
               "check task b_56 in /lab/2026-01-notes.md",
               "check task b_57 in /lab/2026-01-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "e7c9c6b7bbaf26274273765b6242bfcae0f1845a24f6b8ecea9438002936bb8d",
@@ -5810,7 +5821,8 @@
             "committed": true,
             "summary": [
               "uncheck task b_52 in /lab/2026-01-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "d9299bdf7cae0afcef4aafc90d770bdedf03a497fd70cca654940dc501cc9c46",
@@ -5826,7 +5838,8 @@
             "committed": true,
             "summary": [
               "check paragraph b_1 in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "9a511fa00adced01580f5c1d984b2147dc0e77de19f51484e64d4a2afca3329b",
@@ -5845,7 +5858,8 @@
             "committed": true,
             "summary": [
               "set name = \"Calcination\" on node n_c7ebbf77d614 in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "node_not_editable",
@@ -7038,7 +7052,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of section \"Products\" in /processes/calcination.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "051bd354ee8dab0962fa13ef5a847c70e6de5689644e1dec916a948081c8c9aa",
@@ -7056,7 +7071,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of section \"Laboratory\" in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "parent_missing",
@@ -7085,7 +7101,8 @@
             "committed": true,
             "summary": [
               "insert 2 blocks at the end of /texts/mutus-liber.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "a3494c1287da59bc2cf13f0075893d117aa157d8f28fcea5549f8c31cfef62d4",
@@ -7103,7 +7120,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of /texts/emerald-tablet.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "doc_missing",
@@ -7542,7 +7560,8 @@
             "committed": true,
             "summary": [
               "retarget 1 link nigredo → processes/magnum-opus.md in 1 document"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "hits": [
@@ -7679,7 +7698,8 @@
             "committed": true,
             "summary": [
               "retarget 9 links over 2 pairs in 8 documents"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "version": 1,
@@ -8876,7 +8896,8 @@
             "committed": true,
             "summary": [
               "create /substances/gold.md (2 blocks)"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "path_taken",
@@ -8906,6 +8927,7 @@
             "summary": [
               "move /texts/mutus-liber.md → /texts/silent-book.md (retarget 1 link in 1 document)"
             ],
+            "frontmatter_dropped": [],
             "retargeted": {
               "blocks": [
                 "b_28"
@@ -9714,7 +9736,8 @@
               "set _frontmatter.verified = false in /substances/salt.md",
               "set _frontmatter.reviewed = \"2026-09\" in /substances/salt.md",
               "unset _frontmatter.tradition in /substances/salt.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "5da99a1235774c963537a91455e55c8375bb4297597e18476d6a72b471fab502",
@@ -9724,7 +9747,8 @@
             "committed": true,
             "summary": [
               "remove /texts/emerald-tablet.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "doc_missing",
@@ -10565,7 +10589,8 @@
             "committed": true,
             "summary": [
               "set content of /practitioners/newton.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "c2a8a17ccba6a353f27fa5c79e88726bff0c75f2e6951dd55412e55b948664a2",
@@ -10575,7 +10600,8 @@
             "committed": true,
             "summary": [
               "set content of /practitioners/newton.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -11421,7 +11447,8 @@
             "committed": true,
             "summary": [
               "move task b_57 to the end of list b_77 in /lab/2026-02-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -11668,7 +11695,8 @@
             "committed": true,
             "summary": [
               "set markdown of paragraph b_277 in /substances/salt.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -12381,7 +12409,8 @@
             "summary": [
               "set _frontmatter.reviewed = \"2026-10\" in /substances/salt.md",
               "insert 1 block at the end of section \"Note\" in /substances/salt.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "18179f21bd0429f08faf701f567254e37aace8e24e20449ffbad004b7504abca",
@@ -12402,7 +12431,8 @@
             "summary": [
               "create /texts/rosarium.md (2 blocks)",
               "set _frontmatter.layer = \"canon\" in /texts/rosarium.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -12784,7 +12814,8 @@
             "committed": true,
             "summary": [
               "insert 1 block at the end of /texts/mutus-liber.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -13274,7 +13305,8 @@
             "committed": true,
             "summary": [
               "set markdown of paragraph b_275 in /substances/salt.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "stale_plan",
@@ -13516,7 +13548,8 @@
               "insert 1 block at the end of section \"Plates\" in /texts/aurora.md",
               "insert 1 block at the end of /texts/aurora.md",
               "set _frontmatter.layer = \"draft\" in /texts/aurora.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -13721,7 +13754,8 @@
             "committed": true,
             "summary": [
               "set markdown of paragraph b_1 in /index.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "plan_id": "bf320b435f949585ac6b7275500529a375a5bc0303f689cc130a9e2f5a0542e1",
@@ -13738,7 +13772,8 @@
             "summary": [
               "check task b_56 in /lab/2026-01-notes.md",
               "check task b_57 in /lab/2026-01-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           },
           {
             "error": "filter_invalid",
@@ -13847,7 +13882,8 @@
             "committed": true,
             "summary": [
               "insert 2 blocks at the end of /processes/calcination.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -14377,7 +14413,8 @@
               "set _frontmatter.rolled_up = true in /lab/2026-01-notes.md",
               "insert 1 block at the end of /processes/coagulation.md",
               "set _frontmatter.rolled_up = true in /lab/2026-02-notes.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -14615,7 +14652,8 @@
             "summary": [
               "set _frontmatter.layer = \"draft\" in /substances/philosophers-stone.md",
               "set _frontmatter.layer = \"draft\" in /substances/prima-materia.md"
-            ]
+            ],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [
@@ -14760,7 +14798,8 @@
             "revisions": [],
             "new_ids": {},
             "committed": true,
-            "summary": []
+            "summary": [],
+            "frontmatter_dropped": []
           }
         ],
         "reads": [

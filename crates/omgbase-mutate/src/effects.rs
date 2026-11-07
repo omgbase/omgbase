@@ -747,7 +747,11 @@ fn check_field(
             } else {
                 Err(format!(
                     "{here}: a document's `field` is `_frontmatter.<key>`{} (got \"{field}\")",
-                    if op == "set" { " or `content`" } else { "" }
+                    if op == "set" {
+                        " or `content` (the complete document, frontmatter included)"
+                    } else {
+                        ""
+                    }
                 )
                 .into())
             }
@@ -2253,9 +2257,51 @@ impl RetargetPreview {
     }
 }
 
+/// `preview.frontmatter_dropped[]` (mutate 4.2): a `set content` effect
+/// whose supplied value has no frontmatter fence while the target
+/// document's CURRENT frontmatter is non-empty — so committing it would
+/// silently clear that frontmatter (the `content` field is the complete
+/// document, fences included; spec/mutate §7 step 3). Advisory, not a
+/// refusal: a deliberate frontmatter-clearing replacement must still
+/// succeed. Carried on both the `plan` preview and the `apply`/`execute`
+/// Receipt, so an agent sees it before or at commit time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrontmatterDropWarning {
+    pub effect_index: usize,
+    pub id: String,
+    pub path: String,
+}
+
+impl FrontmatterDropWarning {
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        json!({ "effect_index": self.effect_index, "_id": self.id, "_path": self.path })
+    }
+
+    pub fn from_json(v: &Value) -> std::result::Result<Self, String> {
+        let n = v
+            .get("effect_index")
+            .and_then(Value::as_u64)
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or("`plan.preview.frontmatter_dropped[]` effect_index must be an integer")?;
+        let s = |k: &str| -> std::result::Result<String, String> {
+            v.get(k)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| format!("`plan.preview.frontmatter_dropped[]` {k} must be a string"))
+        };
+        Ok(Self {
+            effect_index: n,
+            id: s("_id")?,
+            path: s("_path")?,
+        })
+    }
+}
+
 /// §11.4 `preview`: excluded from the digest, omittable on echo. `identity`
-/// (per document, in effect order) and `retarget` (per effect) are present
-/// on the wire only when non-empty (mutate 3.0); `summary` (3.3) always.
+/// (per document, in effect order), `retarget` (per effect) and
+/// `frontmatter_dropped` (per effect) are present on the wire only when
+/// non-empty (mutate 3.0, 4.2); `summary` (3.3) always.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanPreview {
     pub results: Vec<OpResult>,
@@ -2265,6 +2311,8 @@ pub struct PlanPreview {
     /// Doc id → the whole-document planner's identity decision.
     pub identity: Vec<(String, IdentityPreview)>,
     pub retarget: Vec<RetargetPreview>,
+    /// (4.2) per `set content` effect that would clear the target's current frontmatter.
+    pub frontmatter_dropped: Vec<FrontmatterDropWarning>,
     /// One line in words per resolved effect (3.3, [`crate::summary`]);
     /// always on the wire (`[]` for a plan with nothing to do).
     pub summary: Vec<String>,
@@ -2306,6 +2354,17 @@ impl PlanPreview {
                 Value::Array(self.retarget.iter().map(RetargetPreview::to_json).collect()),
             );
         }
+        if !self.frontmatter_dropped.is_empty() {
+            m.insert(
+                "frontmatter_dropped".to_owned(),
+                Value::Array(
+                    self.frontmatter_dropped
+                        .iter()
+                        .map(FrontmatterDropWarning::to_json)
+                        .collect(),
+                ),
+            );
+        }
         Value::Object(m)
     }
 
@@ -2327,6 +2386,16 @@ impl PlanPreview {
             .map(|a| {
                 a.iter()
                     .map(RetargetPreview::from_json)
+                    .collect::<std::result::Result<Vec<_>, String>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let frontmatter_dropped = obj
+            .get("frontmatter_dropped")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .map(FrontmatterDropWarning::from_json)
                     .collect::<std::result::Result<Vec<_>, String>>()
             })
             .transpose()?
@@ -2391,6 +2460,7 @@ impl PlanPreview {
             diffs,
             identity,
             retarget,
+            frontmatter_dropped,
             summary,
         })
     }

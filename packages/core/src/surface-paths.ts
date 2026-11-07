@@ -99,8 +99,9 @@ export function surfaceRetargetHits(hits: RetargetHit[]): RetargetHit[] {
  * storage form, because `plan_id` digests exactly those bytes and the client
  * hands the object back to `execute` (spec/mutate §11.5; the one result the
  * path rule exempts, like `dangling[].target`). Only the un-digested `preview`
- * is rooted: its `revisions[]._path`, `diffs` keys and `retarget[].hits[]._path`
- * (`identity` is keyed by document id and carries no path).
+ * is rooted: its `revisions[]._path`, `diffs` keys, `retarget[].hits[]._path`
+ * and `frontmatter_dropped[]._path` (`identity` is keyed by document id and
+ * carries no path).
  */
 export function surfacePlan(plan: Plan): Plan {
   if (!plan.preview) return plan;
@@ -111,13 +112,18 @@ export function surfacePlan(plan: Plan): Plan {
       revisions: plan.preview.revisions.map((r) => ({ ...r, _path: referencePath(r._path) })),
       diffs: referenceKeyed(plan.preview.diffs),
       ...(plan.preview.retarget !== undefined ? { retarget: plan.preview.retarget.map((r) => ({ ...r, hits: surfaceRetargetHits(r.hits) })) } : {}),
+      ...(plan.preview.frontmatter_dropped !== undefined ? { frontmatter_dropped: plan.preview.frontmatter_dropped.map((w) => ({ ...w, _path: referencePath(w._path) })) } : {}),
     },
   };
 }
 
-/** A Receipt on the wire: `revisions[]._path` rooted (the same shape as an apply revision). */
+/** A Receipt on the wire: `revisions[]._path` and `frontmatter_dropped[]._path` rooted (the same shape as an apply revision). */
 export function surfaceReceipt(receipt: Receipt): Receipt {
-  return { ...receipt, revisions: receipt.revisions.map((r) => ({ ...r, _path: referencePath(r._path) })) };
+  return {
+    ...receipt,
+    revisions: receipt.revisions.map((r) => ({ ...r, _path: referencePath(r._path) })),
+    frontmatter_dropped: receipt.frontmatter_dropped.map((w) => ({ ...w, _path: referencePath(w._path) })),
+  };
 }
 
 /** `omg sync`'s one-shot sweep: the ingested / suppressed / deleted / conflicted paths. */

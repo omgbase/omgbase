@@ -108,7 +108,7 @@ describe("plan + execute (§11.6, §11.7)", () => {
     expect(plan.new_ids).toEqual([{ symbol: "$new.0", kind: "block" }]);
     expect(mintId("b")).toBe("b_6"); // nothing burned by planning
     const receipt = executePlan(store, { ...base(), plan });
-    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ _id: "d_0", _path: "a.md", _hash: expect.any(String) }], new_ids: { "$new.0": "b_7" }, committed: true, summary: ['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
+    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ _id: "d_0", _path: "a.md", _hash: expect.any(String) }], new_ids: { "$new.0": "b_7" }, committed: true, summary: ['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'], frontmatter_dropped: [] });
     const commit = store.db.prepare("SELECT ops FROM commits WHERE commit_id = 'c_1'").get() as { ops: string };
     expect(commit.ops).toBe(canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects }));
     expect(store.db.prepare("SELECT text FROM blocks WHERE block_id = 'b_7'").get()).toEqual({ text: "Second note." });
