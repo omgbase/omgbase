@@ -233,6 +233,21 @@ fn merge(mut a: Map<String, Json>, b: Json) -> Json {
     Json::Object(a)
 }
 
+/// Splice `argument_corrections` (`spec/surface` §4, 6.6) into a successful
+/// result, as the last key — a no-op when `corrections` is empty, and when
+/// the result is not a plain object (never the case for any tool that takes
+/// a bare-aliasable engine argument, but kept total rather than panicking).
+fn with_argument_corrections(json: Json, corrections: Vec<String>) -> Json {
+    if corrections.is_empty() {
+        return json;
+    }
+    let Json::Object(mut obj) = json else {
+        return json;
+    };
+    obj.insert("argument_corrections".to_owned(), json!(corrections));
+    Json::Object(obj)
+}
+
 // ---- the sugar tools over effects (ADR-021; `spec/surface` §4, 4.0) ---------------------
 //
 // Every write tool but `apply`/`plan`/`execute` and the observe tools is
@@ -1846,9 +1861,18 @@ impl Surface {
 
     /// Run a tool, returning its result or the error — every error of the
     /// effect tools carrying its corrected call (`data.fix`, `spec/surface`
-    /// §4 "Teaching", 4.4; [`crate::fixes`]).
+    /// §4 "Teaching", 4.4; [`crate::fixes`]). A successful result carrying a
+    /// safely-aliased bare engine argument (6.6) gains `argument_corrections`
+    /// as its last key — computed by re-checking the shape here, cheap and
+    /// pure, rather than threading it through `call_result_inner`'s own
+    /// early-return-heavy dispatch.
     pub fn call_result(&mut self, name: &str, args: &Json) -> Result<Json> {
+        let corrections = tool_spec(name)
+            .and_then(|spec| validate_arguments(name, &spec.input_schema, args).ok())
+            .map(|v| v.corrections)
+            .unwrap_or_default();
         self.call_result_inner(name, args)
+            .map(|json| with_argument_corrections(json, corrections))
             .map_err(|e| fixes::attach(name, args, e, |i| self.allocated_before(args, i)))
     }
 
@@ -1877,7 +1901,7 @@ impl Surface {
         let spec =
             tool_spec(name).ok_or_else(|| SurfaceError::other(format!("unknown tool {name}")))?;
         // (4.5) a bare string in a string-list slot reaches the handler as `[s]`.
-        let normalized = validate_arguments(name, &spec.input_schema, args)?;
+        let normalized = validate_arguments(name, &spec.input_schema, args)?.args;
         let args = normalized.as_ref().unwrap_or(args);
         match name {
             "docs_outline" => {
@@ -3898,7 +3922,9 @@ mod tests {
             "/a.md"
         );
         // §4 "Arguments": the retired `doc` is refused with its replacement;
-        // (5.0) a bare `id`/`path` is refused with the `_` spelling and a fix.
+        // (5.0) a bare `id`/`path` colliding with the `_` form is refused with
+        // a fix; (6.6) otherwise it's aliased, with the mistake named in
+        // `argument_corrections`.
         let retired = s.call("docs_read", json!({ "doc": "a.md" }));
         assert_eq!(retired.body["error"], "filter_invalid");
         assert_eq!(
@@ -3911,11 +3937,18 @@ mod tests {
             "pass _id or _path (docs_read takes _id?, _path?, at?, include_ids?, repo?)"
         );
         let bare_path = s.call("docs_read", json!({ "path": "a.md" }));
+        assert!(!bare_path.is_error, "{}", bare_path.body);
+        assert_eq!(bare_path.body["_path"], "/a.md");
         assert_eq!(
-            bare_path.body["message"],
+            bare_path.body["argument_corrections"],
+            json!(["`docs_read` was called with `path` instead of `_path` — the bare namespace is the user's, `_path` is the engine field. This call ran as `_path` on your behalf; update your memory to use `_path` (not `path`) with `docs_read`."])
+        );
+        let collide = s.call("docs_read", json!({ "_path": "a.md", "path": "zzz" }));
+        assert_eq!(
+            collide.body["message"],
             "`path` is not an argument — the engine field is `_path` (the bare namespace is the user's); pass `_path` (docs_read takes _id?, _path?, at?, include_ids?, repo?)"
         );
-        assert_eq!(bare_path.body["data"]["fix"], r#"{"_path":"a.md"}"#);
+        assert_eq!(collide.body["data"]["fix"], r#"{"_path":"zzz"}"#);
         assert_eq!(
             s.call("docs_read", json!({ "_path": "//a.md" })).body["_id"],
             "d_0"
@@ -4143,13 +4176,24 @@ mod tests {
             nothing.body["message"],
             "pass `markdown` and/or `checked` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
         );
-        // (5.0) the bare `id` is refused — never an alias — with the fix.
-        let bare = s.call("blocks_update", json!({ "id": "b_1", "markdown": "x" }));
+        // (5.0) a bare `id` colliding with `_id` is still refused, with a fix;
+        // (6.6) otherwise it's aliased, with the mistake named in
+        // `argument_corrections`.
+        let collide = s.call(
+            "blocks_update",
+            json!({ "_id": "b_1", "id": "b_1", "markdown": "x" }),
+        );
         assert_eq!(
-            bare.body["message"],
+            collide.body["message"],
             "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
         );
-        assert_eq!(bare.body["data"]["fix"], r#"{"_id":"b_1","markdown":"x"}"#);
+        assert_eq!(collide.body["data"]["fix"], r#"{"_id":"b_1","markdown":"x"}"#);
+        let bare = s.call("blocks_update", json!({ "id": "b_1", "markdown": "x" }));
+        assert!(!bare.is_error, "{}", bare.body);
+        assert_eq!(
+            bare.body["argument_corrections"],
+            json!(["`blocks_update` was called with `id` instead of `_id` — the bare namespace is the user's, `_id` is the engine field. This call ran as `_id` on your behalf; update your memory to use `_id` (not `id`) with `blocks_update`."])
+        );
         let app = s.call(
             "docs_append",
             json!({ "_path": "a.md", "section": "T", "text": "Three." }),

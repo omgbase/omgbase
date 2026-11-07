@@ -14,14 +14,21 @@ import { canonicalJson } from "../mutate/canonical.js";
 // order, optional ones marked `?`; a tool without arguments "takes no
 // arguments"):
 //   unknown argument `q`; did you mean `query`? (blocks_search takes limit?, q, repo?)
-//   `id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_read takes …)
-//     — with `data.fix` the same call respelled (spec/surface §4, 5.0: no tolerance for a bare `id`/`path`/`ids`)
 //   `doc` is no longer an argument — pass `_id` or `_path` (docs_read takes …)
 //   `dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_insert takes …)
 //   `query` is required (query takes …)
 //   `limit` must be an integer (query takes …)
 //   pass _id or _path (docs_read takes …)                     — a locator tool called with neither
 //   _id "d_x" and _path "/a.md" name different documents (…)   — both given, disagreeing
+//
+// A bare `id`/`path`/`ids`/`paths` where the tool takes its `_` spelling is no
+// longer refused outright (spec/surface §4, 6.6; through 6.5, 5.0's "no
+// tolerance" policy): when the `_` form is ABSENT from the call, the bare name
+// is silently respelled to it and the call proceeds — the response then
+// carries `argument_corrections` (one string per corrected key, last key,
+// absent when nothing was corrected). When the `_` form is ALSO given (a real
+// collision, not an obvious mistake), the bare name is still the refusal
+// below, unchanged — aliasing there would mean silently picking a side.
 
 /** One tool's argument shape: the zod raw shape it was registered with. */
 export type ArgShape = Record<string, z.ZodTypeAny>;
@@ -93,22 +100,46 @@ export function jsonArrayString(s: string): { list: string[] } | { fix: unknown[
   return { fix: parsed };
 }
 
+/** The result of {@link validateArguments}: the arguments the handler should
+ *  see, plus one correction message per bare engine-field argument that was
+ *  safely respelled (spec/surface §4, 6.6) — empty when nothing was. */
+export interface ValidatedArguments {
+  args: Record<string, unknown>;
+  corrections: string[];
+}
+
 /**
  * Validate `raw` against `shape`: unknown names first (in bytewise order), then
- * each declared argument (bytewise order) for presence and type. Returns the
- * arguments with any `undefined` members dropped; throws the first failure.
+ * each declared argument (bytewise order) for presence and type. A bare
+ * `id`/`path`/`ids`/`paths` whose `_` spelling the tool takes AND the call does
+ * not already give is safely respelled rather than refused (6.6) — collected
+ * into `corrections`, not thrown. Returns the arguments with any `undefined`
+ * members dropped; throws the first other failure.
  */
-export function validateArguments(tool: string, shape: ArgShape, raw: unknown): Record<string, unknown> {
+export function validateArguments(tool: string, shape: ArgShape, raw: unknown): ValidatedArguments {
   if (raw === undefined || raw === null) raw = {};
   if (typeof raw !== "object" || Array.isArray(raw)) throw argumentError(tool, "arguments must be an object", shape);
-  const args = raw as Record<string, unknown>;
+  let args = raw as Record<string, unknown>;
+  const corrections: string[] = [];
+  const toRespell = new Set<string>();
   for (const key of Object.keys(args).sort(cmpBytes)) {
     if (key in shape) continue;
-    // (5.0) A bare engine-field name where the tool takes its `_` spelling:
-    // the error carries the corrected call (every bare `id`/`path`/`ids` the
-    // call holds respelled at once), never a silent acceptance.
+    if (safeToAliasEngineArgument(key, shape, args)) {
+      toRespell.add(key);
+      corrections.push(bareEngineArgumentCorrection(tool, key));
+      continue;
+    }
+    // (5.0) A bare engine-field name where the tool takes its `_` spelling,
+    // but the `_` form is also given (a collision, not aliased — see above):
+    // the error still carries the corrected call (every bare `id`/`path`/`ids`
+    // the call holds respelled at once), never a silent acceptance.
     const fix = bareEngineArgument(key, shape) ? canonicalJson(respellEngineArguments(args, shape)) : undefined;
     throw argumentError(tool, unknownArgumentMessage(key, shape), shape, fix);
+  }
+  if (toRespell.size > 0) {
+    const respelled: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(args)) respelled[toRespell.has(k) ? `_${k}` : k] = v;
+    args = respelled;
   }
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(shape).sort(cmpBytes)) {
@@ -143,7 +174,7 @@ export function validateArguments(tool: string, shape: ArgShape, raw: unknown): 
     // the kernel-op grammar (`apply.ops`) keeps keys the schema does not name.
     out[key] = value;
   }
-  return out;
+  return { args: out, corrections };
 }
 
 /** The first failure, spelled for the argument: a top-level type mismatch is
@@ -166,6 +197,20 @@ const BARE_ENGINE_ARGUMENTS: readonly string[] = ["id", "path", "ids", "paths"];
 /** Whether `key` is a bare engine-field name whose `_` spelling the tool takes. */
 export function bareEngineArgument(key: string, shape: ArgShape): boolean {
   return BARE_ENGINE_ARGUMENTS.includes(key) && `_${key}` in shape;
+}
+
+/** Whether `key` is safe to silently alias to its `_` spelling (spec/surface
+ *  §4, 6.6): a bare engine-field name the tool takes AND the call does not
+ *  already give the `_` form — no collision to resolve silently. */
+export function safeToAliasEngineArgument(key: string, shape: ArgShape, args: Record<string, unknown>): boolean {
+  return bareEngineArgument(key, shape) && args[`_${key}`] === undefined;
+}
+
+/** The success-path notice for a bare engine-field argument safely respelled
+ *  (spec/surface §4, 6.6): names the mistake, says the call ran as the `_`
+ *  form on the caller's behalf, and asks the caller to remember the `_` form. */
+export function bareEngineArgumentCorrection(tool: string, key: string): string {
+  return `\`${tool}\` was called with \`${key}\` instead of \`_${key}\` — the bare namespace is the user's, \`_${key}\` is the engine field. This call ran as \`_${key}\` on your behalf; update your memory to use \`_${key}\` (not \`${key}\`) with \`${tool}\`.`;
 }
 
 /** The call with every bare engine-field argument respelled to its `_` form (the `fix` of the no-tolerance error). */

@@ -10485,7 +10485,7 @@
     },
     {
       "name": "arguments",
-      "notes": "§4 \"Arguments\" (3.0; 5.0 spelling): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `_id`/`_path` (at least one; both must agree), a block/node by `_id`; `doc_missing`/`block_missing` spell the attribute; a BARE `id`/`path`/`ids` is refused with no tolerance (5.0) — the message names the `_` spelling and `data.fix` is the same call respelled. The closing queries pin an authored `$`-prefixed key (`$version`), reachable bare or through `_frontmatter`; the string-list tolerance (4.5/4.11) rides on `docs`, `_ids`, `roots`, `unset`.",
+      "notes": "§4 \"Arguments\" (3.0; 5.0 spelling; 6.6 safe alias): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `_id`/`_path` (at least one; both must agree), a block/node by `_id`; `doc_missing`/`block_missing` spell the attribute; a BARE `id`/`path`/`ids` is now safely aliased to its `_` spelling when the `_` form is absent — the call runs as corrected and the result carries one `argument_corrections` entry per key naming the mistake (6.6; through 6.5, 5.0's \"no tolerance\", it was refused with `data.fix` the same call respelled). When the `_` form is ALSO given (a real collision, not an obvious typo), the bare name is still the unknown-argument refusal — the last step. The closing queries pin an authored `$`-prefixed key (`$version`), reachable bare or through `_frontmatter`; the string-list tolerance (4.5/4.11) rides on `docs`, `_ids`, `roots`, `unset`.",
       "steps": [
         {
           "observe": {
@@ -10961,6 +10961,15 @@
               "id": "d_0"
             }
           }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_id": "d_0",
+              "id": "d_1"
+            }
+          }
         }
       ],
       "expect": {
@@ -11402,51 +11411,131 @@
             }
           },
           {
+            "_id": "d_0",
+            "_path": "/a.md",
+            "rev": "r_0",
+            "properties": {
+              "frontmatter": {
+                "$version": 3,
+                "title": "A"
+              },
+              "inline": {},
+              "computed": {
+                "_title": "A"
+              }
+            },
+            "_raw": "---\n$version: 3\ntitle: A\n---\n\n# A\n\nBody of a.\n\n- item one\n- item two\n",
+            "argument_corrections": [
+              "`docs_read` was called with `id` instead of `_id` — the bare namespace is the user's, `_id` is the engine field. This call ran as `_id` on your behalf; update your memory to use `_id` (not `id`) with `docs_read`."
+            ]
+          },
+          {
+            "_id": "d_0",
+            "_path": "/a.md",
+            "rev": "r_0",
+            "properties": {
+              "frontmatter": {
+                "$version": 3,
+                "title": "A"
+              },
+              "inline": {},
+              "computed": {
+                "_title": "A"
+              }
+            },
+            "_raw": "---\n$version: 3\ntitle: A\n---\n\n# A\n\nBody of a.\n\n- item one\n- item two\n",
+            "ids": [
+              "b_0",
+              "b_1",
+              "b_2",
+              "b_3",
+              "b_4"
+            ],
+            "hashes": {
+              "b_0": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+              "b_1": "31e572fadb13aabbf6aa54c6ff909abe65e34173de08f47e4b4d32d9f37afe47",
+              "b_2": "cb52a55bee5f5d2d7391d3905be4fe348750f80283a6600b7bd1485954c411c7",
+              "b_3": "a30cb97780c7fca7435fb4fb2cb230f69d4cc1088452fcfcf51e7f0f5cd6a5b7",
+              "b_4": "b0224e9f89fdef63d00bc716b988818650f46749b367806b28c2705e93e03de9"
+            },
+            "parents": {
+              "b_0": null,
+              "b_1": null,
+              "b_2": null,
+              "b_3": "b_2",
+              "b_4": "b_2"
+            },
+            "argument_corrections": [
+              "`docs_read` was called with `path` instead of `_path` — the bare namespace is the user's, `_path` is the engine field. This call ran as `_path` on your behalf; update your memory to use `_path` (not `path`) with `docs_read`."
+            ]
+          },
+          {
+            "_id": "b_1",
+            "_type": "paragraph",
+            "_text": "Body of a.",
+            "argument_corrections": [
+              "`blocks_read` was called with `id` instead of `_id` — the bare namespace is the user's, `_id` is the engine field. This call ran as `_id` on your behalf; update your memory to use `_id` (not `id`) with `blocks_read`."
+            ]
+          },
+          {
+            "nodes": [
+              {
+                "_id": "b_1",
+                "_type": "paragraph",
+                "_text": "Body of a."
+              }
+            ],
+            "truncated": false,
+            "unresolved": [],
+            "argument_corrections": [
+              "`blocks_read_many` was called with `ids` instead of `_ids` — the bare namespace is the user's, `_ids` is the engine field. This call ran as `_ids` on your behalf; update your memory to use `_ids` (not `ids`) with `blocks_read_many`."
+            ]
+          },
+          {
+            "error": "repo_not_found",
+            "retriable": false
+          },
+          {
+            "docs": [
+              {
+                "_id": "d_0",
+                "_path": "/a.md",
+                "deleted": false,
+                "currentRev": "r_0",
+                "versions": [
+                  {
+                    "_rev": "r_0",
+                    "_seq": 1,
+                    "_commit": "c_0",
+                    "_ts": "2026-09-27T10:00:00.000Z",
+                    "_origin": "observed",
+                    "_actor": null,
+                    "_hash": "cc50e805e7b929ee372adb6adf6b35ca18dc1e3371493588b6e77f2a3361ccc6",
+                    "_is_current": true,
+                    "_archived": false,
+                    "retained": true
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "coverage": [
+              {
+                "from": "2000-01-01T00:00:00.000Z",
+                "to": null
+              }
+            ],
+            "argument_corrections": [
+              "`docs_history` was called with `id` instead of `_id` — the bare namespace is the user's, `_id` is the engine field. This call ran as `_id` on your behalf; update your memory to use `_id` (not `id`) with `docs_history`.",
+              "`docs_history` was called with `path` instead of `_path` — the bare namespace is the user's, `_path` is the engine field. This call ran as `_path` on your behalf; update your memory to use `_path` (not `path`) with `docs_history`."
+            ]
+          },
+          {
             "error": "filter_invalid",
             "retriable": false,
             "message": "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_read takes _id?, _path?, at?, include_ids?, repo?)",
             "data": {
-              "fix": "{\"_id\":\"d_0\"}"
-            }
-          },
-          {
-            "error": "filter_invalid",
-            "retriable": false,
-            "message": "`path` is not an argument — the engine field is `_path` (the bare namespace is the user's); pass `_path` (docs_read takes _id?, _path?, at?, include_ids?, repo?)",
-            "data": {
-              "fix": "{\"_path\":\"a.md\",\"include_ids\":true}"
-            }
-          },
-          {
-            "error": "filter_invalid",
-            "retriable": false,
-            "message": "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (blocks_read takes _id, repo?, resolution?)",
-            "data": {
-              "fix": "{\"_id\":\"b_1\",\"resolution\":\"text\"}"
-            }
-          },
-          {
-            "error": "filter_invalid",
-            "retriable": false,
-            "message": "`ids` is not an argument — the engine field is `_ids` (the bare namespace is the user's); pass `_ids` (blocks_read_many takes _ids, budget_tokens?, repo?, resolution?)",
-            "data": {
-              "fix": "{\"_ids\":[\"b_1\"]}"
-            }
-          },
-          {
-            "error": "filter_invalid",
-            "retriable": false,
-            "message": "`ids` is not an argument — the engine field is `_ids` (the bare namespace is the user's); pass `_ids` (blocks_check takes _ids, checked?, repo?)",
-            "data": {
-              "fix": "{\"_ids\":[\"b_1\"],\"checked\":true}"
-            }
-          },
-          {
-            "error": "filter_invalid",
-            "retriable": false,
-            "message": "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_history takes _id?, _path?, include_deleted?, limit?, path_glob?, repo?)",
-            "data": {
-              "fix": "{\"_id\":\"d_0\",\"_path\":\"a.md\"}"
+              "fix": "{\"_id\":\"d_1\"}"
             }
           }
         ]

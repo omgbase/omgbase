@@ -343,10 +343,12 @@ cue query so the app can blame the cue, not itself.
     `title`, `tags`, `project`, `cues` — are bare everywhere (a query, a `set`
     field's key, a `create`'s `frontmatter`) and can never collide with an
     engine attribute; what the engine provides reads as what it is (`_path`,
-    `_updated_at`, `_rev`, `_raw`). The one thing to watch: a 5.0 server has
-    no tolerance for the 4.x spellings (`docs_read { path }` is refused with
-    the corrected call in `data.fix`), so the surface gate is exact about the
-    major (`REQUIRED_SURFACE = "5.0"`), and `title` in the feed query is
+    `_updated_at`, `_rev`, `_raw`). The one thing to watch: a 5.0 server
+    refused the 4.x spellings outright (`docs_read { path }` is `filter_invalid`
+    with the corrected call in `data.fix`; 6.6 instead runs the call aliased
+    and flags the mistake in `argument_corrections`), so the surface gate is
+    exact about the major (`REQUIRED_SURFACE = "5.0"`), and `title` in the
+    feed query is
     deliberately the authored key — every intent carries one — where `_title`
     would be the computed title (the H1 when no key is authored).
 

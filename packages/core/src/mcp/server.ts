@@ -66,8 +66,10 @@ import {
 // _path? }`, `docs_diff { _id?, _path? }`, `blocks_read { _id }`, `nodes_set
 // { _id }`, `blocks_read_many { _ids }`; role arguments keep their bare names
 // (`docs`, `roots`, `to`, `blocks`, `at`, `path_glob`, `docs_create.path`). One
-// verb returns the row: `read`. A bare `id`/`path`/`ids` is `filter_invalid` with
-// a `fix` (no tolerance); there is no bare `doc` argument. Every call is validated by
+// verb returns the row: `read`. A bare `id`/`path`/`ids` runs as the `_`-spelled
+// call, with the result's `argument_corrections` naming the mistake (6.6) — unless
+// the `_` form was ALSO given (a real collision), which is still `filter_invalid`
+// with a `fix`; there is no bare `doc` argument. Every call is validated by
 // `validateArguments` ahead of its handler (the `tool` wrapper + the
 // CallTool handler below), so a wrong name is a `filter_invalid` naming the
 // nearest valid one, never the SDK's generic validation text.
@@ -232,6 +234,21 @@ function fail(err: unknown): ToolResult {
   // One mapping for every client (errors.ts `errorBody`): the CLI renders the
   // same body, so a code can never differ between `omg` and `omg mcp`.
   return { content: [{ type: "text", text: JSON.stringify(errorBody(err)) }], isError: true };
+}
+
+/** Splice `argument_corrections` (spec/surface §4, 6.6) into a successful
+ *  result's payload, as the last key — never touches an error result, and
+ *  skips a payload that is not a plain object rather than changing its shape. */
+function withArgumentCorrections(result: ToolResult, corrections: string[]): ToolResult {
+  if (result.isError) return result;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(result.content[0]!.text);
+  } catch {
+    return result;
+  }
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return result;
+  return ok({ ...payload, argument_corrections: corrections });
 }
 
 /** The message every tool uses for a `semantic(...)` call the server cannot rank. */
@@ -1866,12 +1883,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     // carries the code instead.
     if (!entry) throw unknownTool(name);
     let args: Record<string, unknown>;
+    let corrections: string[];
     try {
-      args = validateArguments(name, entry.shape, request.params.arguments);
+      ({ args, corrections } = validateArguments(name, entry.shape, request.params.arguments));
     } catch (e) {
       return fail(e);
     }
-    return entry.handler(args);
+    const result = await entry.handler(args);
+    return corrections.length > 0 ? withArgumentCorrections(result, corrections) : result;
   });
 
   return server;

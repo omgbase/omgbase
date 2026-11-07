@@ -102,16 +102,16 @@ describe("omg mcp (stdio)", () => {
     expect(oc.isError).toBeFalsy();
     expect(oc.content?.[0]?.text ?? "").toContain("Hub");
 
-    // 5.0 "underscore = engine" (spec/surface §4 "Arguments"): a bare `path` names no
-    // argument — no tolerance; the error carries the same call respelled as `fix`.
+    // 6.6 "safe alias, with a notice" (spec/surface §4 "Arguments"): a bare `path`
+    // runs as `_path` and the result names the mistake in `argument_corrections`.
     const bare = await rpc.send("tools/call", { name: "docs_outline", arguments: { path: "hub.md" } });
     const bc = (bare.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
-    expect(bc.isError).toBe(true);
-    const be = JSON.parse(bc.content?.[0]?.text ?? "{}") as { error?: string; message?: string; data?: { hint?: string; fix?: string } };
-    expect(be.error).toBe("filter_invalid");
-    expect(be.message).toContain("`path` is not an argument — the engine field is `_path` (the bare namespace is the user's); pass `_path`");
-    expect(be.data?.hint).toBe("arguments");
-    expect(be.data?.fix).toBe(JSON.stringify({ _path: "hub.md" }));
+    expect(bc.isError).toBeFalsy();
+    const bo = JSON.parse(bc.content?.[0]?.text ?? "{}") as { text?: string; argument_corrections?: string[] };
+    expect(bo.text ?? "").toContain("Hub");
+    expect(bo.argument_corrections).toEqual([
+      "`docs_outline` was called with `path` instead of `_path` — the bare namespace is the user's, `_path` is the engine field. This call ran as `_path` on your behalf; update your memory to use `_path` (not `path`) with `docs_outline`.",
+    ]);
 
     const q = await rpc.send("tools/call", { name: "query", arguments: { query: 'from blocks where _type == "task"' } });
     const qc = (q.result as { content?: { text?: string }[] }) ?? {};

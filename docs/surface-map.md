@@ -35,8 +35,11 @@
   argument that addresses an engine field is spelled as the field: the `docs_*` tools
   take `_id?`/`_path?`, the block tools (`blocks_read`, `blocks_update`, `blocks_split`,
   `blocks_append`, `blocks_history`, `nodes_block_read`, `nodes_set`) `_id`,
-  `blocks_read_many`/`blocks_check` `_ids`; a bare `id`/`path`/`ids` is `filter_invalid`
-  with the corrected call in `data.fix` — no tolerance. Role arguments keep their names
+  `blocks_read_many`/`blocks_check` `_ids`; a bare `id`/`path`/`ids` runs as the
+  corrected call and the result names the mistake in `argument_corrections`, unless
+  the `_` form was also given (a real collision), which is still `filter_invalid`
+  with the corrected call in `data.fix` (6.6; through 6.5, every bare form was
+  refused this way). Role arguments keep their names
   (`docs`, `blocks`, `to`, `at`, `roots`, `rev`, `path_glob`, `docs_tree.path`,
   `docs_create.path`, `to_path`, `observe*.path`, `section`, `plan_id`, …). Every result
   key that carries a row attribute is `_`-prefixed (`_id`, `_path`, `_hash`, …) and the

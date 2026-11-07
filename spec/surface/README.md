@@ -1569,15 +1569,33 @@ from the store's layer, not row locators), `from_target`, `to_target`,
 `repairs`, `q`, `query`, `bare`, `origin`, `degrees`, `direction`,
 `predicate`, `max_documents`, `summary`, `repo`; the kernel-op grammar
 (`block`, `blocks`, `to`, `at.before|after`, `expect.content_hash`, `op`) is
-spec/mutate's and is unchanged. **No tolerance (5.0).** A bare `id`, `path`
-or `ids` argument is an argument error, never an alias: `filter_invalid {
+spec/mutate's and is unchanged. **Safe alias, with a notice (6.6; through
+6.5, 5.0's "no tolerance").** A bare `id`, `path`, `ids` or `paths` argument,
+when the tool takes its `_` spelling AND the call does not already give that
+`_` form, is no longer an argument error: it is silently respelled and the
+call proceeds — real-world agents kept reaching for the bare spelling out of
+habit despite the loud refusal and its `fix` (an omgbase-notes complaint
+logged the same mistake recurring on `docs_read` alone across several
+separate sessions), so the refusal was costing retries without teaching
+anything a louder error hadn't already said once. The successful result
+then carries **`argument_corrections`** (last key, absent when nothing was
+corrected): one string per respelled key, naming the mistake, saying the
+call ran as the `_` form on the caller's behalf, and asking the caller to
+remember the `_` form — "`<tool>` was called with `<key>` instead of
+`_<key>` — the bare namespace is the user's, `_<key>` is the engine field.
+This call ran as `_<key>` on your behalf; update your memory to use
+`_<key>` (not `<key>`) with `<tool>`." **When the `_` form is ALSO given** —
+a real collision, not an obvious mistake, so there is no safe default to
+pick — the bare name is still the 5.0 refusal, unchanged: `filter_invalid {
 hint: "arguments", fix }` with the message "`id` is not an argument — the
 document's id is `_id` (an engine field: the bare namespace is the user's)"
-(`path` → `_path`, `ids` → `_ids`; "the block's id" on a `blocks_` tool, "the
-node's id" on a `nodes_` tool) and `data.fix` the same call respelled
-(`reads::bare-id-argument-has-fix`); the bare argument name `doc` no longer
-exists. Through 4.11 the arguments were bare because the attributes were
-(the 3.0 flip); they move with the attributes, for the same reason. A
+(`path` → `_path`, `ids` → `_ids`, `paths` → `_paths`; "the block's id" on a
+`blocks_` tool, "the node's id" on a `nodes_` tool) and `data.fix` the same
+call respelled (`reads::arguments`'s last step); the bare argument name
+`doc` no longer exists and is never aliased
+(ambiguous which of `_id`/`_path` it would mean). Through 4.11 the arguments
+were bare because the attributes were (the 3.0 flip); they move with the
+attributes, for the same reason. A
 `docs_*` locator takes at least one of `_id`/`_path` (else `filter_invalid`
 "pass _id or _path"); both given must name the same document (else
 `filter_invalid` "_id "…" and _path "…" name different documents"); a miss is
@@ -2314,6 +2332,27 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Changed (6.6) — a bare `id`/`path`/`ids`/`paths` argument is safely
+  aliased, not refused** (§4 "Arguments"; Decisions 2026-11-06, Brendan,
+  reading the omgbase-notes "OMG MCP complaints" log): since 5.0 the refusal
+  always carried the corrected call as `data.fix`, but real agent sessions
+  kept reaching for the bare spelling anyway — the same `docs_read { path }`
+  mistake recurring across five separately logged sessions alone, each
+  costing a retry the error's own `fix` should have made unnecessary. The
+  refusal is useful exactly once, to teach the `_` spelling; after that it's
+  pure friction. Unsafe to alias unconditionally, though: when the call
+  *also* gives the `_` form — a real disagreement, not an obvious typo — a
+  silent alias would mean picking a side no one asked for, so that one case
+  keeps the 5.0 refusal verbatim. Everywhere else, the call now runs as
+  corrected and the result carries `argument_corrections` — one string per
+  respelled key, naming the mistake and asking the caller to remember the
+  `_` form — so a client that reads results (every agent does) gets taught
+  without a wasted round trip, and one that doesn't is no worse off than
+  before. `doc` is untouched: it is retired, not a spelling of `_id`/`_path`
+  (ambiguous which it would mean), so it is never a candidate. New:
+  `reads::arguments`'s six bare-argument steps flip from `filter_invalid` to
+  success + `argument_corrections`; one new step (the collision case,
+  still refused) added at the end.
 - **Changed (5.0) — "underscore = engine"** (§1.2; Decisions 2026-10-20):
   every engine field on every record kind is `_`-prefixed and the bare
   namespace is the author's, the self aliases `doc`/`block`/`section` are

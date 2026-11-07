@@ -12,14 +12,22 @@
 //!
 //! ```text
 //! unknown argument `q`; did you mean `query`? (blocks_search takes limit?, q, repo?)
-//! `id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_read takes …)
-//!   — with `data.fix` the same call respelled (`spec/surface` §4, 5.0: no tolerance for a bare `id`/`path`/`ids`)
 //! `doc` is no longer an argument — pass `_id` or `_path` (docs_read takes …)
 //! `query` is required (query takes …)
 //! `limit` must be an integer (query takes …)
 //! pass _id or _path (docs_read takes …)                      — a locator tool called with neither
 //! _id "d_x" and _path "/a.md" name different documents (…)    — both given, disagreeing
 //! ```
+//!
+//! A bare `id`/`path`/`ids`/`paths` where the tool takes its `_` spelling is
+//! no longer refused outright (`spec/surface` §4, 6.6; through 6.5, 5.0's "no
+//! tolerance" policy): when the `_` form is ABSENT from the call, the bare
+//! name is silently respelled to it and the call proceeds — the response then
+//! carries `argument_corrections` (one string per corrected key, last key,
+//! absent when nothing was corrected). When the `_` form is ALSO given (a
+//! real collision, not an obvious mistake), the bare name is still the
+//! refusal below, unchanged — aliasing there would mean silently picking a
+//! side.
 
 use serde_json::{Map, Value as Json, json};
 
@@ -147,15 +155,27 @@ pub fn json_array_string(s: &str) -> Option<JsonArrayString> {
     Some(JsonArrayString::Fix(items))
 }
 
+/// The result of [`validate_arguments`]: the arguments the handler should
+/// see (`None` when nothing needed normalizing — the caller's own `args`
+/// still apply), plus one correction message per bare engine-field argument
+/// that was safely respelled (`spec/surface` §4, 6.6) — empty when nothing
+/// was.
+#[derive(Debug, Default)]
+pub struct ValidatedArguments {
+    pub args: Option<Json>,
+    pub corrections: Vec<String>,
+}
+
 /// Check `args` against the tool's schema: unknown names first (bytewise
 /// order), then each declared argument (bytewise order) for presence and
 /// type. Nested shapes (`ops`, `expect`, `at`) are checked by their handlers.
-/// Returns the arguments as the handler sees them when the check normalized
-/// one (4.5: a bare string in a string-list slot becomes `[s]`), else `None`.
-pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Option<Json>> {
+/// A bare `id`/`path`/`ids`/`paths` whose `_` spelling the tool takes AND the
+/// call does not already give is safely respelled rather than refused (6.6)
+/// — collected into `corrections`, not returned as an error.
+pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<ValidatedArguments> {
     let Some(obj) = args.as_object() else {
         if args.is_null() {
-            return Ok(None);
+            return Ok(ValidatedArguments::default());
         }
         return Err(argument_error(tool, "arguments must be an object", schema));
     };
@@ -163,23 +183,49 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Opti
     let props = properties(schema);
     let mut given: Vec<&String> = obj.keys().collect();
     given.sort_unstable();
+    let mut corrections = Vec::new();
+    let mut to_respell: Vec<&str> = Vec::new();
     for key in given {
-        if !props.contains_key(key) {
-            // (5.0) A bare engine-field name where the tool takes its `_`
-            // spelling: the error carries the corrected call (every bare
-            // `id`/`path`/`ids` the call holds respelled at once), never a
-            // silent acceptance.
-            let fix = bare_engine_argument(key, props).then(|| {
-                omgbase_mutate::canonical_json(&Json::Object(respell_engine_arguments(obj, props)))
-            });
-            return Err(argument_error_fix(
-                tool,
-                &unknown_argument_message(key, props),
-                schema,
-                fix,
-            ));
+        if props.contains_key(key) {
+            continue;
         }
+        if safe_to_alias_engine_argument(key, props, obj) {
+            to_respell.push(key);
+            corrections.push(bare_engine_argument_correction(tool, key));
+            continue;
+        }
+        // (5.0) A bare engine-field name where the tool takes its `_`
+        // spelling, but the `_` form is also given (a collision, not
+        // aliased — see above): the error still carries the corrected call
+        // (every bare `id`/`path`/`ids` the call holds respelled at once),
+        // never a silent acceptance.
+        let fix = bare_engine_argument(key, props).then(|| {
+            omgbase_mutate::canonical_json(&Json::Object(respell_engine_arguments(obj, props)))
+        });
+        return Err(argument_error_fix(
+            tool,
+            &unknown_argument_message(key, props),
+            schema,
+            fix,
+        ));
     }
+    // A safely-aliased key is respelled into its own map (6.6), kept separate
+    // from `normalized` (4.5/4.11's own lazily-cloned copy below) so the two
+    // compose — a call needing both ends up respelled AND string-list-fixed —
+    // without `obj` ever borrowing out of the thing `normalized` mutates.
+    let respelled: Option<Map<String, Json>> = (!to_respell.is_empty()).then(|| {
+        obj.iter()
+            .map(|(k, v)| {
+                let key = if to_respell.contains(&k.as_str()) {
+                    format!("_{k}")
+                } else {
+                    k.clone()
+                };
+                (key, v.clone())
+            })
+            .collect()
+    });
+    let obj: &Map<String, Json> = respelled.as_ref().unwrap_or(obj);
     let required = required(schema);
     let mut declared: Vec<(&String, &Json)> = props.iter().collect();
     declared.sort_unstable_by(|a, b| a.0.cmp(b.0));
@@ -259,7 +305,10 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Opti
             }
         }
     }
-    Ok(normalized.map(Json::Object))
+    Ok(ValidatedArguments {
+        args: normalized.or(respelled).map(Json::Object),
+        corrections,
+    })
 }
 
 /// The bare engine-field names a tool may be called with by mistake
@@ -270,6 +319,28 @@ const BARE_ENGINE_ARGUMENTS: [&str; 4] = ["id", "path", "ids", "paths"];
 #[must_use]
 pub fn bare_engine_argument(key: &str, props: &Map<String, Json>) -> bool {
     BARE_ENGINE_ARGUMENTS.contains(&key) && props.contains_key(&format!("_{key}"))
+}
+
+/// Whether `key` is safe to silently alias to its `_` spelling (`spec/surface`
+/// §4, 6.6): a bare engine-field name the tool takes AND the call does not
+/// already give the `_` form — no collision to resolve silently.
+#[must_use]
+pub fn safe_to_alias_engine_argument(
+    key: &str,
+    props: &Map<String, Json>,
+    args: &Map<String, Json>,
+) -> bool {
+    bare_engine_argument(key, props) && !args.contains_key(&format!("_{key}"))
+}
+
+/// The success-path notice for a bare engine-field argument safely respelled
+/// (`spec/surface` §4, 6.6): names the mistake, says the call ran as the `_`
+/// form on the caller's behalf, and asks the caller to remember the `_` form.
+#[must_use]
+pub fn bare_engine_argument_correction(tool: &str, key: &str) -> String {
+    format!(
+        "`{tool}` was called with `{key}` instead of `_{key}` — the bare namespace is the user's, `_{key}` is the engine field. This call ran as `_{key}` on your behalf; update your memory to use `_{key}` (not `{key}`) with `{tool}`."
+    )
 }
 
 /// The call with every bare engine-field argument respelled to its `_` form
@@ -539,13 +610,57 @@ mod tests {
         assert!(validate_arguments("blocks_search", &q, &json!({ "q": "x", "limit": 5 })).is_ok());
     }
 
-    /// (5.0, `spec/surface` §4 "Arguments") a bare `id`/`path`/`ids` where
-    /// the tool takes the `_` spelling is refused with the corrected call as
-    /// its `fix`; the bare name is never an alias.
+    /// (6.6, `spec/surface` §4 "Arguments"; through 6.5, 5.0's "no tolerance")
+    /// a bare `id`/`path`/`ids` where the tool takes the `_` spelling and the
+    /// call does not already give it is safely aliased: the call succeeds
+    /// with the respelled args and a correction message per key, never an
+    /// error.
     #[test]
-    fn bare_engine_arguments_are_refused_with_a_fix() {
+    fn bare_engine_arguments_are_safely_aliased() {
         let s = schema();
-        let e = validate_arguments("docs_read", &s, &json!({ "id": "d_1" })).unwrap_err();
+        let v = validate_arguments("docs_read", &s, &json!({ "id": "d_1" })).unwrap();
+        assert_eq!(v.args, Some(json!({ "_id": "d_1" })));
+        assert_eq!(
+            v.corrections,
+            [
+                "`docs_read` was called with `id` instead of `_id` — the bare namespace is the user's, `_id` is the engine field. This call ran as `_id` on your behalf; update your memory to use `_id` (not `id`) with `docs_read`."
+            ]
+        );
+        // every bare engine field of the call is respelled at once, each its own correction
+        let v = validate_arguments(
+            "docs_read",
+            &s,
+            &json!({ "path": "a.md", "id": "d_1", "include_ids": true }),
+        )
+        .unwrap();
+        assert_eq!(
+            v.args,
+            Some(json!({ "_id": "d_1", "_path": "a.md", "include_ids": true }))
+        );
+        assert_eq!(v.corrections.len(), 2);
+        assert!(v.corrections[0].starts_with("`docs_read` was called with `id`"));
+        assert!(v.corrections[1].starts_with("`docs_read` was called with `path`"));
+        let many = json!({ "type": "object", "properties": { "_ids": { "type": "array", "items": { "type": "string" } } }, "required": ["_ids"] });
+        let v = validate_arguments("blocks_read_many", &many, &json!({ "ids": ["b_1"] })).unwrap();
+        assert_eq!(v.args, Some(json!({ "_ids": ["b_1"] })));
+        assert!(v.corrections[0].starts_with("`blocks_read_many` was called with `ids`"));
+        // a tool without the `_` spelling: the plain unknown-argument message, no fix, no alias
+        let q = json!({ "type": "object", "properties": { "q": { "type": "string" } }, "required": ["q"] });
+        let e =
+            validate_arguments("blocks_search", &q, &json!({ "q": "x", "id": "b_1" })).unwrap_err();
+        assert!(e.message.starts_with("unknown argument `id`"));
+        assert!(e.data.unwrap().get("fix").is_none());
+    }
+
+    /// When the `_` form is ALSO given — a real collision, not an obvious
+    /// mistake — the bare name is still refused (the 5.0 message, `data.fix`
+    /// the same call respelled): aliasing there would mean silently picking
+    /// a side.
+    #[test]
+    fn a_bare_engine_argument_colliding_with_its_own_spelling_is_still_refused() {
+        let s = schema();
+        let e =
+            validate_arguments("docs_read", &s, &json!({ "_id": "d_0", "id": "d_1" })).unwrap_err();
         assert_eq!(
             e.message,
             "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_read takes _id?, _path?, include_ids?, repo?)"
@@ -553,32 +668,6 @@ mod tests {
         let d = e.data.unwrap();
         assert_eq!(d["hint"], "arguments");
         assert_eq!(d["fix"], r#"{"_id":"d_1"}"#);
-        // every bare engine field of the call is respelled at once
-        let e = validate_arguments(
-            "docs_read",
-            &s,
-            &json!({ "path": "a.md", "id": "d_1", "include_ids": true }),
-        )
-        .unwrap_err();
-        assert!(e.message.starts_with("`id` is not an argument"));
-        assert_eq!(
-            e.data.unwrap()["fix"],
-            r#"{"_id":"d_1","_path":"a.md","include_ids":true}"#
-        );
-        let many = json!({ "type": "object", "properties": { "_ids": { "type": "array", "items": { "type": "string" } } }, "required": ["_ids"] });
-        let e =
-            validate_arguments("blocks_read_many", &many, &json!({ "ids": ["b_1"] })).unwrap_err();
-        assert_eq!(
-            e.message,
-            "`ids` is not an argument — the engine field is `_ids` (the bare namespace is the user's); pass `_ids` (blocks_read_many takes _ids)"
-        );
-        assert_eq!(e.data.unwrap()["fix"], r#"{"_ids":["b_1"]}"#);
-        // a tool without the `_` spelling: the plain unknown-argument message, no fix
-        let q = json!({ "type": "object", "properties": { "q": { "type": "string" } }, "required": ["q"] });
-        let e =
-            validate_arguments("blocks_search", &q, &json!({ "q": "x", "id": "b_1" })).unwrap_err();
-        assert!(e.message.starts_with("unknown argument `id`"));
-        assert!(e.data.unwrap().get("fix").is_none());
     }
 
     /// The inputs 4.0 retired name their replacement (`spec/surface` §4).
@@ -636,11 +725,15 @@ mod tests {
             "docs": { "type": "array", "items": { "type": "string" } }, "include_ids": { "type": "boolean" }, "repo": { "type": "string" }
         }, "required": ["docs"] });
         assert_eq!(
-            validate_arguments("docs_read_many", &s, &json!({ "docs": "a.md" })).unwrap(),
+            validate_arguments("docs_read_many", &s, &json!({ "docs": "a.md" }))
+                .unwrap()
+                .args,
             Some(json!({ "docs": ["a.md"] }))
         );
         assert_eq!(
-            validate_arguments("docs_read_many", &s, &json!({ "docs": ["a.md"] })).unwrap(),
+            validate_arguments("docs_read_many", &s, &json!({ "docs": ["a.md"] }))
+                .unwrap()
+                .args,
             None
         );
         let e = validate_arguments(
@@ -679,12 +772,15 @@ mod tests {
                 &s,
                 &json!({ "docs": "[\"a.md\",\"b.md\"]" })
             )
-            .unwrap(),
+            .unwrap()
+            .args,
             Some(json!({ "docs": ["a.md", "b.md"] }))
         );
         // surrounding whitespace is trimmed before the `[` is seen
         assert_eq!(
-            validate_arguments("docs_read_many", &s, &json!({ "docs": " [\"a.md\"] " })).unwrap(),
+            validate_arguments("docs_read_many", &s, &json!({ "docs": " [\"a.md\"] " }))
+                .unwrap()
+                .args,
             Some(json!({ "docs": ["a.md"] }))
         );
         // a JSON array that is not all strings: the parsed array is the fix

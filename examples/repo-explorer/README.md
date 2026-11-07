@@ -37,8 +37,9 @@ default — sent as the `repo` argument of every repo-scoped call.
 **Requires omgbase surface ≥ 5.0** (the current `omg`): surface 5.0's
 "underscore = engine" rule — on every record a bare name is the user's and an
 engine-provided one is `_`-prefixed (`_id`, `_path`, `_title`, `_doc_id`, …), a
-`docs_*` tool is addressed by `_id`/`_path` with no tolerance for the bare
-spelling, and an effect's field is `_frontmatter.<k>` — is what every query and
+`docs_*` tool is addressed by `_id`/`_path` (a bare spelling is safely aliased
+with a notice as of 6.6, but this page always sends the `_` form), and an
+effect's field is `_frontmatter.<k>` — is what every query and
 call below speaks, so a 4.x server cannot serve this page (its `path` arguments
 are gone and `_path` is unknown there). The page calls `version` on connect,
 shows `surface 5.0 · minimal` in the header, and refuses an older server with
