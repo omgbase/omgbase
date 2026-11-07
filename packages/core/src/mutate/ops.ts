@@ -59,7 +59,7 @@ function resolveTarget(doc: MutDoc, to: To, opIndex: number): { siblings: MutBlo
   } else if (typeof to.parent === "object" && "heading" in to.parent) {
     // scope:section — resolve the section's range at top level: insert before
     // the next peer/higher heading (04 §1.1). Section blocks live at top level.
-    return resolveSection(doc, to.parent.heading, to.at);
+    return resolveSection(doc, to.parent.heading, to.at, opIndex);
   } else {
     const parentId = to.parent as string;
     const found = locate(doc, parentId);
@@ -96,10 +96,21 @@ function resolveIndex(siblings: MutBlock[], at: At): number {
 
 // A section runs from its heading to the block before the next heading of equal
 // or higher level. Blocks are top-level (flat containment, 01 §3.2).
-function resolveSection(doc: MutDoc, headingId: string, at: At): { siblings: MutBlock[]; index: number } {
+function resolveSection(doc: MutDoc, headingId: string, at: At, opIndex: number): { siblings: MutBlock[]; index: number } {
   const hIdx = doc.children.findIndex((b) => b.id === headingId);
   if (hIdx < 0) throw new MutationError("target_missing", `heading ${headingId} not found`);
-  const level = Number(doc.children[hIdx]!.attrs.level ?? 1);
+  const headingBlock = doc.children[hIdx]!;
+  // §1.1: a section target's heading_id must resolve to a HEADING block — else
+  // a non-heading block (a paragraph, a list…) would be silently treated as the
+  // section's heading, its own text reported as the section's name (04 §10).
+  if (headingBlock.type !== "heading") {
+    throw new MutationError(
+      "type_mismatch",
+      `${headingId} is a ${headingBlock.type}, not a heading; a section target's heading_id must name a heading block`,
+      { op_index: opIndex, block: headingId, type: headingBlock.type },
+    );
+  }
+  const level = Number(headingBlock.attrs.level ?? 1);
   let end = doc.children.length;
   for (let i = hIdx + 1; i < doc.children.length; i++) {
     const b = doc.children[i]!;

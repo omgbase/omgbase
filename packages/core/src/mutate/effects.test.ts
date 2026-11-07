@@ -153,6 +153,18 @@ describe("the lowering table (§11.3)", () => {
     expect(p.new_ids.map((n) => n.symbol)).toEqual(["$new.0", "$new.1", "$new.2", "$new.3"]);
   });
 
+  it("insert into section rejects a heading_id that does not name a heading, instead of treating that block's text as the section name", () => {
+    // b_5 is the `- [ ] alpha / beta` list (a container, but not a heading).
+    const e = failure([{ op: "insert", into: { kind: "section", heading_id: "b_5" }, at: "end", markdown: "x" }]);
+    expect(e.code).toBe("type_mismatch");
+    expect(e.data).toMatchObject({ block: "b_5", type: "list" });
+    // b_1 is the "Intro paragraph." paragraph — also not a heading.
+    const e2 = failure([{ op: "insert", into: { kind: "section", heading_id: "b_1" }, at: "end", markdown: "x" }]);
+    expect(e2.code).toBe("type_mismatch");
+    expect(e2.data).toMatchObject({ block: "b_1", type: "paragraph" });
+    expect(e2.message).toContain("not a heading");
+  });
+
   it("set/unset _frontmatter.<k> → one file head per document, the last patch winning, no kernel op", () => {
     const p = plan([
       { op: "set", target: doc, field: "_frontmatter.owner", value: "me" },

@@ -274,7 +274,7 @@ fn js_number(v: &Value) -> i64 {
 
 /// §1.1: a section runs from its heading to before the next top-level
 /// heading of level ≤ its own.
-fn resolve_section(doc: &MutDoc, heading: &str, at: &At) -> Result<Target> {
+fn resolve_section(doc: &MutDoc, heading: &str, at: &At, op_index: usize) -> Result<Target> {
     let tops = &doc.children;
     let h_idx = tops.iter().position(|b| b.id == heading).ok_or_else(|| {
         err(
@@ -282,6 +282,20 @@ fn resolve_section(doc: &MutDoc, heading: &str, at: &At) -> Result<Target> {
             format!("heading {heading} not found"),
         )
     })?;
+    // §1.1: a section target's heading_id must resolve to a HEADING block —
+    // else a non-heading block (a paragraph, a list…) would be silently
+    // treated as the section's heading, its own text reported as the
+    // section's name (04 §10).
+    let kind = &tops[h_idx].kind;
+    if kind != "heading" {
+        return Err(err_data(
+            ErrorCode::TypeMismatch,
+            format!(
+                "{heading} is a {kind}, not a heading; a section target's heading_id must name a heading block"
+            ),
+            json!({ "op_index": op_index, "block": heading, "type": kind }),
+        ));
+    }
     let level = level_of(&tops[h_idx]);
     let mut end = tops.len();
     for (i, b) in tops.iter().enumerate().skip(h_idx + 1) {
@@ -343,7 +357,7 @@ pub fn resolve_target(doc: &MutDoc, to: &To, op_index: usize) -> Result<Target> 
             parent: Vec::new(),
             index: resolve_index(&doc.children, &to.at)?,
         }),
-        Parent::Section { heading } => resolve_section(doc, heading, &to.at),
+        Parent::Section { heading } => resolve_section(doc, heading, &to.at, op_index),
         Parent::Block(id) => {
             let path = doc
                 .locate(id)
@@ -1797,6 +1811,39 @@ mod tests {
         )
         .unwrap();
         assert_eq!(d.children[0].children.len(), 2);
+    }
+
+    #[test]
+    fn insert_into_section_with_a_non_heading_heading_id_is_type_mismatch() {
+        // §1.1: a section target's heading_id must name a HEADING block —
+        // else a non-heading block's own text would be silently reported as
+        // the section's name (the bug this rule fixes).
+        let (mut d, mut m) = doc("# Title\n\nFirst.\n\n## Risks\n\nSecond.\n");
+        let para = id_at(&d, 1); // "First." — a non-heading top-level block
+        let e = d
+            .insert(
+                &To {
+                    parent: Parent::Section {
+                        heading: para.clone(),
+                    },
+                    at: At::End,
+                },
+                "x",
+                &mut m,
+            )
+            .unwrap_err();
+        assert_eq!(e.code, ErrorCode::TypeMismatch);
+        assert_eq!(
+            e.message,
+            format!(
+                "{para} is a paragraph, not a heading; a section target's heading_id must name a heading block"
+            )
+        );
+        assert_eq!(
+            Value::Object(e.data),
+            json!({ "op_index": 0, "block": para, "type": "paragraph" })
+        );
+        assert_eq!(render(&d), "# Title\n\nFirst.\n\n## Risks\n\nSecond.\n");
     }
 
     #[test]

@@ -2911,6 +2911,266 @@
       }
     },
     {
+      "name": "insert-into-section-heading-not-a-heading",
+      "notes": "§1.1: a section target's `heading_id` must resolve to a HEADING block — else a non-heading block's own text was silently reported as the section's name and the insert landed at the wrong place (the reported gap). `b_1` is the `First.` paragraph, not a heading; the insert is `type_mismatch { op_index, block, type }` and nothing is written.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nFirst.\n\n## Risks\n\nSecond.\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "insert",
+                "to": {
+                  "parent": {
+                    "heading": "b_1",
+                    "scope": "section"
+                  },
+                  "at": "end"
+                },
+                "markdown": "Under risks."
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "error": {
+              "code": "type_mismatch",
+              "op_index": 0,
+              "block": "b_1"
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nFirst.\n\n## Risks\n\nSecond.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_0",
+            "file_hash": "0d27721379b51dd2a509e9c064e797319f07afd19987b7f0b662ea670fc3ff0c",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw": "# Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "First.",
+            "raw": "First.",
+            "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "text": "Risks",
+            "raw": "## Risks",
+            "raw_hash": "1fae90643e8d2fe584bbd76cad177ca80f0aedf1761195a70cf5a2bd96c9ddf0",
+            "norm_hash": "bb685708eae6c8d55a88ed786bb5388db37ad51e0de5e8da1f2608ff38539e33",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Second.",
+            "raw": "Second.",
+            "raw_hash": "1e8bbbab2a0b0e51cce5a6867182b081c60b35e2512744847021b624729a8218",
+            "norm_hash": "1e8bbbab2a0b0e51cce5a6867182b081c60b35e2512744847021b624729a8218",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "0d27721379b51dd2a509e9c064e797319f07afd19987b7f0b662ea670fc3ff0c",
+            "kind": "created",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "45cc8b2d018fcc4f389a365b0634a08a35d819b521dcfabd8b756aa7a1ec3111",
+            "frontmatter_blob": null,
+            "rendered_hash": "0d27721379b51dd2a509e9c064e797319f07afd19987b7f0b662ea670fc3ff0c",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": [],
+        "pending_materializations": []
+      }
+    },
+    {
       "name": "insert-into-list-unwraps-items",
       "notes": "§2.1 + §10 mint order: content parses to a list (b_5) whose items (b_6, b_7) are spliced into the target list; the wrapper's id is minted but unused.",
       "steps": [
