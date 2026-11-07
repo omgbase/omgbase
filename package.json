@@ -2,13 +2,13 @@
   "name": "omgbase-workspace",
   "version": "0.0.0",
   "private": true,
-  "description": "Open Markdown Graph Base \u2014 workspace root",
+  "description": "Open Markdown Graph Base — workspace root",
   "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@12.4.0",
+  "packageManager": "pnpm@12.18.0",
   "scripts": {
     "build": "pnpm --filter @omgbase/oqx build && pnpm --filter @omgbase/dataview build && tsc -b && node packages/cli/scripts/build-info.mjs",
     "typecheck": "pnpm --filter @omgbase/oqx build && pnpm --filter @omgbase/dataview typecheck && tsc -b",
