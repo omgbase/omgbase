@@ -19,7 +19,7 @@
 //! let mut doc = MutDoc::new("d_0", "a.md", vec![MutBlock::new("b_0", "heading", "# Title", "\n")]);
 //! let mut minter = SequentialMinter::new("b");
 //! let to = To { parent: Parent::Doc, at: At::End };
-//! let result = op_insert(&mut doc, &to, "A paragraph.", 0, None, &mut minter).unwrap();
+//! let result = op_insert(&mut doc, &to, "A paragraph.", 0, None, &mut minter, None).unwrap();
 //! assert_eq!(result.ids, ["b_0"]);
 //! assert_eq!(render(&doc), "# Title\n\nA paragraph.\n");
 //! ```

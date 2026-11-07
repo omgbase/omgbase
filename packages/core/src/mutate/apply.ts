@@ -278,14 +278,14 @@ export class ChangesetPlanner {
           ? this.resolveDocArg(rawOp.doc)
           : parentDoc(store, repoId, to, loaded);
         const d = ensureDoc(docId);
-        result = opInsert(d, to, rawOp.markdown, rawOp.expect, i);
+        result = opInsert(d, to, rawOp.markdown, rawOp.expect, i, this.priorIds.get(docId));
         break;
       }
       case "update": {
         const block = this.resolveId(rawOp.block);
         const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, repoId, block);
         if (!docId) throw new MutationError("block_missing", `block ${block} not found`, { op_index: i });
-        result = opUpdate(ensureDoc(docId), block, i, rawOp.markdown, rawOp.attrs, rawOp.expect, rawOp.trivia, rawOp.childIds);
+        result = opUpdate(ensureDoc(docId), block, i, rawOp.markdown, rawOp.attrs, rawOp.expect, rawOp.trivia, rawOp.childIds, this.priorIds.get(docId));
         break;
       }
       case "move": {

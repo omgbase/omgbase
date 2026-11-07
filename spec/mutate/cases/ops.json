@@ -1152,6 +1152,561 @@
       }
     },
     {
+      "name": "insert-after-heading-preserves-following-sibling-list",
+      "notes": "Regression (reported bug): `at: { after: <heading> }` lands new content between the heading and its section's existing list. A blank line alone does not stop CommonMark from re-merging two adjacent `-` lists into one on reparse (round-trip law) — the renderer must disambiguate the NEW list's marker (here `*`) so the untouched Decisions list (b_2/b_3/b_4) and everything after it (b_5 Open loops, b_6/b_7 its list) keep their bytes and ids exactly.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Note\n\n## Decisions\n\n- old1\n- old2\n\n## Open loops\n\n- loop1\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "insert",
+                "to": {
+                  "parent": {
+                    "doc": true
+                  },
+                  "at": {
+                    "after": "b_1"
+                  }
+                },
+                "markdown": "## Consumers\n\n- item"
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 8
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_8",
+                  "b_9"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "b168cfdb8d4646853a33eca8fad6bb7c9728aca4f7524efa1003d0cce9bdb0c5"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "# Note\n\n## Decisions\n\n## Consumers\n\n* item\n\n- old1\n- old2\n\n## Open loops\n\n- loop1\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_1",
+            "file_hash": "b168cfdb8d4646853a33eca8fad6bb7c9728aca4f7524efa1003d0cce9bdb0c5",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Note",
+            "raw": "# Note",
+            "raw_hash": "60930edd1bf299c7f8df7f3a1b4e85c6f46c04daefe6a23910a624740ae1d366",
+            "norm_hash": "d8da2c49df39d91df7ecd199b92da7bf264f026242ccc69b08daeadfe587c45b",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "text": "Decisions",
+            "raw": "## Decisions",
+            "raw_hash": "a69ccdf682630a3a88d62385b6c2895d5410b7f36ee52d046c9e8403a33b8eaa",
+            "norm_hash": "cfa6a08af3ed587100e647bd922ea291b8b542ee523cee20b10b416a2f8d7adc",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_8",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "text": "Consumers",
+            "raw": "## Consumers",
+            "raw_hash": "bc528acc60fb417df90b798d874cf6681343e8e71a333a6558eafcaf283dec53",
+            "norm_hash": "212b350d5a329fe8935f8d2341775103941a22fb905f92c13b01ac045f93ab55",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_9",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "item",
+            "raw": "* item",
+            "raw_hash": "783840e46c5969bbda654e831751fe67711f8b4feb88159cb89033bb15a4d7b2",
+            "norm_hash": "4a33eacd5fa65f2b2e2871cd131286b53c415b131666d71173bb6e3fe59361b3",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_10",
+            "doc_id": "d_0",
+            "parent_block": "b_9",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_9/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "item",
+            "raw": "* item",
+            "raw_hash": "783840e46c5969bbda654e831751fe67711f8b4feb88159cb89033bb15a4d7b2",
+            "norm_hash": "4a33eacd5fa65f2b2e2871cd131286b53c415b131666d71173bb6e3fe59361b3",
+            "trivia": null,
+            "trivia_hash": null,
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Z",
+            "ordinal": 4,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "old1 old2",
+            "raw": "- old1\n- old2",
+            "raw_hash": "98c3fcf75c47c4f069df4e0743860c9d06fe6bdecd389986ee3739f8147352b4",
+            "norm_hash": "15f1afb2b062c9e91172ac061fab9757cd60c5e3bc91e78240fd1eb773925cc8",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_2",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_2/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "old1",
+            "raw": "- old1",
+            "raw_hash": "28f65ad15622057b5699f2ba1a1c2f4472347d8a75ac665477cc9811d4322dab",
+            "norm_hash": "872737ae8121bc1b984efcbd5f7931d3822326351a30518a018c4c502b95c533",
+            "trivia": null,
+            "trivia_hash": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_2",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_2/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "old2",
+            "raw": "- old2",
+            "raw_hash": "c8a6bbc0b5bfbd3b640070f90d65c8cd749aaee1f7ad92b9ceb6c44be95649c3",
+            "norm_hash": "893a3cfd3912a125b2419774d2752a3bb8cc175927cd5b421336e4f028607452",
+            "trivia": null,
+            "trivia_hash": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "a",
+            "ordinal": 5,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "text": "Open loops",
+            "raw": "## Open loops",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "norm_hash": "548f111d61edcc932d102d5bf336af13ee545a93423667755b967e2fe5ce3228",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "b",
+            "ordinal": 6,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "loop1",
+            "raw": "- loop1",
+            "raw_hash": "83fd5c2b4f057d4940f307928956612bd87b5b4a66dc6235c3ddf39181d5a2c0",
+            "norm_hash": "7785019f0d5f6027fe566ac86429cbb518a488e8dec5bb0a3f337acca78b54a9",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_7",
+            "doc_id": "d_0",
+            "parent_block": "b_6",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_6/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "loop1",
+            "raw": "- loop1",
+            "raw_hash": "83fd5c2b4f057d4940f307928956612bd87b5b4a66dc6235c3ddf39181d5a2c0",
+            "norm_hash": "7785019f0d5f6027fe566ac86429cbb518a488e8dec5bb0a3f337acca78b54a9",
+            "trivia": null,
+            "trivia_hash": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "batch_id": "c_1",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "5abe324f8c8b46626eaa8898b855d44c8f72ee252f067a8addddffb332d35400",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "b168cfdb8d4646853a33eca8fad6bb7c9728aca4f7524efa1003d0cce9bdb0c5",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "350d13f620a4d1d2e08c0e6c571cf0de0dceabccac43ad8025b8b5ae82a83f5d",
+            "frontmatter_blob": null,
+            "rendered_hash": "5abe324f8c8b46626eaa8898b855d44c8f72ee252f067a8addddffb332d35400",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "fc93e9aece9e9e4bee24c51d2862253623aa23a23418e79cfad2981ed2b02fb9",
+            "frontmatter_blob": null,
+            "rendered_hash": "b168cfdb8d4646853a33eca8fad6bb7c9728aca4f7524efa1003d0cce9bdb0c5",
+            "path": "a.md",
+            "commit_id": "c_1",
+            "archive": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_7",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_10",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_5",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_6",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_8",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_9",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": [],
+        "pending_materializations": []
+      }
+    },
+    {
       "name": "insert-into-section-end",
       "notes": "§1.1: `{ heading, scope: section }` + `end` inserts at the section range end — before `## B`, after `### A.1`'s paragraph (a deeper heading belongs to the section).",
       "steps": [

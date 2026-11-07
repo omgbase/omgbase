@@ -6,7 +6,7 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::tree::{MutBlock, MutDoc};
 
@@ -96,9 +96,21 @@ fn render_table(t: &MutBlock, depth: usize) -> String {
 }
 
 /// §3 list rule: items re-marked and joined by the list's own separator.
+/// `attrs.bullet` (`"-"` default) / `attrs.delim` (`"."` default) let a
+/// caller pick a non-default marker — see `disambiguate_list_marker` below.
 fn render_list(list: &MutBlock) -> String {
     let ordered = list.attrs.get("ordered").is_some_and(truthy);
     let start = list.attrs.get("start").and_then(Value::as_i64).unwrap_or(1);
+    let bullet = list
+        .attrs
+        .get("bullet")
+        .and_then(Value::as_str)
+        .unwrap_or("-");
+    let delim = list
+        .attrs
+        .get("delim")
+        .and_then(Value::as_str)
+        .unwrap_or(".");
     let sep = if list.raw.contains("\n\n") {
         "\n\n"
     } else {
@@ -109,14 +121,94 @@ fn render_list(list: &MutBlock) -> String {
         .enumerate()
         .map(|(i, item)| {
             let marker = if ordered {
-                format!("{}. ", start + i as i64)
+                format!("{}{delim} ", start + i as i64)
             } else {
-                "- ".to_owned()
+                format!("{bullet} ")
             };
             render_item(item, &marker)
         })
         .collect::<Vec<_>>()
         .join(sep)
+}
+
+const UNORDERED_BULLETS: [&str; 3] = ["-", "*", "+"];
+const ORDERED_DELIMS: [&str; 2] = [".", ")"];
+
+/// The marker a list currently renders with: `attrs.bullet`/`attrs.delim`
+/// when already chosen (a list `disambiguate_list_marker` already touched),
+/// else read off its first item's own raw bytes (an untouched, parsed list).
+fn list_marker_char(list: &MutBlock) -> String {
+    let ordered = list.attrs.get("ordered").is_some_and(truthy);
+    if ordered && let Some(d) = list.attrs.get("delim").and_then(Value::as_str) {
+        return d.to_owned();
+    }
+    if !ordered && let Some(b) = list.attrs.get("bullet").and_then(Value::as_str) {
+        return b.to_owned();
+    }
+    if let Some(first) = list.children.first() {
+        let line = first.raw.split('\n').next().unwrap_or("");
+        if let Some(caps) = MARKER_RE.captures(line)
+            && let Some(c) = caps.get(2).and_then(|g| g.as_str().chars().last())
+        {
+            return c.to_string();
+        }
+    }
+    if ordered {
+        ".".to_owned()
+    } else {
+        "-".to_owned()
+    }
+}
+
+/// Would `a` and `b`, rendered adjacent at the top level with only a blank
+/// line between them (no other block), be re-parsed by CommonMark as ONE
+/// list? True exactly when both are lists, both ordered or both unordered,
+/// and they share a marker character — CommonMark starts a new list on any
+/// marker change (a different bullet, or a different ordered delimiter), but
+/// a blank line ALONE does not split two same-marker lists (they merge into
+/// one loose list). This is the hazard the round-trip law (`spec/format`
+/// README, `spec/mutate` §2.2) needs callers to avoid: `parse(render(tree))`
+/// must stay structurally identical to the op tree, or the next commit's
+/// known-id resolver (positional) misassigns every block from that point on.
+#[must_use]
+pub fn lists_would_merge(a: &MutBlock, b: &MutBlock) -> bool {
+    if a.kind != "list" || b.kind != "list" {
+        return false;
+    }
+    let a_ordered = a.attrs.get("ordered").is_some_and(truthy);
+    let b_ordered = b.attrs.get("ordered").is_some_and(truthy);
+    a_ordered == b_ordered && list_marker_char(a) == list_marker_char(b)
+}
+
+/// Force `list` to render with a marker that differs from every list in
+/// `neighbors` (its new top-level neighbor(s) post-splice) so it can never
+/// re-merge with one of them on reparse. Mutates only `list` (never a
+/// neighbor) — the caller picks the NEWLY PLACED list, so an untouched
+/// sibling's bytes/id are never disturbed. Marks it dirty: `render_block`
+/// then rebuilds it (and only it) via `render_list` with the chosen marker.
+pub fn disambiguate_list_marker(list: &mut MutBlock, neighbors: &[&MutBlock]) {
+    let ordered = list.attrs.get("ordered").is_some_and(truthy);
+    let avoid: std::collections::HashSet<String> = neighbors
+        .iter()
+        .filter(|n| n.kind == "list" && n.attrs.get("ordered").is_some_and(truthy) == ordered)
+        .map(|n| list_marker_char(n))
+        .collect();
+    let options: &[&str] = if ordered {
+        &ORDERED_DELIMS
+    } else {
+        &UNORDERED_BULLETS
+    };
+    let choice: &str = options
+        .iter()
+        .copied()
+        .find(|c| !avoid.contains(*c))
+        .unwrap_or(options[0]);
+    if ordered {
+        list.attrs.insert("delim".into(), json!(choice));
+    } else {
+        list.attrs.insert("bullet".into(), json!(choice));
+    }
+    list.dirty = true;
 }
 
 /// JavaScript `Boolean(v)` for a JSON value.

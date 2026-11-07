@@ -151,11 +151,65 @@ const MARKER_RE = /^(\s*)([-*+]|\d+[.)])(\s+)/;
 // Reconstruct a markdown list from its (possibly reordered / edited / added /
 // removed) items. Item raws are self-contained (marker + text + nested); we
 // only re-derive the leading marker so an ordered list renumbers correctly.
+// `attrs.bullet` ("-" default) / `attrs.delim` ("." default) let a caller pick
+// a non-default marker — see disambiguateListMarker below.
 function renderList(list: MutBlock): string {
   const ordered = Boolean(list.attrs.ordered);
   const start = typeof list.attrs.start === "number" ? list.attrs.start : 1;
+  const bullet = typeof list.attrs.bullet === "string" ? list.attrs.bullet : "-";
+  const delim = typeof list.attrs.delim === "string" ? list.attrs.delim : ".";
   const sep = list.raw.includes("\n\n") ? "\n\n" : "\n";
-  return list.children.map((item, i) => renderItem(item, ordered ? `${start + i}. ` : "- ")).join(sep);
+  return list.children.map((item, i) => renderItem(item, ordered ? `${start + i}${delim} ` : `${bullet} `)).join(sep);
+}
+
+const UNORDERED_BULLETS = ["-", "*", "+"] as const;
+const ORDERED_DELIMS = [".", ")"] as const;
+
+// The marker a list currently renders with: `attrs.bullet`/`attrs.delim` when
+// already chosen (a list this function already disambiguated), else read off
+// its first item's own raw bytes (an untouched, parsed-from-source list).
+function listMarkerChar(list: MutBlock): string {
+  const ordered = Boolean(list.attrs.ordered);
+  if (ordered && typeof list.attrs.delim === "string") return list.attrs.delim;
+  if (!ordered && typeof list.attrs.bullet === "string") return list.attrs.bullet;
+  const first = list.children[0];
+  const m = first ? MARKER_RE.exec(first.raw.split("\n")[0] ?? "") : null;
+  if (m) return m[2]!.slice(-1);
+  return ordered ? "." : "-";
+}
+
+/**
+ * Would `a` and `b`, rendered adjacent at the top level with only a blank
+ * line between them (no other block), be re-parsed by CommonMark as ONE
+ * list? True exactly when both are lists, both ordered or both unordered,
+ * and they share a marker character — CommonMark starts a new list on any
+ * marker change (a different bullet, or a different ordered delimiter), but
+ * a blank line ALONE does not split two same-marker lists (they merge into
+ * one loose list). This is the hazard the round-trip law (spec/format
+ * README, spec/mutate §2.2) needs callers to avoid: parse(render(tree)) must
+ * stay structurally identical to the op tree, or the next commit's
+ * known-id resolver (positional) misassigns every block from that point on.
+ */
+export function listsWouldMerge(a: MutBlock, b: MutBlock): boolean {
+  if (a.type !== "list" || b.type !== "list") return false;
+  return Boolean(a.attrs.ordered) === Boolean(b.attrs.ordered) && listMarkerChar(a) === listMarkerChar(b);
+}
+
+/**
+ * Force `list` to render with a marker that differs from every list in
+ * `neighbors` (its new top-level neighbor(s) post-splice) so it can never
+ * re-merge with one of them on reparse. Mutates only `list` (never a
+ * neighbor) — the caller picks the NEWLY PLACED list, so an untouched
+ * sibling's bytes/id are never disturbed. Marks it dirty: renderBlock then
+ * rebuilds it (and only it) via renderList with the chosen marker.
+ */
+export function disambiguateListMarker(list: MutBlock, neighbors: MutBlock[]): void {
+  const ordered = Boolean(list.attrs.ordered);
+  const avoid = new Set(neighbors.filter((n) => n.type === "list" && Boolean(n.attrs.ordered) === ordered).map(listMarkerChar));
+  const options = ordered ? ORDERED_DELIMS : UNORDERED_BULLETS;
+  const choice = options.find((c) => !avoid.has(c)) ?? options[0]!;
+  list.attrs = { ...list.attrs, ...(ordered ? { delim: choice } : { bullet: choice }) };
+  list.dirty = true;
 }
 
 // Render one list item under the given marker. A retained item (no strictly

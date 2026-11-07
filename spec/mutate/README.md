@@ -139,8 +139,32 @@ target is the **top level**, heal the seams — if `index > 0` and the
 preceding block's trivia does not separate blocks (`\n\n` absent, for
 Markdown), set it to the separator; if the run lands before an existing
 block and the run's last trivia does not separate, set it to the separator;
-splice; a nested target marks its owner dirty. `ids` = the parsed blocks'
-ids in order. An empty parse inserts nothing (`ids: []`).
+**disambiguate a colliding list edge** (below); splice; a nested target
+marks its owner dirty. `ids` = the parsed blocks' ids in order. An empty
+parse inserts nothing (`ids: []`).
+
+**Disambiguating a colliding list edge** (Markdown only; round-trip law,
+§3): a blank line does not split two adjacent `list` blocks that share a
+marker — CommonMark re-merges them into one list on reparse regardless of
+the trivia between them (a changed bullet or ordered delimiter is what
+starts a new list). Left alone, the inserted run's list and an existing
+top-level list it now sits against would render as one list; the NEXT
+commit's known-id resolver assigns ids by position, so that reparse would
+silently fuse the two lists' items under one id and shift every id after
+the merge point — the carried list's items, and everything that followed
+it, would lose their identity though nothing about them was touched. So:
+if the run's first block is a `list` and it would merge (same
+`ordered`-ness and marker character) with the block now immediately
+BEFORE it, or the run's last block is a `list` and it would merge with the
+block now immediately AFTER it — and that neighbor existed before this
+changeset (an inserted/moved block earlier in the SAME changeset is exempt:
+both sides are new, so there is no carried identity to protect, and this is
+exactly how a row-template "rollup" insert accumulates its items into one
+list, §11.8) — give that edge list a marker distinct from the neighbor's
+(`attrs.bullet`, one of `"-" "*" "+"`, for unordered; `attrs.delim`, `"."` or
+`")"`, for ordered) and mark it dirty. The neighbor itself is never touched:
+its bytes and id are exactly as they were. A single-block run touching
+colliding neighbors on BOTH sides picks one marker distinct from both.
 
 ### 2.2 `update { block, markdown?, attrs?, expect?, trivia?, child_ids? }` → `{ ids }`
 
@@ -166,7 +190,10 @@ Unknown block → `block_missing`. Content CAS (§1.2) is required when
 - `trivia`, when given, replaces the block's trivia verbatim (no dirty).
 - Extra siblings: the target's trivia moves to the last extra block; at the
   top level every seam inside the run that does not separate is set to the
-  separator; the owner is marked dirty. `ids` = `[block, ...extra ids]`.
+  separator, and the same list-edge disambiguation as `insert` (§2.1) runs
+  against the run's two outer edges (the retargeted block, which may now be
+  a `list`, and the last extra sibling) and their pre-existing neighbors;
+  the owner is marked dirty. `ids` = `[block, ...extra ids]`.
 
 ### 2.3 `move { blocks, to, doc? }` → `{ ids: blocks }`
 
@@ -241,9 +268,12 @@ the raws joined by `separator` (dirty); the others are removed;
 its `raw` verbatim. Otherwise, by type:
 
 - **`list`**: items joined by `\n\n` if the list's raw contains `\n\n`, else
-  `\n`; each item rendered by `render_item` with the marker `"- "` for an
-  unordered list or `"<start + i>. "` for an ordered one (`start` from
-  attrs, default 1) — ordered lists renumber.
+  `\n`; each item rendered by `render_item` with the marker `"<bullet> "` for
+  an unordered list (`attrs.bullet`, default `"-"`) or `"<start + i><delim> "`
+  for an ordered one (`start`/`attrs.delim`, defaults 1 and `"."`) — ordered
+  lists renumber. `bullet`/`delim` are set only by `insert`/`update`'s
+  list-edge disambiguation (§2.1); an untouched list never carries them and
+  renders its default marker.
 - **`blockquote`**: children rendered (depth + 1) and joined by `\n\n`, then
   every line prefixed `"> "` (a blank line becomes `">"`).
 - **`table`**: rows rendered; if the raw's second line is a delimiter row
@@ -862,6 +892,38 @@ composition=<name>: compared=<n> mapped=<n> skipped=<n>` for
 
 ## 10. Reference oddities surfaced while specifying, and decisions
 
+- **Fixed (4.2) — an insert landing next to a same-marker list silently
+  absorbed it.** `insert`/`update` healed a missing blank line between the
+  run and its new top-level neighbor (§2.1) but never checked whether the
+  neighbor was ALSO a list the new one would re-merge with on the next
+  reparse: CommonMark does not split two adjacent unordered (or ordered)
+  lists that share a marker just because a blank line sits between them
+  (only a changed bullet/delimiter does). So `blocks_insert { to: <doc>, at:
+  { after: <heading> } }` with a section's existing list right after the
+  heading rendered the new list immediately before the old one, both `"- "`
+  — one list, by CommonMark's reading. The next commit's known-id resolver
+  (`packages/core/src/mutate/known-ids.ts`) assigns ids by POSITION assuming
+  `parse(render(tree))` stays structurally identical to the op tree (the
+  round-trip law): with the two lists fused into one, every position from
+  the merge point on was off by one, so the carried list's items (and every
+  block after it — a following heading included) were reassigned ids that
+  used to belong to their NEXT sibling, while the new content's bytes ended
+  up carrying an old id. Confirmed independently in the existing corpus,
+  not just a constructed repro: `spec/surface` `reads::diff-unified-list-
+  append` and `reads::append-into-blocks`, and `spec/cli`
+  `mutate::append-stdin`, all exercised this path (`blocks_append`
+  §4/`docs_append`/CLI `append`, which land new content at a section's end —
+  i.e. right after whatever already closes that section) and their `expect`
+  silently encoded the corruption (e.g. a list's recorded `before` text
+  spanned items that were never part of it) until this fix's regeneration.
+  §2.1 now disambiguates the new run's colliding edge list(s) with a
+  different marker — the untouched neighbor is never written to, so its
+  bytes and id are exactly as they were. `docs_update` (the whole-document
+  planner, §8) was never exposed: it reconciles the proposed body against
+  the live tree by content (`spec/reconcile`), which degrades gracefully
+  when a proposed list looks like a merge of two — the matcher's job, not a
+  round-trip assumption — so "workaround: docs_update the whole note" in the
+  original report is explained, not a coincidence.
 - **Changed (store 17.0, slice 3c — M4) — the pending row is self-contained.**
   The row §4 step 5 (b) records carries `head` (the token whose bytes it
   renders; `rev_id` through store 16.x), `prior_hash` (the hash (a) read

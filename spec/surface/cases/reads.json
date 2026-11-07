@@ -2455,7 +2455,7 @@
               {
                 "_id": "d_0",
                 "_path": "/log.md",
-                "_hash": "099178c054828be3386027834347cdcbdd5bad7cae89637843210d248e72e25d"
+                "_hash": "3a817a4b7a14cca71b892c6f89989688f3a86c8bf2cd20e11b35d2f9be9b0f48"
               }
             ],
             "new_ids": {
@@ -2469,18 +2469,18 @@
             ]
           },
           {
-            "plan_id": "d8575e64df2cc482aa28621864eba76ff658f1e2b4a60346d3e14664a28cd8d1",
+            "plan_id": "24771de36b4dde8eb4fc06623bf8a7a3d0da33797197bedd163b32a96f7107e5",
             "commit": "c_2",
             "revisions": [
               {
                 "_id": "d_0",
                 "_path": "/log.md",
-                "_hash": "0ba5807ee541251e748e484c7508e37d18aeaabfa06d15973fa3ebe9f867d6a0"
+                "_hash": "bc9bd2c7310fd2f250f6b53c8106cfce86c1976ea6815756e7968cb0e308f1eb"
               }
             ],
             "new_ids": {
-              "$new.0": "b_12",
-              "$new.1": "b_13"
+              "$new.0": "b_10",
+              "$new.1": "b_11"
             },
             "committed": true,
             "summary": [
@@ -2491,14 +2491,14 @@
             "_id": "d_0",
             "_path": "/log.md",
             "rev": "r_1",
-            "_raw": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n",
+            "_raw": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n* item d\n* item e\n",
             "renderedHashMatch": true
           },
           {
             "_id": "d_0",
             "_path": "/log.md",
             "rev": "r_2",
-            "_raw": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n\n- item f\n",
+            "_raw": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n* item d\n* item e\n\n- item f\n",
             "renderedHashMatch": true
           },
           {
@@ -2506,25 +2506,24 @@
             "_path": "/log.md",
             "from": "r_1",
             "to": "r_2",
-            "diff": "@@ -17,3 +17,5 @@\n - item d\n - item e\n \n+- item f\n+"
+            "diff": "@@ -17,3 +17,5 @@\n * item d\n * item e\n \n+- item f\n+"
           },
           {
             "_id": "d_0",
             "_path": "/log.md",
             "from": "r_0",
             "to": "r_2",
-            "diff": "@@ -14,3 +14,8 @@\n \n - item c\n \n+- item d\n+- item e\n+\n+- item f\n+"
+            "diff": "@@ -14,3 +14,8 @@\n \n - item c\n \n+* item d\n+* item e\n+\n+- item f\n+"
           },
           [
             {
-              "kind": "changed",
-              "_id": "b_3",
-              "before": "- item a\n\n- item b\n\n- item c\n\n- item d\n- item e",
-              "after": "- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n\n- item f"
+              "kind": "added",
+              "_id": "b_10",
+              "after": "- item f"
             },
             {
               "kind": "added",
-              "_id": "b_14",
+              "_id": "b_11",
               "after": "- item f"
             }
           ]
@@ -11801,7 +11800,7 @@
                 {
                   "_id": "d_0",
                   "_path": "/notes.md",
-                  "_hash": "b7af714b4d34a321c3461a943cbc045f3d6a76dd4d0631c03ad64c9bdce21113"
+                  "_hash": "75beae2537e70d459c1e345428f369adac5f297e3075ee45ac326d3ffabe9e37"
                 }
               ],
               "summary": [
