@@ -323,6 +323,15 @@
       }
     },
     {
+      "name": "unknown-engine-name-on-a-related-kind-points-at-the-reach-through",
+      "notes": "§1.5 (conformance fix, 0.30 patch): `_ordinal` is a block attribute, not a node's — the owner block's, reached through `_block`. Before the fix the nearest match fell through to an unrelated authored node key (`last_ordinal`, a `md:section`'s own computed-looking attrs key) instead of the real correction.",
+      "query": "select _ordinal from nodes",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`_ordinal` is not an engine name of nodes (engine names: _id, _path, _doc_id, _block_id, _kind, _name, _value, _attrs, _doc, _block, _blocks, _subsections, _children); did you mean `_block._ordinal`?"
+      }
+    },
+    {
       "name": "doc-on-a-document-is-an-authored-key",
       "notes": "§1.2 (5.0): the self alias is gone — `$it` is the self — so a bare `doc` on a document reads an authored property like any other name (absent here, with the §1.5 hint).",
       "query": "select doc, p: $it._path from docs where _path == \"/index.md\"",
@@ -399,24 +408,31 @@
     },
     {
       "name": "dollar-names-are-not-omgbase-names",
-      "notes": "§1.2 (3.0): omgbase adds no `$` names — `$id`/`$path` are unknown OQX identifiers (absent), never the attributes. Pinned here so a 2.x-style query fails visibly (an absent projection is omitted; `where $id == …` matches nothing).",
+      "notes": "§1.2 (3.0): omgbase adds no `$` names — `$id`/`$path` are unknown OQX identifiers (absent), never the attributes. Pinned here so a 2.x-style query fails visibly: an absent projection is omitted, `where $id == …` matches nothing, AND (conformance fix, 0.30 patch: the unknown-$-name path now carries the same hint the unknown-bare-name path always has) the result's `hints` point at the real engine field — a stale 2.x client no longer looks healthy.",
       "query": "select x: $id, y: $path from docs where $id == \"d_14\"",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect"
+        "consumer": "collect",
+        "hints": [
+          "no document in this repository carries a property `$id`; did you mean `_id`?",
+          "no document in this repository carries a property `$path`; did you mean `_path`?"
+        ]
       }
     },
     {
       "name": "dollar-self-is-not-a-name",
-      "notes": "§1.2 (4.11 patch): the runner rewrites a bare row function to a method on `$it` (`text(\"x\")` → `$it.text(\"x\")`), the language's own name for the scope's row; there is no engine-private receiver. A typed `$self` is therefore an unknown OQX identifier like `$id` — absent, matching nothing — where before this patch both engines answered it with the row.",
+      "notes": "§1.2 (4.11 patch): the runner rewrites a bare row function to a method on `$it` (`text(\"x\")` → `$it.text(\"x\")`), the language's own name for the scope's row; there is no engine-private receiver. A typed `$self` is therefore an unknown OQX identifier like `$id` — absent, matching nothing, and (conformance fix, 0.30 patch) now hinted like one too — where before this patch both engines answered it with the row.",
       "query": "select x: $self.path from docs where $self.path == \"/plain.md\"",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect"
+        "consumer": "collect",
+        "hints": [
+          "no document in this repository carries a property `$self.path`; did you mean `_path`?"
+        ]
       }
     },
     {

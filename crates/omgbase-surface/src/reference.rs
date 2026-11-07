@@ -114,7 +114,8 @@ property: frontmatter + inline on a doc, an attrs key on a block or node), an
 UNDERSCORE-prefixed name is the ENGINE's (however derived: `_id`, `_path`,
 `_title`, `_updated_at`, `_doc`), and `$` belongs to OQX — $it, $key, $depth,
 $stop, $leaf, $frontier, $ordinal are values the LANGUAGE injects into a scope;
-omgbase adds NO $ names (a `$id` in a query is an unknown name, absent). Nothing
+omgbase adds NO $ names (a `$id` in a query is an unknown name, absent — with the
+same did-you-mean hint a bare `id` gets, pointing at `_id`). Nothing
 bare is reserved: `title`, `tags`, `path`, `id`, `format`, `doc` are your keys
 when you wrote them. Collections stay bare (`docs { … }`, `^docs`, `docs count { … }`,
 `entries(^$it)`) — the collection before a body is a root, not a row property — and so do the
@@ -550,7 +551,8 @@ text()/where prune the candidate set; only order by reweights.
   docs { select _path, tag: tags where "process" in tags flatten tags order by _path, tags }
 
 Common mistake: `$path`/`$id` — omgbase has no $ names; the engine's location and
-identity are `_path`/`_id`. Another: the 4.x bare `path`/`id`/`title`/`tags` — a
+identity are `_path`/`_id` (a `$` name no row carries, with a did-you-mean hint
+pointing at the `_`-prefixed one). Another: the 4.x bare `path`/`id`/`title`/`tags` — a
 bare `path` is now YOUR `path:` key (absent when you wrote none, with a hint
 pointing at `_path`); the engine's are `_path`/`_id`/`_title`/`_tags`; `select
 data.path` is gone — write `path`. Another: `where tags == "x"` on a list-valued

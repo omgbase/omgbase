@@ -366,8 +366,13 @@ What is a reference:
 
 What is not:
 
-- `$`-names (`$key`, `$depth`, `$stop`, …) — the language's values; `$it` alone;
-  a `binding`; a function, method or **reduction name**; the keys of a
+- the language's `$`-intrinsics (SEMANTICS §2) — `$key`, `$rows`, `$depth`,
+  `$stop`, `$leaf`, `$frontier`, `$ordinal` — always its values, never a row's;
+  `$it` alone. Conformance fix (0.30 patch): any OTHER `$`-name, `$value`
+  included (SEMANTICS §2: not an intrinsic since 0.15 — an ordinary property
+  read), **is** an ordinary reference like a bare name — a host judges it
+  against its data model exactly as it would a bare one; a `binding`; a
+  function, method or **reduction name**; the keys of a
   projection (an item's alias, a lift's name, a group key's name);
 - a name a `flatten` bound (SEMANTICS §25, since 0.25), read where the binding
   is in force — a later `flatten`'s expression, a `group by` key, `having`, a

@@ -110,8 +110,9 @@ record kind a **bare** name is a user-authored entry and an
 **underscore-prefixed** name is engine-provided, however derived. `$` belongs to
 OQX: `$it`, `$key`, `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are
 values the *language* injects into a scope, and omgbase adds **no** `$` names
-(a `$id` or `$path` in a query is an unknown OQX identifier — absent — never an
-attribute). The `_` prefix declares an engine field on a record — attribute,
+(a `$id` or `$path` in a query is an unknown OQX identifier — absent, never an
+attribute — and, since the conformance fix of 0.30 patch, hinted exactly like a
+bare unknown name, pointing at the real `_`-prefixed field). The `_` prefix declares an engine field on a record — attribute,
 handle or relation alike (`_id`, `_path`, `_title`, `_data`, `_blocks`,
 `_out_links`, `_doc`, …) — and the bare namespace is the user's on every record
 (docs, blocks, nodes, links, revisions and the root row), because any record may

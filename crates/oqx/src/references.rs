@@ -20,8 +20,10 @@
 //!   • an `outer` (`^name`, `N^name`) is a reference read in the scope `levels`
 //!     out; `$it` as a head is the row itself (`$it.title` ≡ `title`,
 //!     `^$it.title` ≡ `^title`) and `$it` alone is no reference;
-//!   • `$`-names (`$key`, `$depth`, `$stop`, …) are the language's values, never
-//!     references; a `binding` is a host value; a function or method NAME is
+//!   • the language's `$`-intrinsics (`$key`, `$depth`, `$stop`, `$leaf`,
+//!     `$frontier`, `$ordinal`, `$rows`) are its values, never references; any
+//!     OTHER `$`-name (`$value` included — not an intrinsic since 0.15) is an
+//!     ordinary reference like a bare name; a `binding` is a host value; a function or method NAME is
 //!     not a reference, its receiver and arguments are walked
 //!     (`target.contains("x")` references `target`); a name a nested block
 //!     LIFTS onto a scope (`^open: value`, SEMANTICS §19) is a binding of that
@@ -192,6 +194,26 @@ fn same_expr(n: Node<'_>, e: &Expr) -> bool {
 }
 
 /// Every name a query reads from a row, in canonical source order.
+/// The language's `$`-intrinsics other than `$it` (handled separately, below,
+/// since a `$it` HEAD unwraps to its path): group-scope (`$key`, `$rows`) and
+/// follow-metadata (`$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal`)
+/// names, always the language's value, never a row's. Any OTHER `$`-name —
+/// `$value` (SEMANTICS §2: not an intrinsic since 0.15, an ordinary property
+/// name now) included — is an ordinary reference like any bare name, so a
+/// host judges it against its data model exactly as it would a bare name
+/// (the 2.x engine attributes were `$`-spelled: `$path`, `$title`, … — a
+/// query still typing that legacy spelling gets the same "unknown name"
+/// verdict a bare `path` would, not silent absence).
+const DOLLAR_INTRINSICS: &[&str] = &[
+    "$key",
+    "$rows",
+    "$depth",
+    "$stop",
+    "$leaf",
+    "$frontier",
+    "$ordinal",
+];
+
 #[must_use]
 pub fn references(root: &Query) -> Vec<Reference<'_>> {
     references_in(Node::Query(root))
@@ -228,7 +250,7 @@ fn references_in<'a>(root: Node<'a>) -> Vec<Reference<'a>> {
                 };
                 name = first;
                 path = rest;
-            } else if name.starts_with('$') {
+            } else if DOLLAR_INTRINSICS.contains(&name) {
                 return false; // a language value
             }
             let Some(clause) = ctx.clause else {

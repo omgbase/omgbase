@@ -102,6 +102,24 @@ describe("the name rule (§1.5, 5.0: a bare name is the author's, an underscore 
     expect(() => checkNames(store, repoId, parse("select _doc._nope from blocks"), "hint")).toThrow("`_nope` is not an engine name of docs");
   });
 
+  it("a name that belongs to a related kind is corrected by naming the reach-through, not a coincidental authored-vocabulary match", () => {
+    // the fixture's nodes carry an authored `last_ordinal` — a closer-looking
+    // but wrong candidate for `_ordinal` (a block attribute, reached through
+    // `_block`): `nodes { select _ordinal }` must not be pointed at it.
+    expect(() => checkNames(store, repoId, parse("select _ordinal from nodes"), "hint")).toThrow(
+      "`_ordinal` is not an engine name of nodes (engine names: _id, _path, _doc_id, _block_id, _kind, _name, _value, _attrs, _doc, _block, _blocks, _subsections, _children); did you mean `_block._ordinal`?",
+    );
+  });
+
+  it("a $-name that is no intrinsic gets the same hint a bare name does (the 2.x engine-attribute spelling)", () => {
+    expect(hints("select x: $id, y: $stag from docs where $stag == \"x\"")).toEqual([
+      "no document in this repository carries a property `$id`; did you mean `_id`?",
+      "no document in this repository carries a property `$stag`; did you mean `stage`?",
+    ]);
+    // the language's own intrinsics stay silent
+    expect(hints("select $key: _id, me: $it from docs where $depth > 0 and $it.kind == \"x\"")).toBeUndefined();
+  });
+
   it("a name under a source handle is shown with the handle, with the authored keys alone as candidates", () => {
     expect(hints("select p: _data.path, k: _frontmatter.kynd from docs")).toEqual([
       "no document in this repository carries a property `path` (`_data.path`)",

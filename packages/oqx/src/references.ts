@@ -19,8 +19,10 @@
 //   • an `outer` (`^name`, `N^name`) is a reference read in the scope `levels`
 //     out; `$it` as a head is the row itself (`$it.title` ≡ `title`,
 //     `^$it.title` ≡ `^title`) and `$it` alone is no reference;
-//   • `$`-names (`$key`, `$depth`, `$stop`, …) are the language's values, never
-//     references; a `binding` is a host value; a function or method NAME is
+//   • the language's `$`-intrinsics (`$key`, `$depth`, `$stop`, `$leaf`,
+//     `$frontier`, `$ordinal`, `$rows`) are its values, never references; any
+//     OTHER `$`-name (`$value` included — not an intrinsic since 0.15) is an
+//     ordinary reference like a bare name; a `binding` is a host value; a function or method NAME is
 //     not a reference, its receiver and arguments are walked
 //     (`target.contains("x")` references `target`); a name a nested block
 //     LIFTS onto a scope (`^open: value`, SEMANTICS §19) is a binding of that
@@ -107,6 +109,18 @@ function aliasName(it: SelectItem): string | null {
   return it.lift === 0 && it.name !== "" ? it.name : null;
 }
 
+/** The language's `$`-intrinsics other than `$it` (handled separately, below,
+ * since a `$it` HEAD unwraps to its path): group-scope (`$key`, `$rows`) and
+ * follow-metadata (`$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal`) names,
+ * always the language's value, never a row's. Any OTHER `$`-name — `$value`
+ * (SEMANTICS §2: not an intrinsic since 0.15, an ordinary property name now)
+ * included — is an ordinary reference like any bare name, so a host judges it
+ * against its data model exactly as it would a bare name (the 2.x engine
+ * attributes were `$`-spelled: `$path`, `$title`, … — a query still typing
+ * that legacy spelling gets the same "unknown name" verdict a bare `path`
+ * would, not silent absence). */
+const DOLLAR_INTRINSICS: ReadonlySet<string> = new Set(["$key", "$rows", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"]);
+
 /** Every name a query (or block body) reads from a row, in canonical source order. */
 export function references(root: Query | Subquery): Reference[] {
   const out: Reference[] = [];
@@ -123,7 +137,7 @@ export function references(root: Query | Subquery): Reference[] {
         if (path.length === 0) return false; // the row itself
         name = path[0]!;
         path = path.slice(1);
-      } else if (name.startsWith("$")) return false; // a language value
+      } else if (DOLLAR_INTRINSICS.has(name)) return false; // a language value
       if (ctx.clause === null) return false; // unreachable: the root node is never a name
       const levels = head.kind === "outer" ? head.levels : 0;
       if (isResolvedAlias(name, levels, ctx.path, ctx.clause)) return false;
