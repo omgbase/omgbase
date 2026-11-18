@@ -2505,7 +2505,7 @@ was `b_314`).
   `filter_invalid`; nothing else moves. A flag added: a minor. Fixtures:
   `query.json` 48 → 51 (`bare`, `bare-json`, `bare-needs-select`),
   `invoke::help-card-query` (the usage lines and the `--bare` option).
-- 2026-10-12, cli 4.0: the retirement release of ADR-021 (with `spec/mutate`
+- 2026-10-12, cli 4.0: the retirement release of the legacy write inputs (with `spec/mutate`
   3.0 and `spec/surface` 4.0; no deprecation period). `apply -f` takes
   `{ effects }` only (`{ ops }` is the usage error naming the replacement);
   `update <doc>` is the `set content` effect — `--dry-run` renders the Plan's
@@ -2522,7 +2522,7 @@ was `b_314`).
   Regeneration: the cases named above now; the `apply-*` kernel cases, the
   17 `--dry-run` cases, `retarget-apply-*`, `sync::sourceless` and the
   `apply`/`retarget` help cards with the surface's removals.
-- 2026-10-12, cli 3.2: the Effect layer's verbs (ADR-021, `spec/mutate` §11,
+- 2026-10-12, cli 3.2: the Effect layer's verbs (`spec/mutate` §11,
   `spec/surface` 3.1–3.3). `apply -f` accepts `{ effects }` beside `{ ops }`
   (exactly one): committed it renders the Receipt (confirmation + the ids of
   the plan's preview results, §4; `--json` the Receipt), `--dry-run` the Plan

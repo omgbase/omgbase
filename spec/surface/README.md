@@ -1764,7 +1764,7 @@ whose text matches up to ASCII case when there is exactly one, else the same
 `blocks_insert`, `blocks_update`, `blocks_move`, `blocks_remove`,
 `blocks_split`, `blocks_merge`, `blocks_check`, `nodes_set`, `blocks_append`,
 `docs_append`, `links_retarget`, `links_repair` — are `apply { effects }`
-(ADR-021; `spec/mutate` §10): each builds its effects after its own
+(`spec/mutate` §10): each builds its effects after its own
 pre-checks (so its error `data` is unchanged), plans and executes them as
 one request with the tool's name as the commit `reason`, and **returns the
 Receipt** (4.0: `{ plan_id, commit, revisions, new_ids, committed: true }`,
@@ -3446,7 +3446,7 @@ both and runs both harnesses.
   (`write-select-plan-execute`, `write-select-apply-max`,
   `write-select-zero-hits`), `tool-descriptions.json` (`plan`, `apply`,
   `execute`).
-- 2026-10-12, surface 4.0: the retirement release of ADR-021 (with
+- 2026-10-12, surface 4.0: the retirement release of the legacy write inputs (with
   `spec/mutate` 3.0 and `spec/cli` 4.0; no deprecation period — no client of
   the retired inputs existed). Removed: `apply.ops` (the kernel ops are a
   library/fixture contract), `dry_run` on `apply` and every sugar tool (the
@@ -3465,7 +3465,7 @@ both and runs both harnesses.
   `docs_update` dry runs → `plan`, `tool-descriptions.json` (`plan`,
   `docs_update`); the remaining dry-run calls of `interop.json` / `reads.json`
   and the descriptions of the sugar tools move with the removals.
-- 2026-10-12, surface 3.3: ADR-021's migration phase, batch 2 — the four
+- 2026-10-12, surface 3.3: the effects migration, batch 2 — the four
   document operations (`docs_create`, `docs_delete`, `docs_move`,
   `docs_set_meta`; §4 "The document operations") are `apply { effects }`
   sugar. Results, error envelopes (the `path_taken` pair without `data`, the
@@ -3478,7 +3478,7 @@ both and runs both harnesses.
   A result observable through a read tool changed: a minor. `docs_update`
   stays legacy by design. The CLI gains the layer's verbs the same day
   (`spec/cli` 3.2: `apply -f { effects }`, `execute`).
-- 2026-10-12, surface 3.2: ADR-021's migration phase, batch 1 — the twelve
+- 2026-10-12, surface 3.2: the effects migration, batch 1 — the twelve
   block-level write tools (§4 "Sugar over effects") are `apply { effects }`
   sugar, behaviour-preservingly: every 3.1 fixture of theirs is unchanged
   (the four interop pairings pass against the committed expectations), the
@@ -3492,8 +3492,8 @@ both and runs both harnesses.
   the two result changes. `docs_create` / `docs_move` / `docs_delete` /
   `docs_set_meta` (batch 2) and the CLI verbs follow; `docs_update` stays
   legacy by design (its result needs the opset).
-- 2026-10-12, surface 3.1: the effect layer's verbs (`spec/mutate` §11,
-  ADR-021) — `plan { effects }`, `execute { plan | plan_id + effects }`, and
+- 2026-10-12, surface 3.1: the effect layer's verbs (`spec/mutate` §11)
+  — `plan { effects }`, `execute { plan | plan_id + effects }`, and
   `apply` gains `effects` as an alternative to `ops` (exactly one; the `ops`
   path is byte-identical to 3.0). Two tools and one argument added: a
   minor. 45 → 47 tools; `plan` and `execute` are write tools (the lock, the

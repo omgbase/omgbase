@@ -1,6 +1,6 @@
 # @omgbase/sync
 
-The standalone **store-to-store synchronizer** for [omgbase](https://github.com/omgbase/omgbase) (ADR-014), shipped as the `omgbase-sync` binary and as a library. It mirrors an external store — today a filesystem directory via `@omgbase/fs-adapter`, in principle anything speaking the source-adapter stdio protocol — into an omgbase repo, and optionally exports engine-authored changes back out.
+The standalone **store-to-store synchronizer** for [omgbase](https://github.com/omgbase/omgbase), shipped as the `omgbase-sync` binary and as a library. It mirrors an external store — today a filesystem directory via `@omgbase/fs-adapter`, in principle anything speaking the source-adapter stdio protocol — into an omgbase repo, and optionally exports engine-authored changes back out.
 
 The design has one load-bearing idea: **omgbase is just another peer behind its MCP interface.** A `Coordinator` moves whole-file bytes between a `SyncSource` (the adapter) and an `EngineClient` (the omgbase side). The `EngineClient` seam has two implementations — `InProcessEngineClient` (direct `Store`, used by tests and library callers) and `McpEngineClient` (a Model Context Protocol client over stdio or Streamable HTTP) — and the coordinator is identical against both. It contains **no reconciliation logic**: block identity, echo gating, conflict flagging and commits stay in the engine and are reached through the `observe*` tools.
 

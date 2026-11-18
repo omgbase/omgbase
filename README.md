@@ -20,7 +20,7 @@ The files are always the source of truth for *content*; the engine's database ow
 
 ## Status
 
-The engine is feature-complete and tested: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening are all built. A **store-to-store sync layer** (`@omgbase/sync`, ADR-014) is built: the source registry (`omg source`), the `observe`/`observe_many`/`observe_delete` MCP surface, the headless `DocStore` seam, and the standalone `omgbase-sync` coordinator. A repo now owns identity, not a filesystem — its bytes come from an attached source, the legacy `repos.root_path` column has been removed (schema v13; `RepoRow.rootPath` is derived), and sourceless/headless repos are first-class. See `docs/` for the as-built design reference and the repo-root `AGENTS.md` for orientation.
+The engine is feature-complete and tested: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening are all built. A **store-to-store sync layer** (`@omgbase/sync`) is built: the source registry (`omg source`), the `observe`/`observe_many`/`observe_delete` MCP surface, the headless `DocStore` seam, and the standalone `omgbase-sync` coordinator. A repo now owns identity, not a filesystem — its bytes come from an attached source, the legacy `repos.root_path` column has been removed (schema v13; `RepoRow.rootPath` is derived), and sourceless/headless repos are first-class. See `docs/` for the as-built design reference and the repo-root `AGENTS.md` for orientation.
 
 ## Install
 
@@ -91,7 +91,7 @@ packages/
   client/        @omgbase/client — thin remote MCP client (placeholder) (README: packages/client/README.md)
   embedder/      @omgbase/embedder — external embedding provider (transformers.js + Xenova/gte-base, 768-dim) (README: packages/embedder/README.md)
   fs-adapter/    @omgbase/fs-adapter — external filesystem sync adapter (owns chokidar; stdio protocol) (README: packages/fs-adapter/README.md)
-docs/            as-built design reference · decision log (ADRs)
+docs/            as-built design reference
 crates/          the Rust side (cargo workspace at the root; independent of pnpm)
   oqx/           oqx — Rust implementation of OQX, conformant to spec/oqx (README: crates/oqx/README.md)
   omgbase-format/ omgbase-format — Rust format layer: source → block tree, splice render, conformant to spec/format
@@ -153,7 +153,7 @@ In addition to the OQX query language (`@omgbase/oqx`; see `docs/query-language.
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented (38 commands, registered in `packages/cli/src/commands.ts`): bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`/`ol`, `cat`, `show`, `find`, `query`/`q`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`/`node`, and doc-level `new`/`mv`/`meta`/`update`), the `shell` session, and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `embed`). `omg --help` prints the same catalog grouped by area.
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`). The full command surface is implemented (38 commands, registered in `packages/cli/src/commands.ts`): bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`/`ol`, `cat`, `show`, `find`, `query`/`q`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`/`node`, and doc-level `new`/`mv`/`meta`/`update`), the `shell` session, and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `embed`). `omg --help` prints the same catalog grouped by area.
 
 ### The mental model: workspace, repo, source, config
 
@@ -252,9 +252,9 @@ omg sync --server "omg mcp -C /path/to/vault" --root ./my-vault --watch   # stay
 omg sync --server "…" --root ./my-vault --out                             # also export engine-authored changes back
 ```
 
-`--server` is a **global flag** (ADR-014): the same command runs either embedded-local or remote-over-MCP. Remote mode is implemented for reads (`query`, `outline`, `hist`, `cat`, `ls`, `diff`, `find`, `log`), doc-level mutators (`new`, `mv`, `meta`, `rm`, `update`, `retarget`), block-level sugar (`apply`, `insert`, `move`, `split`, `merge`, `done`, `append`, `node` — ref resolution and CAS pinning happen server-side), `sync`, and `shell` (which threads `--server` into every line it runs) — the `REMOTE_OK` set in `packages/cli/src/context.ts`. The genuinely local-only commands (`edit`'s `$EDITOR` round-trip, `status`'s watcher state, `init`/`source`/admin) reject `--server` rather than silently running locally. `--server` takes either a stdio command (`"omg mcp -C /path"`) or an `http(s)` URL (with `-H "Name: value"` for extra headers).
+`--server` is a **global flag**: the same command runs either embedded-local or remote-over-MCP. Remote mode is implemented for reads (`query`, `outline`, `hist`, `cat`, `ls`, `diff`, `find`, `log`), doc-level mutators (`new`, `mv`, `meta`, `rm`, `update`, `retarget`), block-level sugar (`apply`, `insert`, `move`, `split`, `merge`, `done`, `append`, `node` — ref resolution and CAS pinning happen server-side), `sync`, and `shell` (which threads `--server` into every line it runs) — the `REMOTE_OK` set in `packages/cli/src/context.ts`. The genuinely local-only commands (`edit`'s `$EDITOR` round-trip, `status`'s watcher state, `init`/`source`/admin) reject `--server` rather than silently running locally. `--server` takes either a stdio command (`"omg mcp -C /path"`) or an `http(s)` URL (with `-H "Name: value"` for extra headers).
 
-The same coordinator ships as a standalone bin, **`omgbase-sync`**, for environments that don't have the full `omg` CLI — `omgbase-sync --root ./v [--watch] [--out]` is exactly `omg sync --server … --root ./v`. Under the hood both fetch changed files from a source adapter and call the engine's `observe` / `observe_many` tools (whole-file bytes → an *observed* commit, reconciled + echo-suppressed engine-side); the export direction polls `changes_since` and writes engine-authored changes back. Reconciliation never leaves the engine (`docs/sync-service-design.md`, ADR-014).
+The same coordinator ships as a standalone bin, **`omgbase-sync`**, for environments that don't have the full `omg` CLI — `omgbase-sync --root ./v [--watch] [--out]` is exactly `omg sync --server … --root ./v`. Under the hood both fetch changed files from a source adapter and call the engine's `observe` / `observe_many` tools (whole-file bytes → an *observed* commit, reconciled + echo-suppressed engine-side); the export direction polls `changes_since` and writes engine-authored changes back. Reconciliation never leaves the engine (`docs/sync-service-design.md`).
 
 ### Remote / headless servers
 
@@ -505,7 +505,7 @@ const hits = hybridSearch(store, { repoId, text: "identity", vector: { model: my
 
 ## Reading the design
 
-Start with the repo-root `AGENTS.md` (orientation + the `docs/` trust index), then `docs/README.md`. The `docs/` are maintained as an **as-built** description of the implementation: where a doc and the code disagree, **the code wins** — fix the doc. `docs/decisions.md` is the ADR log (the "why"); `docs/sync-service-design.md` (ADR-014) is the design rationale + stage record for the sync service — implemented, all six stages.
+Start with the repo-root `AGENTS.md` (orientation + the `docs/` trust index), then `docs/README.md`. The `docs/` are maintained as an **as-built** description of the implementation: where a doc and the code disagree, **the code wins** — fix the doc. `docs/sync-service-design.md` describes the sync service.
 
 ## License
 

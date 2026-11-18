@@ -8,6 +8,8 @@ omgbase ("Open Markdown Graph Base") is a versioned, addressable **graph layer o
 
 If you change behavior, update the relevant doc in the same change. If you find a doc claim that no longer matches the code, fix the doc (or flag it) rather than coding to the doc.
 
+**READMEs are for users, not the design journey.** Every `README.md` (root, packages, crates, specs) exists to orient a new user or serve as reference documentation. Don't cite ADRs (`ADR-0NN`, "the ADR log") or narrate how a design came about in a README; state what is true now and link the relevant doc if more depth helps. Decision history belongs in `docs/decisions.md` and the design docs under `docs/`.
+
 ## Reaching Brendan (`lmk`)
 
 When you hit a stopping point — work is done, or you're blocked and need input — ping Brendan's phone: `lmk 'short message'` (a `~/bin/lmk` shim that posts to an ntfy.sh topic). Use it for genuine handoffs (a review is ready, a long build finished, you need a decision), not routine progress. Keep the message one line and specific.

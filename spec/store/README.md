@@ -258,7 +258,7 @@ The tables of `schema.sql` this spec fills:
 | `archives` | archive segment the repo knows (15.0) | The registry `history list` reads: `segment_id` (a minted `s_` id, the segment's manifest id), `repo_id`, `path` (the file as recorded; `attach` re-records it), `seq_lo`/`seq_hi` (the `commits.seq` span of the segment's commits), `created_at`, `revision_count`, `bytes` (the file's size when recorded). Written by the squash transaction and by `attach`, deleted by `detach`; a revision's `archive` column may name a segment this table no longer carries (detached). |
 | `feed` | commit to the repo, within retention (17.0, D7/M5) | **The core's change feed** — the delivery record `changes_since` pages (`spec/surface` §3) and the sync base rests on (`spec/sync` §6): `repo_id`, `epoch` (the repo's), `seq` (dense from 1 per `(repo, epoch)`), `commit_id` (the minted `c`, UNIQUE — the recorder's `commits.commit_id` is the same id), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `batch_id` (D4: the `commit_id` of the **first committing member of the same observed batch**, so a batch of one and every `api` commit have `batch_id = commit_id`), `plan_id` (the admitted plan's digest, 64 hex, for an effect-driven `api` commit — so a Receipt correlates with the documents it touched when history is off; NULL otherwise). Written by the core in the commit transaction (§5.4 step 5, §5.6 step 1); pruned by its own retention (§7.4) — "the feed is catch-up, a rescan is recovery, the log is history". Index `idx_feed_ts (repo_id, ts)` for the day floor. |
 | `feed_entries` | document touched by a feed row (17.0) | `repo_id`, `epoch`, `seq` (the feed row's), `doc_id`, `path` (as of the commit), `head` (the token minted — NULL for `deleted`), `hash` (`docs.file_hash` after the commit — NULL for `deleted`), `kind ∈ {created, changed, deleted, moved}` (`created`: the doc row was inserted or revived; `moved`: the path changed, with or without a content change — D11; `deleted`: a tombstone; `changed`: everything else that minted a head), `from_path` (`moved` only). PK `(repo_id, epoch, seq, doc_id)`; leaves with its feed row. |
-| `commits` | captured commit (**the recorder's**, 17.0) | `commit_id` (= the feed row's), `repo_id`, `epoch`, `seq` (= the feed row's — the two agree on every retained `seq`, H4), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `batch_id` (= the feed row's), `ops` (the ADR-003 intent record of an effect-driven `api` commit, M5 — the recorder's alone). Written by the recorder inside the commit transaction under the id the core minted (§5.4 step 15); never pruned (the log is history; `history purge` is Phase 3e's). `UNIQUE (repo_id, epoch, seq)`; `checkpoint_id` is gone (D4/D9). Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
+| `commits` | captured commit (**the recorder's**, 17.0) | `commit_id` (= the feed row's), `repo_id`, `epoch`, `seq` (= the feed row's — the two agree on every retained `seq`, H4), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `batch_id` (= the feed row's), `ops` (the intent record of an effect-driven `api` commit, M5 — the recorder's alone). Written by the recorder inside the commit transaction under the id the core minted (§5.4 step 15); never pruned (the log is history; `history purge` is Phase 3e's). `UNIQUE (repo_id, epoch, seq)`; `checkpoint_id` is gone (D4/D9). Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
 | `dispositions` | (commit, block, kind) | The matcher's decisions as persisted: `kind` (the `spec/reconcile` §2 kinds), `confidence`, `reason`, `matcher_v`, `detail` JSON. Immutable once committed (R6). `INSERT OR IGNORE` on the primary key (§10). |
 | `id_claims` | id the core has minted (17.0, M3/D5) | §2.1: `id` (the primary key), `repo_id` (`NULL` for a workspace-scoped `src`), `prefix`, `minted_at` (the minting commit's `ts`; the clock for `rp`/`src`), `holders` (the bitmask: bit 0 the core, bit 1 the recorder). Written by the core with the row that carries the id, held by the recorder's capture, probed by every mint; a row leaves only when no holder remains — the claims prune (§7.3) releases the core's hold, `history purge` (Phase 3e) the recorder's. **No secondary index** (2026-10-26, §10): the primary key serves the probe; the prune (§7.3, gc-time) and the size line (§7.2, on demand) scan the table — the `(repo_id, prefix, minted_at)` index of slices 3b–3e-ii was half the bytes of every minted id. |
 | `resurrection_pool` | block deleted in an earlier commit | `block_id`, `doc_id` it left, `raw_hash`, `norm_hash`, `type`, **`created_at`** (17.0, D6 — carried from the deleted row so a resurrection restores the block's birth), **`deleted_at`** (17.0 — the deleting commit's `ts`; `deleted_commit` through 16.x), `expires_ts` (= `deleted_at + 30 days`, I6 — anchored on the row's own timestamp, so the pool depends on no history table). Feeds `spec/reconcile` phase 6b; rows leave when consumed, evicted or swept; a pooled id keeps its claim (§2.1) whatever happens to the row. |
@@ -1015,7 +1015,7 @@ api path") and the files follow, one `pending_materializations` row each.
 The guarantee this buys, stated honestly: all-or-nothing in the database;
 files eventually consistent through recorded intent that any materializer
 replays; no cross-resource atomicity between the database and the disk; a
-file a human changes meanwhile wins (ADR-004). A conflict found inside the
+file a human changes meanwhile wins. A conflict found inside the
 transaction (`spec/mutate` §4 step 5) therefore touches no file, and a
 process that dies between COMMIT and the file half loses nothing: the
 commit, its revisions and the change-feed digest are durable, and the rows
@@ -3825,7 +3825,7 @@ brought to it).
   §3.1, §3.3, §3.4, §5.4, §7.2, §7.5, §8, §9.4 and §9.5 follow. Where the
   landed DDL of slices 3a–3d and the contracts' verbatim files differed, the
   landed DDL won: `id_claims.repo_id` nullable (3b), `feed.plan_id` (3d), the
-  DDL comments, `sync_state`'s column comments, the `repos` ADR-014 note,
+  DDL comments, `sync_state`'s column comments, the `repos` table note,
   and `pending_materializations`' column order — the contracts' tables and
   columns are otherwise the files'. Decided in the implementation: see §10
   "Changed (17.0, slice 3e-i)". The Rust twin follows in its own round.
@@ -4021,7 +4021,7 @@ brought to it).
   file, and a crash after the files were written healed them as `observed`
   commits that lost the api intent. The intent table was chosen over
   inferring "file behind" from the previous revision's hash because that
-  inference cannot tell a crash from a human revert (ADR-004) and cannot
+  inference cannot tell a crash from a human revert and cannot
   express a pending rename or remove. A DDL change: a major; both engines
   ship together, and §1 step 3 keeps an older engine out of the newer
   database.

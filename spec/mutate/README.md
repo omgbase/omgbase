@@ -366,7 +366,7 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ _id, _path,
      the recorder's `commits` row under the same id (`ops` = the intent
      record of an effect-driven commit — the canonical JSON (§11.5) of `{ v:
      1, plan_id, effects }`, the plan's resolved effects — and NULL for every
-     other request, 2.3; ADR-003; through store 16.x one `commits` row with
+     other request, 2.3; through store 16.x one `commits` row with
      `checkpoint_id = NULL`), then per document in load order
      `spec/store` §5.4 steps 1–4 and 6–13 naming that commit (`spec/store`
      §5.4 "The api path") with the **known-id resolver**: the re-parsed body
@@ -1133,7 +1133,7 @@ composition=<name>: compared=<n> mapped=<n> skipped=<n>` for
   `blocks_check`, `nodes_set`, `blocks_append`, `docs_append`,
   `links_retarget`, `links_repair`, and since 3.0 the document operations of
   §6 (`docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`) and the
-  whole-document update (§7), are `apply { effects }` sugar (ADR-021): each
+  whole-document update (§7), are `apply { effects }` sugar: each
   tool builds its effects through the shared builders (`sugar.ts` in the
   reference — one builder per operation, the same table the `omg` verbs and
   the fixture `docs` step use: `insert` / `set markdown` / `set
@@ -1174,7 +1174,7 @@ composition=<name>: compared=<n> mapped=<n> skipped=<n>` for
 
 ## 11. Effects and plans
 
-Since 2.3 (ADR-021). Nine **effects** are the intentional-write vocabulary:
+Since 2.3. Nine **effects** are the intentional-write vocabulary:
 an ordered list of them is lowered by a **planner** to the kernel ops of §2,
 the macros of §5, the whole-document planner of §7 and the document
 operations of §6, and committed as ONE request of §4 step 5 — one
@@ -2079,9 +2079,7 @@ bytes stay), `::unset-fm-keeps-comments-and-fences`.
   resolved effect. Fixtures: `effects.json` 63 → 79 (the `sugar-*` cases of
   §9); nothing else moved.
 
-- 2026-10-13, mutate 3.1: query-directed planning (§11.8; ADR-021's
-  follow-on, Brendan's decisions of 2026-10-13): `plan` / `apply` / `execute`
-  take `select` + `expect` and the `effects` become templates; a template
+- 2026-10-13, mutate 3.1: query-directed planning (§11.8): `plan` / `apply` / `execute` take `select` + `expect` and the `effects` become templates; a template
   without a target writes to the hit, a target or value may be an
   expression over the row resolving to exactly one identity (`{ oqx }`);
   the selector compiles into one OQX projection by an AST rewrite (one
@@ -2103,7 +2101,7 @@ bytes stay), `::unset-fm-keeps-comments-and-fences`.
   estimate missed the `docs` and `materialize` suites' intent records);
   nothing else moved.
 - 2026-10-12, mutate 3.0: the effects are the only public write request
-  (ADR-021's retirement release, with `spec/surface` 4.0 and `spec/cli` 4.0;
+  (with `spec/surface` 4.0 and `spec/cli` 4.0;
   no deprecation period — no client of the retired inputs existed). Removed:
   the kernel request's `set_frontmatter` (§4; a head is the planner's,
   §11.3), `apply_opset` and the `{ opset, plan, result }` result of a
@@ -2127,7 +2125,7 @@ bytes stay), `::unset-fm-keeps-comments-and-fences`.
   `non-convergent-plan-refused` the planner's error; `docs.json` /
   `materialize.json` / `changesets.json` move when the `docs` step and the
   `apply` step's `set_frontmatter` follow (the builders).
-- 2026-10-12, mutate 2.3: the public Effect layer (§11; ADR-021). Nine
+- 2026-10-12, mutate 2.3: the public Effect layer (§11). Nine
   effects, a planner tier over the six-op kernel — nothing added to the
   kernel — and the verbs `plan` / `execute` / `apply { effects }`; a plan's
   identity is the sha256 of the canonical JSON of its executable core
