@@ -238,9 +238,29 @@ fn render_item(item: &MutBlock, marker: &str) -> String {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        return apply_marker(&body, marker);
+        // (4.5) A task's checkbox is the ITEM's, not its first child's: the
+        // child paragraph's raw is the text after it, so a rebuild from the
+        // children puts it back, verbatim from the item's own first line.
+        return apply_marker(&format!("{}{body}", checkbox_of(item)), marker);
     }
     apply_marker(&strip_marker(&item.raw), marker)
+}
+
+static CHECKBOX_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\[[ xX]\][ \t]").expect("valid regex"));
+
+/// The checkbox a list item's first line carries after its marker — `[ ] `,
+/// `[x] ` — verbatim with its spacing; empty when it has none.
+fn checkbox_of(item: &MutBlock) -> String {
+    let first = item.raw.split('\n').next().unwrap_or("");
+    let rest = match MARKER_RE.find(first) {
+        Some(m) => slice_from(first, m.end()),
+        None => first.to_owned(),
+    };
+    CHECKBOX_RE
+        .find(&rest)
+        .map(|m| m.as_str().to_owned())
+        .unwrap_or_default()
 }
 
 static MARKER_RE: LazyLock<Regex> =

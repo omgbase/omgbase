@@ -28,13 +28,21 @@ import { fileURLToPath } from "node:url";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { buildServer, toolDescriptions, MINIMAL_TOOLS, WRITE_TOOLS } from "./server.js";
+import { querySyntaxSection } from "./reference.js";
 
 /** The suite the ladders feed (README §6). */
 const EXAMPLES_FILE = fileURLToPath(new URL("../../../../spec/surface/cases/examples.json", import.meta.url));
 /** The clock every writing rung runs under (a `read` step's `ts`), so the suite's commits are deterministic. */
 export const EXAMPLES_TS = "2026-10-13T00:00:00.000Z";
-/** The one case of the suite: every rung, in order, over one workspace. */
+/** The first case of the suite: every rung of the descriptions, in order, over one workspace. */
 export const EXAMPLES_CASE = "ladders";
+/**
+ * The second case (6.8): every rung of the write chapter — `query_syntax
+ * { section: "effects" }`, the one-example-per-op list — as a `plan` call
+ * over a fresh workspace. `plan` writes nothing, so each example is checked
+ * against the corpus as it stands, independent of the others.
+ */
+export const EFFECTS_CASE = "effects";
 /** Client portability: keep a description under about this many characters (the design's bound; `plan`'s is the longest). */
 const DESCRIPTION_BUDGET = 900;
 
@@ -64,18 +72,24 @@ const DESCRIPTION_BUDGET = 900;
  * replaced outright rather than appended, since `plan:0`/`plan:1` are the
  * only pinned rungs and a 6th line did not fit either way — the "no target"
  * pattern stays demonstrated by `apply:2`'s `select` with no `target`.
+ * With spec/surface 6.8 the write ladders were rebuilt around the three
+ * routine writes an agent could not discover (a `create` with frontmatter, an
+ * insert after a nested block, a `set content` that says the document must
+ * exist): `apply` leads with the create, so its frontmatter rung is now
+ * `apply:1` — the same call, the same digest — and its bulk `select` rung
+ * moved to the write chapter (`query_syntax { section: "effects" }`, where it
+ * is `effects[18]` of the suite's second case with the digest it always had).
+ * Without that check-off before them, `plan:0` / `execute:0` and `plan:1` plan
+ * over an untouched calcination.md and are pinned at their 6.8 values.
  */
 export const PINNED_4_3: Record<string, string> = {
-  "apply:0": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
-  "apply:1": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
-  // `apply:2` is the selector rung: its digest covers the selector as written,
-  // so the 0.26 collection-scoped spelling (`blocks { … }` for `from blocks
-  // where …`, the same tree) moved it from 28cc1928… to this value.
-  "apply:2": "48d3e7d80ff454cbaf69b4a45e4b0c45c4f0cf1ffd735d9d1eab9d7588534cae",
-  "plan:0": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
-  "plan:1": "b6e46ff42fc70efe8204b91562ade768ec12c96d5b5de45b58d0ce52db9e95c5",
-  "execute:0": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
+  "apply:1": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
+  "plan:0": "ed7b2e2f10c0aeeff371b5f61635bc83818dd2601bdb7d6c113343f08904f340",
+  "plan:1": "cbe1fe5624c9bb594a9270147a543112ea1f6c35091dc56cb93302bb0785defa",
+  "execute:0": "ed7b2e2f10c0aeeff371b5f61635bc83818dd2601bdb7d6c113343f08904f340",
 };
+/** The selector rung's digest, unchanged since the 0.26 spelling — now the write chapter's (`effects` case, by its `select`). */
+export const PINNED_SELECT = "48d3e7d80ff454cbaf69b4a45e4b0c45c4f0cf1ffd735d9d1eab9d7588534cae";
 
 const PLACEHOLDER = /<[^>]*>/;
 
@@ -120,6 +134,11 @@ export function exampleSteps(descriptions: Record<string, string>): ExampleStep[
   return steps;
 }
 
+/** The write chapter's rungs as `plan` steps (the `EFFECTS_CASE` step list). */
+export function effectsChapterSteps(): ExampleStep[] {
+  return extractLadder(querySyntaxSection("effects") ?? "").rungs.map(({ args }) => ({ read: { tool: "plan", args, ts: EXAMPLES_TS } }));
+}
+
 async function referenceDescriptions(): Promise<Record<string, string>> {
   const store = new Store({ path: ":memory:" });
   try {
@@ -147,23 +166,24 @@ if (UPDATE) {
   // (run `SURFACE_SPEC_UPDATE=1 vitest run corpus/surface/spec.test.ts` after
   // this file). A changed step list drops the stale `expect` so the runner's
   // shape check accepts the file while it regenerates.
-  const steps = exampleSteps(descriptions);
   const previous: ExamplesFile | null = existsSync(EXAMPLES_FILE) ? (JSON.parse(readFileSync(EXAMPLES_FILE, "utf8")) as ExamplesFile) : null;
-  const prior = previous?.cases.find((c) => c.name === EXAMPLES_CASE);
-  const same = prior !== undefined && JSON.stringify(prior.steps) === JSON.stringify(steps);
+  const written: string[] = [];
+  const caseOf = (name: string, steps: ExampleStep[], notes: string): ExamplesFile["cases"][number] => {
+    const prior = previous?.cases.find((c) => c.name === name);
+    const same = prior !== undefined && JSON.stringify(prior.steps) === JSON.stringify(steps);
+    written.push(`${name}: ${steps.length} steps${same ? " (unchanged)" : ""}`);
+    return { name, notes: prior?.notes ?? notes, workspace: true, steps, ...(same && prior?.expect !== undefined ? { expect: prior.expect } : {}) };
+  };
   const file: ExamplesFile = {
     suite: "examples",
     corpus: previous?.corpus ?? {},
-    cases: [{
-      name: EXAMPLES_CASE,
-      notes: prior?.notes ?? "§4 \"Descriptions\": every example rung of the minimal tools' descriptions, extracted mechanically (mcp/examples.test.ts) and run in catalog order over the alchemy corpus in a workspace — the reads first (docs_read, docs_tree, query, blocks_resolve), then apply's commits, plan's previews over the written state, execute's digest form, and changes_since/version last. A write rung runs under the clock 2026-10-13T00:00:00.000Z.",
-      workspace: true,
-      steps,
-      ...(same && prior?.expect !== undefined ? { expect: prior.expect } : {}),
-    }],
+    cases: [
+      caseOf(EXAMPLES_CASE, exampleSteps(descriptions), "§4 \"Descriptions\": every example rung of the minimal tools' descriptions, extracted mechanically (mcp/examples.test.ts) and run in catalog order over the alchemy corpus in a workspace."),
+      caseOf(EFFECTS_CASE, effectsChapterSteps(), "§4 `query_syntax` (6.8): every example of the write chapter (`section: \"effects\"`), extracted by the same rung rule and run as a `plan` over the alchemy corpus in a workspace — one working example per effect op; none may be refused."),
+    ],
   };
   writeFileSync(EXAMPLES_FILE, JSON.stringify(file, null, 2) + "\n");
-  process.stderr.write(`[examples] ${steps.length} steps written to ${EXAMPLES_FILE}${same ? " (unchanged)" : " — regenerate expect with SURFACE_SPEC_UPDATE=1 on corpus/surface/spec.test.ts"}\n`);
+  process.stderr.write(`[examples] ${written.join("; ")} written to ${EXAMPLES_FILE} — regenerate expect with SURFACE_SPEC_UPDATE=1 on corpus/surface/spec.test.ts\n`);
 }
 
 describe("example ladders (spec/surface §4 \"Descriptions\")", () => {
@@ -218,14 +238,51 @@ describe("example ladders (spec/surface §4 \"Descriptions\")", () => {
       seen[t] = (seen[t] ?? 0) + 1;
     });
     for (const [k, digest] of Object.entries(PINNED_4_3)) expect(found[k], k).toBe(digest);
+    const chapter = file.cases[1]!;
+    const bulk = chapter.steps.findIndex((s) => typeof s.read.args.select === "string" && s.read.args.select.startsWith("blocks {"));
+    expect((chapter.expect as { steps: { plan_id?: string }[] }).steps[bulk]?.plan_id).toBe(PINNED_SELECT);
     expect(Object.keys(found).sort()).toEqual(["apply:0", "apply:1", "apply:2", "apply:3", "execute:0", "plan:0", "plan:1", "plan:2", "plan:3", "plan:4"]);
   });
 
   it("spec/surface/cases/examples.json's steps are exactly the extraction, bytewise (the drift gate; SURFACE_SPEC_UPDATE=1 regenerates)", () => {
     const file = JSON.parse(readFileSync(EXAMPLES_FILE, "utf8")) as ExamplesFile;
     expect(file.suite).toBe("examples");
-    expect(file.cases.map((c) => c.name)).toEqual([EXAMPLES_CASE]);
-    expect(file.cases[0]!.workspace).toBe(true);
+    expect(file.cases.map((c) => c.name)).toEqual([EXAMPLES_CASE, EFFECTS_CASE]);
+    for (const c of file.cases) expect(c.workspace, c.name).toBe(true);
     expect(JSON.stringify(file.cases[0]!.steps, null, 2)).toBe(JSON.stringify(exampleSteps(descriptions), null, 2));
+    expect(JSON.stringify(file.cases[1]!.steps, null, 2)).toBe(JSON.stringify(effectsChapterSteps(), null, 2));
+  });
+
+  // (6.8) Through 6.7 the suite recorded whatever a rung returned — and the
+  // `set content` rung of `apply` and `plan` targeted `/log.md`, a path the
+  // corpus does not have, so the published example's recorded result was
+  // `doc_missing`: the gate certified an example that fails. An example is a
+  // call that WORKS; a refusal belongs in prose.
+  it("no published example is refused: every recorded result of both cases is a success", () => {
+    const file = JSON.parse(readFileSync(EXAMPLES_FILE, "utf8")) as ExamplesFile;
+    const refused: string[] = [];
+    for (const c of file.cases) {
+      const results = (c.expect as { steps: Record<string, unknown>[] }).steps;
+      c.steps.forEach((s, i) => {
+        const r = results[i];
+        if (r === undefined || "error" in r) refused.push(`${c.name}[${i}] ${s.read.tool} ${JSON.stringify(s.read.args)} → ${JSON.stringify(r)}`);
+      });
+    }
+    expect(refused, `examples that are refused:\n${refused.join("\n")}`).toEqual([]);
+  });
+
+  it("the write chapter has a working example for every effect op, and the apply and plan ladders show the three routine writes", () => {
+    const ops = new Set(effectsChapterSteps().flatMap((s) => (s.read.args.effects as { op: string }[]).map((e) => e.op)));
+    expect([...ops].sort()).toEqual(["create", "insert", "merge", "move", "remove", "retarget", "set", "split", "unset"]);
+    for (const tool of ["apply", "plan"]) {
+      const effects = extractLadder(descriptions[tool]!).rungs.flatMap((r) => r.args.effects as Record<string, unknown>[]);
+      // a create whose markdown opens with a frontmatter fence
+      expect(effects.some((e) => e.op === "create" && typeof e.markdown === "string" && e.markdown.startsWith("---\n")), `${tool}: a create with frontmatter`).toBe(true);
+      // an insert after a block under a document `into` (the nested-anchor form)
+      expect(effects.some((e) => e.op === "insert" && typeof e.into === "string" && e.into.startsWith("/") && typeof e.at === "object"), `${tool}: an insert after a block`).toBe(true);
+      expect(descriptions[tool], `${tool}: points at the write chapter`).toContain('query_syntax { section: "effects" }');
+    }
+    // the `set content` rung says the document must exist
+    expect(descriptions.apply).toMatch(/"field":"content".*EXISTING/);
   });
 });

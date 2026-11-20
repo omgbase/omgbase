@@ -860,8 +860,9 @@ fn error_json(m: &MutationError) -> Json {
     listed_error(m.code.as_str(), &m.data)
 }
 
-/// `{ code, …the pinned fields }` of README §8 plus the effect layer's (2.3)
-/// and the selector's (3.1) — the reference's `errorOutcome`, field by field.
+/// `{ code, …the pinned fields }` of README §8 plus the effect layer's (2.3),
+/// the selector's (3.1) and (4.5) `valid_keys` and `anchor` + `parent` — the
+/// reference's `errorOutcome`, field by field.
 fn listed_error(code: &str, data: &JsonMap<String, Json>) -> Json {
     let mut error = JsonMap::new();
     error.insert("code".to_owned(), json!(code));
@@ -939,6 +940,16 @@ fn listed_error(code: &str, data: &JsonMap<String, Json>) -> Json {
     }
     if let Some(b) = data.get("implicit").filter(|v| v.is_boolean()) {
         error.insert("implicit".to_owned(), b.clone());
+    }
+    // (4.5) what a shape error's object admits, and where a misplaced anchor
+    // really is (`parent` always beside `anchor`: a block id, or null).
+    if let Some(k) = data.get("valid_keys").filter(|v| v.is_array()) {
+        error.insert("valid_keys".to_owned(), k.clone());
+    }
+    if let Some(a) = data.get("anchor").filter(|v| v.is_string()) {
+        error.insert("anchor".to_owned(), a.clone());
+        let parent = data.get("parent").filter(|v| v.is_string());
+        error.insert("parent".to_owned(), parent.cloned().unwrap_or(Json::Null));
     }
     Json::Object(error)
 }

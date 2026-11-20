@@ -64,19 +64,195 @@ pub fn new_symbol(n: usize) -> String {
 
 // ---- the shape check's `fix` (§8, 3.4) ----------------------------------------------------
 
-/// A §11.1 shape error: the message (naming `effects[i]` and the member) and,
-/// since 3.4 (§8), the corrected call when the check can spell it — the
-/// request as given with the offending effect rewritten, canonical JSON.
+/// A §11.1 shape error: the message (naming `effects[i]` and the member),
+/// since 3.4 (§8) the corrected call when the check can spell it — the
+/// request as given with the offending effect rewritten, canonical JSON —
+/// and since 4.5 (§8) `valid_keys`: the keys the object at fault admits, an
+/// optional key suffixed `?` (a sub-object's when an unknown key was found
+/// inside it, else the effect form's; `["op"]` when the `op` itself is the
+/// mistake). Every error [`Effect::validate_with`] returns carries the list,
+/// and its message ends with it in words.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShapeError {
     pub message: String,
     pub fix: Option<String>,
+    pub valid_keys: &'static [&'static str],
 }
 
 impl From<String> for ShapeError {
+    /// A shape error not yet about a particular object: `valid_keys` is
+    /// empty until [`with_valid_keys`] names the effect form's.
     fn from(message: String) -> Self {
-        Self { message, fix: None }
+        Self {
+            message,
+            fix: None,
+            valid_keys: &[],
+        }
     }
+}
+
+// ---- the vocabulary's keys (§11.1; `valid_keys`, §8, 4.5) ---------------------------------
+
+/// The nine effect ops (§11.1).
+pub const EFFECT_OPS: [&str; 9] = [
+    "create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget",
+];
+
+/// The form an effect object is checked as (the reference's `EffectForm`):
+/// its `op`, and for `move` / `remove` whether it names `targets` (blocks)
+/// or `target` (a document).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectForm {
+    Create,
+    Insert,
+    Set,
+    Unset,
+    MoveDocument,
+    MoveBlocks,
+    RemoveDocument,
+    RemoveBlocks,
+    Split,
+    Merge,
+    Retarget,
+}
+
+impl EffectForm {
+    /// Every form, in the order of the §11.1 block.
+    pub const ALL: [EffectForm; 11] = [
+        EffectForm::Create,
+        EffectForm::Insert,
+        EffectForm::Set,
+        EffectForm::Unset,
+        EffectForm::MoveDocument,
+        EffectForm::MoveBlocks,
+        EffectForm::RemoveDocument,
+        EffectForm::RemoveBlocks,
+        EffectForm::Split,
+        EffectForm::Merge,
+        EffectForm::Retarget,
+    ];
+
+    /// The keys the form admits (§11.1), in the vocabulary's order — an
+    /// optional key carries a trailing `?`. The ONE table (the reference's
+    /// `EFFECT_KEYS`): the shape check reads its `only_keys` lists from it
+    /// and a shape error reports it as `valid_keys` (4.5, §8).
+    #[must_use]
+    pub const fn keys(self) -> &'static [&'static str] {
+        match self {
+            EffectForm::Create => &["op", "path", "markdown", "frontmatter?"],
+            EffectForm::Insert => &["op", "into", "at?", "markdown", "expect?"],
+            EffectForm::Set => &["op", "target", "field", "value", "expect?"],
+            EffectForm::Unset => &["op", "target", "field", "expect?"],
+            EffectForm::MoveDocument => &["op", "target", "to", "retarget_inbound?"],
+            EffectForm::MoveBlocks => &["op", "targets", "into", "at?", "expect?"],
+            EffectForm::RemoveDocument => &["op", "target"],
+            EffectForm::RemoveBlocks => &["op", "targets", "expect?"],
+            EffectForm::Split => &["op", "target", "at", "expect?"],
+            EffectForm::Merge => &["op", "targets", "separator?", "expect?"],
+            EffectForm::Retarget => &["op", "repairs", "path_glob?"],
+        }
+    }
+
+    /// The form's name as the reference's table keys it: the `op`, or
+    /// `move:document` / `move:blocks` / `remove:document` / `remove:blocks`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            EffectForm::Create => "create",
+            EffectForm::Insert => "insert",
+            EffectForm::Set => "set",
+            EffectForm::Unset => "unset",
+            EffectForm::MoveDocument => "move:document",
+            EffectForm::MoveBlocks => "move:blocks",
+            EffectForm::RemoveDocument => "remove:document",
+            EffectForm::RemoveBlocks => "remove:blocks",
+            EffectForm::Split => "split",
+            EffectForm::Merge => "merge",
+            EffectForm::Retarget => "retarget",
+        }
+    }
+
+    /// The form in words, as the messages name it: `insert`, `a block
+    /// move`, `a document remove`.
+    #[must_use]
+    pub const fn words(self) -> &'static str {
+        match self {
+            EffectForm::MoveDocument => "a document move",
+            EffectForm::MoveBlocks => "a block move",
+            EffectForm::RemoveDocument => "a document remove",
+            EffectForm::RemoveBlocks => "a block remove",
+            other => other.name(),
+        }
+    }
+
+    /// The form of an effect object as written: `None` when it is no object
+    /// or its `op` is missing or not one of the nine.
+    #[must_use]
+    pub fn of_json(v: &Value) -> Option<Self> {
+        let obj = v.as_object()?;
+        let blocks = obj.contains_key("targets");
+        Some(match obj.get("op")?.as_str()? {
+            "create" => EffectForm::Create,
+            "insert" => EffectForm::Insert,
+            "set" => EffectForm::Set,
+            "unset" => EffectForm::Unset,
+            "move" if blocks => EffectForm::MoveBlocks,
+            "move" => EffectForm::MoveDocument,
+            "remove" if blocks => EffectForm::RemoveBlocks,
+            "remove" => EffectForm::RemoveDocument,
+            "split" => EffectForm::Split,
+            "merge" => EffectForm::Merge,
+            "retarget" => EffectForm::Retarget,
+            _ => return None,
+        })
+    }
+
+    /// ` (insert takes op, into, at?, markdown, expect?)` — the tail a shape
+    /// error about an effect of this form ends with (4.5).
+    #[must_use]
+    pub fn takes(self) -> String {
+        takes(self.words(), self.keys())
+    }
+}
+
+/// The keys of the sub-objects an effect holds (§11.1), spelled like
+/// [`EffectForm::keys`]: a target of each kind, an effect's `expect`, a
+/// plural `expect`'s entry, a `repairs[]` entry.
+pub const DOCUMENT_TARGET_KEYS: &[&str] = &["kind", "_id?", "_path?"];
+pub const BLOCK_TARGET_KEYS: &[&str] = &["kind", "_id"];
+pub const NODE_TARGET_KEYS: &[&str] = &["kind", "_id"];
+pub const SECTION_TARGET_KEYS: &[&str] = &["kind", "heading_id"];
+pub const EXPECT_KEYS: &[&str] = &["content_hash?", "parent_children_hash?", "revision?"];
+pub const EXPECT_ENTRY_KEYS: &[&str] = &["content_hash?", "parent_children_hash?"];
+pub const REPAIR_KEYS: &[&str] = &["from", "to"];
+
+/// `valid_keys` of an effect as written (4.5, §8): its form's keys; `["op"]`
+/// when the `op` itself is missing or unknown.
+#[must_use]
+pub fn effect_valid_keys(v: &Value) -> &'static [&'static str] {
+    EffectForm::of_json(v).map_or(&["op"], EffectForm::keys)
+}
+
+/// The tail a shape error about the effect `v` ends with (4.5): its form's
+/// keys in words — ` (an effect takes op)` when the `op` is the mistake.
+#[must_use]
+pub fn effect_takes(v: &Value) -> String {
+    EffectForm::of_json(v).map_or_else(|| takes("an effect", &["op"]), EffectForm::takes)
+}
+
+/// ` (<what> takes <keys>)`.
+fn takes(what: &str, keys: &[&str]) -> String {
+    format!(" ({what} takes {})", keys.join(", "))
+}
+
+/// Give a shape error its `valid_keys` when it has none (the reference's
+/// `withValidKeys`): the keys of `effect`'s form, named in the message too.
+fn with_valid_keys(mut e: ShapeError, effect: &Value) -> ShapeError {
+    if e.valid_keys.is_empty() {
+        e.valid_keys = effect_valid_keys(effect);
+        e.message.push_str(&effect_takes(effect));
+    }
+    e
 }
 
 /// A live block's row for the anchor fix: its parent block id (`None` at the
@@ -193,6 +369,7 @@ fn effect_level_max(v: &Map<String, Value>, here: &str, f: Option<&Fixer<'_>>) -
         return ShapeError {
             message,
             fix: Some(f.build(effect, None)),
+            valid_keys: &[],
         };
     }
     let mut top = f
@@ -207,6 +384,7 @@ fn effect_level_max(v: &Map<String, Value>, here: &str, f: Option<&Fixer<'_>>) -
     ShapeError {
         message,
         fix: Some(f.build(effect, Some(Value::Object(top)))),
+        valid_keys: &[],
     }
 }
 
@@ -235,6 +413,7 @@ fn bare_anchor(at: &str, into: &Target, here: &str, f: Option<&Fixer<'_>>) -> Sh
     ShapeError {
         message,
         fix: Some(f.build(effect, None)),
+        valid_keys: &[],
     }
 }
 
@@ -280,11 +459,49 @@ fn inverted_expect_map(
     Some(ShapeError {
         message,
         fix: Some(f.build(effect, None)),
+        valid_keys: &[],
     })
 }
 
 /// §8 (3.4): the block-field misspellings the fix corrects to `markdown`.
 const BLOCK_FIELD_ALIASES: &[&str] = &["text", "content", "body", "raw"];
+
+/// §8 (4.5): the misspelled keys the shape check corrects. `markdown` is
+/// what a `create` and an `insert` write (these are the guesses); an anchor
+/// given as a KEY of an `insert` or a block `move` — `after: <id>` /
+/// `before: <id>` — is `at: { after: <id> }`.
+const MARKDOWN_ALIASES: &[&str] = &["content", "body", "text", "raw", "value", "source"];
+
+/// The corrected effect of an unknown-key error, or `None` when the table
+/// does not cover EVERY unknown key (a half-corrected call is no fix): each
+/// alias moves to the key it meant, provided that key is not already written
+/// and the value has the type it takes (a string).
+fn unknown_key_fix(
+    form: EffectForm,
+    written: &Map<String, Value>,
+    extra: &[&String],
+) -> Option<Map<String, Value>> {
+    let mut out = written.clone();
+    for k in extra {
+        let v = written.get(k.as_str())?.as_str()?.to_owned();
+        if matches!(form, EffectForm::Create | EffectForm::Insert)
+            && MARKDOWN_ALIASES.contains(&k.as_str())
+            && !out.contains_key("markdown")
+        {
+            out.remove(k.as_str());
+            out.insert("markdown".to_owned(), json!(v));
+        } else if matches!(form, EffectForm::Insert | EffectForm::MoveBlocks)
+            && (k.as_str() == "after" || k.as_str() == "before")
+            && !out.contains_key("at")
+        {
+            out.remove(k.as_str());
+            out.insert("at".to_owned(), json!({ k.as_str(): v }));
+        } else {
+            return None;
+        }
+    }
+    Some(out)
+}
 
 // ---- targets ------------------------------------------------------------------------------
 
@@ -358,6 +575,7 @@ impl Target {
     /// Parse `{ kind, … }` of any kind.
     pub fn from_json(v: &Value) -> std::result::Result<Target, String> {
         validate_target(Some(v), "target", &["document", "block", "node", "section"])
+            .map_err(|e| e.message)
     }
 }
 
@@ -578,7 +796,9 @@ fn optional_string(
     }
 }
 
-fn only_keys(
+/// Refuse a key a plan's own object does not admit (`plan.selection`): the
+/// plain message, no `valid_keys` (a plan is not an effect).
+fn plan_only_keys(
     obj: &Map<String, Value>,
     allowed: &[&str],
     here: &str,
@@ -599,12 +819,58 @@ fn only_keys(
     }
 }
 
+/// Refuse a key the object does not admit (§11.1). `keys` is the object's
+/// row of the vocabulary (an optional key suffixed `?`); the error lists it
+/// (`valid_keys`, 4.5) and `what` names the object in the message (`insert`,
+/// `a block target`). For an effect itself (`fixable`: its form and fixer)
+/// the near misses of [`unknown_key_fix`] carry the corrected call.
+fn only_keys(
+    obj: &Map<String, Value>,
+    keys: &'static [&'static str],
+    here: &str,
+    what: &str,
+    fixable: Option<(EffectForm, Option<&Fixer<'_>>)>,
+) -> std::result::Result<(), ShapeError> {
+    let extra: Vec<&String> = obj
+        .keys()
+        .filter(|k| {
+            !keys
+                .iter()
+                .any(|a| a.strip_suffix('?').unwrap_or(a) == k.as_str())
+        })
+        .collect();
+    if extra.is_empty() {
+        return Ok(());
+    }
+    let message = format!(
+        "{here}: unknown key{} {}{}",
+        if extra.len() > 1 { "s" } else { "" },
+        extra
+            .iter()
+            .map(|k| format!("`{k}`"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        takes(what, keys)
+    );
+    let fix = match fixable {
+        Some((form, Some(f))) => {
+            unknown_key_fix(form, &f.written, &extra).map(|effect| f.build(effect, None))
+        }
+        _ => None,
+    };
+    Err(ShapeError {
+        message,
+        fix,
+        valid_keys: keys,
+    })
+}
+
 /// §11.1: a target of one of `kinds`.
 fn validate_target(
     v: Option<&Value>,
     here: &str,
     kinds: &[&str],
-) -> std::result::Result<Target, String> {
+) -> std::result::Result<Target, ShapeError> {
     let kinds_text = kinds
         .iter()
         .map(|k| format!("\"{k}\""))
@@ -619,32 +885,33 @@ fn validate_target(
         return Err(format!(
             "{here}: `kind` must be one of {} (got \"{kind}\")",
             kinds.join(", ")
-        ));
+        )
+        .into());
     }
     Ok(match kind {
         "document" => {
-            only_keys(obj, &["kind", "_id", "_path"], here)?;
+            only_keys(obj, DOCUMENT_TARGET_KEYS, here, "a document target", None)?;
             let id = optional_string(obj, "_id", here)?;
             let path = optional_string(obj, "_path", here)?;
             if id.is_none() && path.is_none() {
-                return Err(format!("{here}: a document target needs `_id` or `_path`"));
+                return Err(format!("{here}: a document target needs `_id` or `_path`").into());
             }
             Target::Document { id, path }
         }
         "block" => {
-            only_keys(obj, &["kind", "_id"], here)?;
+            only_keys(obj, BLOCK_TARGET_KEYS, here, "a block target", None)?;
             Target::Block {
                 id: require_string(obj, "_id", here)?,
             }
         }
         "node" => {
-            only_keys(obj, &["kind", "_id"], here)?;
+            only_keys(obj, NODE_TARGET_KEYS, here, "a node target", None)?;
             Target::Node {
                 id: require_string(obj, "_id", here)?,
             }
         }
         "section" => {
-            only_keys(obj, &["kind", "heading_id"], here)?;
+            only_keys(obj, SECTION_TARGET_KEYS, here, "a section target", None)?;
             Target::Section {
                 heading_id: require_string(obj, "heading_id", here)?,
             }
@@ -654,7 +921,7 @@ fn validate_target(
 }
 
 /// `targets`: a non-empty array of block targets.
-fn validate_targets(v: Option<&Value>, here: &str) -> std::result::Result<Vec<String>, String> {
+fn validate_targets(v: Option<&Value>, here: &str) -> std::result::Result<Vec<String>, ShapeError> {
     let list = v
         .and_then(Value::as_array)
         .filter(|a| !a.is_empty())
@@ -683,11 +950,7 @@ fn validate_expect(
         return Err(effect_level_max(obj, here, f));
     }
     let at = format!("{here}.expect");
-    only_keys(
-        obj,
-        &["content_hash", "parent_children_hash", "revision"],
-        &at,
-    )?;
+    only_keys(obj, EXPECT_KEYS, &at, "an effect's expect", None)?;
     Ok(Some(EffectExpect {
         content_hash: optional_string(obj, "content_hash", &at)?,
         parent_children_hash: optional_string(obj, "parent_children_hash", &at)?,
@@ -716,7 +979,7 @@ fn validate_expect_map(
         let x = x
             .as_object()
             .ok_or_else(|| format!("{at}: must be an object"))?;
-        only_keys(x, &["content_hash", "parent_children_hash"], &at)?;
+        only_keys(x, EXPECT_ENTRY_KEYS, &at, "a block's expect", None)?;
         out.insert(
             id.clone(),
             Expect {
@@ -771,6 +1034,7 @@ fn check_field(
                         "{here}: a block's `field` is `markdown` or `_attrs.checked` (got \"{field}\")"
                     ),
                     fix,
+                    valid_keys: &[],
                 })
             }
         }
@@ -786,6 +1050,17 @@ fn check_field(
         }
         Target::Section { .. } => Err(format!("{here}: a section has no settable field").into()),
     }
+}
+
+/// [`only_keys`] for an effect itself: its form's row, named in words, the
+/// near-miss keys corrected through its fixer.
+fn form_keys(
+    obj: &Map<String, Value>,
+    form: EffectForm,
+    here: &str,
+    f: Option<&Fixer<'_>>,
+) -> std::result::Result<(), ShapeError> {
+    only_keys(obj, form.keys(), here, form.words(), Some((form, f)))
 }
 
 fn expect_map_to_json(m: &ExpectMap) -> Value {
@@ -959,15 +1234,45 @@ impl Effect {
 
     /// [`Effect::validate`] with the shape fixes of §8 (3.4): given a
     /// [`ShapeFixContext`] — the request as written and the store's row
-    /// lookup — the four shape mistakes carry their corrected call as
-    /// [`ShapeError::fix`]; without one the same errors carry none.
+    /// lookup — the shape mistakes of the §8 table carry their corrected
+    /// call as [`ShapeError::fix`]; without one the same errors carry none.
+    /// Every refusal names what the object at fault admits (4.5, §8):
+    /// [`ShapeError::valid_keys`] — the sub-object's when an unknown key was
+    /// found inside it, else the effect form's (`["op"]` when the `op`
+    /// itself is the mistake) — and its message ends with the list.
     pub fn validate_with(
         v: &Value,
         i: usize,
         fix: Option<&ShapeFixContext<'_>>,
     ) -> std::result::Result<Effect, ShapeError> {
+        Effect::check(v, i, fix).map_err(|e| with_valid_keys(e, v))
+    }
+
+    /// The form this effect was checked as.
+    #[must_use]
+    pub const fn form(&self) -> EffectForm {
+        match self {
+            Effect::Create { .. } => EffectForm::Create,
+            Effect::Insert { .. } => EffectForm::Insert,
+            Effect::Set { .. } => EffectForm::Set,
+            Effect::Unset { .. } => EffectForm::Unset,
+            Effect::MoveDocument { .. } => EffectForm::MoveDocument,
+            Effect::MoveBlocks { .. } => EffectForm::MoveBlocks,
+            Effect::RemoveDocument { .. } => EffectForm::RemoveDocument,
+            Effect::RemoveBlocks { .. } => EffectForm::RemoveBlocks,
+            Effect::Split { .. } => EffectForm::Split,
+            Effect::Merge { .. } => EffectForm::Merge,
+            Effect::Retarget { .. } => EffectForm::Retarget,
+        }
+    }
+
+    fn check(
+        v: &Value,
+        i: usize,
+        fix: Option<&ShapeFixContext<'_>>,
+    ) -> std::result::Result<Effect, ShapeError> {
         let here = format!("effects[{i}]");
-        let ops = "create/insert/set/unset/move/remove/split/merge/retarget";
+        let ops = EFFECT_OPS.join("/");
         let obj = v
             .as_object()
             .filter(|o| o.get("op").is_some_and(Value::is_string))
@@ -977,7 +1282,7 @@ impl Effect {
         let f = fixer.as_ref();
         Ok(match op {
             "create" => {
-                only_keys(obj, &["op", "path", "markdown", "frontmatter"], &here)?;
+                form_keys(obj, EffectForm::Create, &here, f)?;
                 let path = require_string(obj, "path", &here)?;
                 let markdown = require_string(obj, "markdown", &here)?;
                 let frontmatter = match obj.get("frontmatter") {
@@ -994,7 +1299,7 @@ impl Effect {
                 }
             }
             "insert" => {
-                only_keys(obj, &["op", "into", "at", "markdown", "expect"], &here)?;
+                form_keys(obj, EffectForm::Insert, &here, f)?;
                 let into = validate_target(
                     obj.get("into"),
                     &format!("{here}.into"),
@@ -1011,7 +1316,7 @@ impl Effect {
                 }
             }
             "set" => {
-                only_keys(obj, &["op", "target", "field", "value", "expect"], &here)?;
+                form_keys(obj, EffectForm::Set, &here, f)?;
                 let target = validate_target(
                     obj.get("target"),
                     &format!("{here}.target"),
@@ -1032,7 +1337,7 @@ impl Effect {
                 }
             }
             "unset" => {
-                only_keys(obj, &["op", "target", "field", "expect"], &here)?;
+                form_keys(obj, EffectForm::Unset, &here, f)?;
                 let target =
                     validate_target(obj.get("target"), &format!("{here}.target"), &["document"])?;
                 let field = require_string(obj, "field", &here)?;
@@ -1046,7 +1351,7 @@ impl Effect {
             }
             "move" => {
                 if obj.contains_key("targets") {
-                    only_keys(obj, &["op", "targets", "into", "at", "expect"], &here)?;
+                    form_keys(obj, EffectForm::MoveBlocks, &here, f)?;
                     let targets = validate_targets(obj.get("targets"), &here)?;
                     let into = validate_target(
                         obj.get("into"),
@@ -1062,7 +1367,7 @@ impl Effect {
                         expect,
                     }
                 } else {
-                    only_keys(obj, &["op", "target", "to", "retarget_inbound"], &here)?;
+                    form_keys(obj, EffectForm::MoveDocument, &here, f)?;
                     let target = validate_target(
                         obj.get("target"),
                         &format!("{here}.target"),
@@ -1087,13 +1392,13 @@ impl Effect {
             }
             "remove" => {
                 if obj.contains_key("targets") {
-                    only_keys(obj, &["op", "targets", "expect"], &here)?;
+                    form_keys(obj, EffectForm::RemoveBlocks, &here, f)?;
                     Effect::RemoveBlocks {
                         targets: validate_targets(obj.get("targets"), &here)?,
                         expect: validate_expect_map(obj.get("expect"), &here, f)?,
                     }
                 } else {
-                    only_keys(obj, &["op", "target"], &here)?;
+                    form_keys(obj, EffectForm::RemoveDocument, &here, f)?;
                     Effect::RemoveDocument {
                         target: validate_target(
                             obj.get("target"),
@@ -1104,7 +1409,7 @@ impl Effect {
                 }
             }
             "split" => {
-                only_keys(obj, &["op", "target", "at", "expect"], &here)?;
+                form_keys(obj, EffectForm::Split, &here, f)?;
                 let Target::Block { id } =
                     validate_target(obj.get("target"), &format!("{here}.target"), &["block"])?
                 else {
@@ -1127,7 +1432,7 @@ impl Effect {
                 }
             }
             "merge" => {
-                only_keys(obj, &["op", "targets", "separator", "expect"], &here)?;
+                form_keys(obj, EffectForm::Merge, &here, f)?;
                 Effect::Merge {
                     targets: validate_targets(obj.get("targets"), &here)?,
                     separator: optional_string(obj, "separator", &here)?,
@@ -1135,7 +1440,7 @@ impl Effect {
                 }
             }
             "retarget" => {
-                only_keys(obj, &["op", "repairs", "path_glob"], &here)?;
+                form_keys(obj, EffectForm::Retarget, &here, f)?;
                 let repairs = obj
                     .get("repairs")
                     .and_then(Value::as_array)
@@ -1147,13 +1452,13 @@ impl Effect {
                         let r = r
                             .as_object()
                             .ok_or_else(|| format!("{at}: must be {{ from, to }}"))?;
-                        only_keys(r, &["from", "to"], &at)?;
+                        only_keys(r, REPAIR_KEYS, &at, "a repair", None)?;
                         Ok(Repair {
                             from: require_string(r, "from", &at)?,
                             to: require_string(r, "to", &at)?,
                         })
                     })
-                    .collect::<std::result::Result<Vec<_>, String>>()?;
+                    .collect::<std::result::Result<Vec<_>, ShapeError>>()?;
                 Effect::Retarget {
                     repairs,
                     path_glob: optional_string(obj, "path_glob", &here)?,
@@ -2505,7 +2810,7 @@ impl Selection {
 
     pub fn from_json(v: &Value) -> std::result::Result<Self, String> {
         let obj = v.as_object().ok_or("`plan.selection` must be an object")?;
-        only_keys(
+        plan_only_keys(
             obj,
             &["query", "expect", "templates", "cardinality", "identities"],
             "`plan.selection`",
@@ -2521,7 +2826,7 @@ impl Selection {
                 let e = e
                     .as_object()
                     .ok_or("`plan.selection.expect` must be { max }")?;
-                only_keys(e, &["max"], "`plan.selection.expect`")?;
+                plan_only_keys(e, &["max"], "`plan.selection.expect`")?;
                 let max = e
                     .get("max")
                     .and_then(Value::as_u64)
@@ -3014,7 +3319,7 @@ mod tests {
             bad(
                 json!({ "op": "set", "target": { "kind": "block", "_id": "b" }, "field": "markdown" })
             ),
-            "effects[2]: `value` is required"
+            "effects[2]: `value` is required (set takes op, target, field, value, expect?)"
         );
         assert!(
             bad(json!({ "op": "move", "target": { "kind": "block", "_id": "b" }, "to": "x" }))
@@ -3603,8 +3908,9 @@ mod tests {
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
         assert_eq!(
             e.message,
-            "effects[0]: `at` must be \"start\", \"end\", { before: <block id> } or { after: <block id> } — \"after block X\" is into: X's parent (a block, or the document when X is top-level), at: { after: X }"
+            "effects[0]: `at` must be \"start\", \"end\", { before: <block id> } or { after: <block id> } — \"after block X\" is into: X's parent (a block, or the document when X is top-level), at: { after: X } (insert takes op, into, at?, markdown, expect?)"
         );
+        assert_eq!(e.valid_keys, EffectForm::Insert.keys());
         assert_eq!(
             e.fix.as_deref(),
             Some(
@@ -3653,7 +3959,7 @@ mod tests {
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
         assert_eq!(
             e.message,
-            "effects[0]: a plural-target `expect` is keyed by block id — { <block id>: { content_hash?, parent_children_hash? }, … }"
+            "effects[0]: a plural-target `expect` is keyed by block id — { <block id>: { content_hash?, parent_children_hash? }, … } (a block remove takes op, targets, expect?)"
         );
         assert_eq!(
             e.fix.as_deref(),
@@ -3667,7 +3973,7 @@ mod tests {
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
         assert_eq!(
             e.message,
-            "effects[0].expect[\"content_hash\"]: must be an object"
+            "effects[0].expect[\"content_hash\"]: must be an object (merge takes op, targets, separator?, expect?)"
         );
         assert_eq!(e.fix, None);
     }
@@ -3683,7 +3989,7 @@ mod tests {
         let e = Effect::validate_with(&probe, 0, Some(&c)).unwrap_err();
         assert_eq!(
             e.message,
-            "effects[0]: `expect.max` bounds a selection — it is the request's top-level `expect`, beside `select`, not an effect's"
+            "effects[0]: `expect.max` bounds a selection — it is the request's top-level `expect`, beside `select`, not an effect's (set takes op, target, field, value, expect?)"
         );
         assert_eq!(
             e.fix.as_deref(),
@@ -3722,7 +4028,7 @@ mod tests {
             assert_eq!(
                 e.message,
                 format!(
-                    "effects[0]: a block's `field` is `markdown` or `_attrs.checked` (got \"{alias}\")"
+                    "effects[0]: a block's `field` is `markdown` or `_attrs.checked` (got \"{alias}\") (set takes op, target, field, value, expect?)"
                 )
             );
             assert_eq!(
@@ -3751,5 +4057,282 @@ mod tests {
                 .as_deref(),
             Some(r#"{"effects":[{"field":"markdown","op":"set","target":"b_1","value":"x"}]}"#)
         );
+    }
+
+    // ---- `valid_keys` and the unknown-key fixes (§8, 4.5) -----------------------------------
+
+    fn shape(effect: Value) -> ShapeError {
+        let effects = json!([effect]);
+        let c = ctx(&effects, None, None, &rows);
+        Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err()
+    }
+
+    #[test]
+    fn every_shape_error_lists_the_keys_of_the_object_at_fault() {
+        // an unknown key of the effect: the form's keys, named in the message
+        let e = shape(
+            json!({ "op": "insert", "into": { "kind": "block", "_id": "b_1" }, "markdown": "x", "position": "end" }),
+        );
+        assert_eq!(
+            e.message,
+            "effects[0]: unknown key `position` (insert takes op, into, at?, markdown, expect?)"
+        );
+        assert_eq!(e.valid_keys, ["op", "into", "at?", "markdown", "expect?"]);
+        assert_eq!(e.fix, None);
+        // several unknown keys, in the order written
+        let e = shape(
+            json!({ "op": "split", "b": 1, "target": { "kind": "block", "_id": "b_1" }, "a": 2, "at": [1] }),
+        );
+        assert_eq!(
+            e.message,
+            "effects[0]: unknown keys `b`, `a` (split takes op, target, at, expect?)"
+        );
+        // inside a sub-object: THAT object's keys
+        let e = shape(
+            json!({ "op": "set", "target": { "kind": "block", "_id": "b_1", "doc": "a.md" }, "field": "markdown", "value": "x" }),
+        );
+        assert_eq!(
+            e.message,
+            "effects[0].target: unknown key `doc` (a block target takes kind, _id)"
+        );
+        assert_eq!(e.valid_keys, ["kind", "_id"]);
+        let e = shape(
+            json!({ "op": "unset", "target": { "kind": "document", "id": "d_0" }, "field": "_frontmatter.a" }),
+        );
+        assert_eq!(e.valid_keys, ["kind", "_id?", "_path?"]);
+        let e = shape(
+            json!({ "op": "insert", "into": { "kind": "section", "_id": "b_0" }, "markdown": "x" }),
+        );
+        assert_eq!(e.valid_keys, ["kind", "heading_id"]);
+        let e = shape(
+            json!({ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "markdown", "value": "x", "expect": { "hash": "00" } }),
+        );
+        assert_eq!(
+            e.message,
+            "effects[0].expect: unknown key `hash` (an effect's expect takes content_hash?, parent_children_hash?, revision?)"
+        );
+        assert_eq!(
+            e.valid_keys,
+            ["content_hash?", "parent_children_hash?", "revision?"]
+        );
+        let e = shape(
+            json!({ "op": "remove", "targets": [{ "kind": "block", "_id": "b_1" }], "expect": { "b_1": { "revision": "r_0" } } }),
+        );
+        assert_eq!(e.valid_keys, ["content_hash?", "parent_children_hash?"]);
+        let e = shape(json!({ "op": "retarget", "repairs": [{ "from": "a.md", "into": "b.md" }] }));
+        assert_eq!(
+            e.message,
+            "effects[0].repairs[0]: unknown key `into` (a repair takes from, to)"
+        );
+        assert_eq!(e.valid_keys, ["from", "to"]);
+        // every other shape error: the form's keys — `move` / `remove` told apart by `targets`
+        let e = shape(json!({ "op": "create", "path": "/notes/x.md" }));
+        assert_eq!(
+            e.message,
+            "effects[0]: `markdown` must be a string (create takes op, path, markdown, frontmatter?)"
+        );
+        assert_eq!(e.valid_keys, ["op", "path", "markdown", "frontmatter?"]);
+        let e = shape(
+            json!({ "op": "remove", "target": { "kind": "document", "_path": "a.md" }, "expect": {} }),
+        );
+        assert_eq!(
+            e.message,
+            "effects[0]: unknown key `expect` (a document remove takes op, target)"
+        );
+        assert_eq!(e.valid_keys, ["op", "target"]);
+        let e = shape(
+            json!({ "op": "remove", "targets": [{ "kind": "block", "_id": "b_1" }], "at": "end" }),
+        );
+        assert_eq!(e.valid_keys, ["op", "targets", "expect?"]);
+        let e = shape(
+            json!({ "op": "move", "target": { "kind": "block", "_id": "b_1" }, "to": "b.md" }),
+        );
+        assert!(
+            e.message
+                .ends_with(" (a document move takes op, target, to, retarget_inbound?)")
+        );
+        assert_eq!(e.valid_keys, ["op", "target", "to", "retarget_inbound?"]);
+        let e = shape(
+            json!({ "op": "move", "targets": [], "into": { "kind": "block", "_id": "b_1" } }),
+        );
+        assert!(
+            e.message
+                .ends_with(" (a block move takes op, targets, into, at?, expect?)")
+        );
+        // the `op` itself: the one key every effect has
+        for bad in [
+            json!({ "op": "delete", "target": "/a.md" }),
+            json!({ "target": "/a.md" }),
+            json!("insert"),
+        ] {
+            let e = shape(bad);
+            assert!(
+                e.message.ends_with(" (an effect takes op)"),
+                "{}",
+                e.message
+            );
+            assert_eq!(e.valid_keys, ["op"]);
+        }
+        // without a fix context: the same list
+        let e =
+            Effect::validate_with(&json!({ "op": "merge", "targets": [] }), 3, None).unwrap_err();
+        assert_eq!(e.valid_keys, ["op", "targets", "separator?", "expect?"]);
+        assert!(
+            Effect::validate(&json!({ "op": "merge", "targets": [] }), 3)
+                .unwrap_err()
+                .ends_with(" (merge takes op, targets, separator?, expect?)")
+        );
+        // the helpers the surface and the lowering name a form with
+        assert_eq!(
+            effect_valid_keys(&json!({ "op": "move", "targets": 1 })),
+            EffectForm::MoveBlocks.keys()
+        );
+        assert_eq!(effect_valid_keys(&json!({ "op": "nope" })), ["op"]);
+        assert_eq!(
+            effect_takes(&json!({ "op": "remove" })),
+            " (a document remove takes op, target)"
+        );
+        for form in EffectForm::ALL {
+            assert_eq!(form.keys()[0], "op", "{}", form.name());
+        }
+    }
+
+    #[test]
+    fn a_near_miss_key_is_fixed_to_the_key_it_meant() {
+        // `content` (and the other guesses) on a create / an insert is `markdown`
+        for alias in ["content", "body", "text", "raw", "value", "source"] {
+            let e = shape(json!({ "op": "create", "path": "/notes/x.md", alias: "# X\n" }));
+            assert_eq!(
+                e.fix.as_deref(),
+                Some(r##"{"effects":[{"markdown":"# X\n","op":"create","path":"/notes/x.md"}]}"##),
+                "{alias}"
+            );
+            assert_eq!(e.valid_keys, EffectForm::Create.keys());
+        }
+        // an anchor written as a key of an insert / a block move is `at: { … }`
+        let e = shape(json!({ "op": "insert", "into": "/a.md", "after": "b_1", "markdown": "x" }));
+        assert_eq!(
+            e.message,
+            "effects[0]: unknown key `after` (insert takes op, into, at?, markdown, expect?)"
+        );
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"at":{"after":"b_1"},"into":"/a.md","markdown":"x","op":"insert"}]}"#
+            )
+        );
+        let e =
+            shape(json!({ "op": "move", "targets": ["b_1"], "into": "/a.md", "before": "b_0" }));
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"at":{"before":"b_0"},"into":"/a.md","op":"move","targets":["b_1"]}]}"#
+            )
+        );
+        // every unknown key is corrected, or there is no fix
+        let e = shape(json!({ "op": "insert", "into": "/a.md", "before": "b_1", "text": "Lead." }));
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"at":{"before":"b_1"},"into":"/a.md","markdown":"Lead.","op":"insert"}]}"#
+            )
+        );
+        let none = [
+            // one key outside the table
+            json!({ "op": "create", "path": "/x.md", "content": "# X\n", "title": "X" }),
+            // the alias beside the key it would become
+            json!({ "op": "create", "path": "/x.md", "markdown": "# X\n", "content": "# Y\n" }),
+            json!({ "op": "insert", "into": "/a.md", "at": "end", "after": "b_1", "markdown": "x" }),
+            // two aliases of one key
+            json!({ "op": "create", "path": "/x.md", "content": "a", "body": "b" }),
+            // a value that is not a string
+            json!({ "op": "create", "path": "/x.md", "content": 5 }),
+            json!({ "op": "insert", "into": "/a.md", "after": { "kind": "block", "_id": "b_1" }, "markdown": "x" }),
+            // the table is per form: no `markdown` on a set, no anchor on a create
+            json!({ "op": "set", "target": "/a.md", "field": "content", "content": "x" }),
+            json!({ "op": "create", "path": "/x.md", "markdown": "x", "after": "b_1" }),
+            json!({ "op": "move", "targets": ["b_1"], "into": "/a.md", "text": "x" }),
+        ];
+        for effect in none {
+            let e = shape(effect.clone());
+            assert_eq!(e.fix, None, "{effect}");
+            assert!(!e.valid_keys.is_empty());
+        }
+        // no context, no fix
+        let e = Effect::validate_with(
+            &json!({ "op": "create", "path": "/x.md", "content": "x" }),
+            0,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(e.fix, None);
+        // under a selector the fix is the template as written, `select` and `expect` kept
+        let select = json!("docs { _path == \"/a.md\" }");
+        let top = json!({ "max": 1 });
+        let effects = json!([{ "op": "insert", "text": "See also." }]);
+        let probe = json!({ "op": "insert", "into": { "kind": "document", "_id": "$sel" }, "text": "See also." });
+        let c = ctx(&effects, Some(&select), Some(&top), &rows);
+        let e = Effect::validate_with(&probe, 0, Some(&c)).unwrap_err();
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"markdown":"See also.","op":"insert"}],"expect":{"max":1},"select":"docs { _path == \"/a.md\" }"}"#
+            )
+        );
+    }
+
+    /// §11.1: the vocabulary block of `spec/mutate/README.md` is the one
+    /// statement of the keys — [`EffectForm::keys`] is checked against its
+    /// `Effect` lines one by one.
+    #[test]
+    fn the_key_table_is_the_vocabulary_block_of_the_spec() {
+        let readme = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/mutate/README.md");
+        let Ok(text) = std::fs::read_to_string(readme) else {
+            eprintln!("spec/mutate/README.md not present; skipping");
+            return;
+        };
+        let block = text
+            .split("### 11.1 Vocabulary")
+            .nth(1)
+            .and_then(|s| s.split("```text").nth(1))
+            .and_then(|s| s.split("```").next())
+            .expect("the §11.1 block");
+        // The members of one `{ op: "…", … }` line: split at top-level
+        // commas, each member's key before its `:` / ` =`.
+        let keys_of = |line: &str| -> Vec<String> {
+            let inner = &line[line.find('{').unwrap() + 1..line.rfind('}').unwrap()];
+            let mut depth = 0usize;
+            let mut members = vec![String::new()];
+            for c in inner.chars() {
+                match c {
+                    '{' | '[' | '(' => depth += 1,
+                    '}' | ']' | ')' => depth -= 1,
+                    _ => {}
+                }
+                if c == ',' && depth == 0 {
+                    members.push(String::new());
+                } else {
+                    members.last_mut().unwrap().push(c);
+                }
+            }
+            members
+                .iter()
+                .map(|m| {
+                    let m = m.split(':').next().unwrap();
+                    m.split(" =").next().unwrap().trim().to_owned()
+                })
+                .collect()
+        };
+        let lines: Vec<Vec<String>> = block
+            .lines()
+            .skip_while(|l| !l.starts_with("Effect"))
+            .filter(|l| l.contains("{ op:"))
+            .map(keys_of)
+            .collect();
+        let table: Vec<Vec<String>> = EffectForm::ALL
+            .iter()
+            .map(|f| f.keys().iter().map(|k| (*k).to_owned()).collect())
+            .collect();
+        assert_eq!(lines, table);
     }
 }

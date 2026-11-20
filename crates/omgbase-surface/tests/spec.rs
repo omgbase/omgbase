@@ -66,8 +66,12 @@ const CORPUS_TS: &str = "2026-09-27T00:00:00.000Z";
 /// under (the reference's `EXAMPLES_TS`), so the suite's commits are
 /// deterministic.
 const EXAMPLES_TS: &str = "2026-10-13T00:00:00.000Z";
-/// The one case of `examples.json` (the reference's `EXAMPLES_CASE`).
+/// The first case of `examples.json` (the reference's `EXAMPLES_CASE`): the
+/// descriptions' ladders.
 const EXAMPLES_CASE: &str = "ladders";
+/// The second (6.8, the reference's `EFFECTS_CASE`): every example of the
+/// write chapter — `query_syntax { section: "effects" }` — as a `plan` call.
+const EFFECTS_CASE: &str = "effects";
 
 const PASSING_HEADER: &str = "\
 # Surface spec cases (spec/surface/cases) that the Rust port must pass, one
@@ -2470,6 +2474,18 @@ fn example_steps() -> Vec<Json> {
     steps
 }
 
+/// The write chapter's rungs as `plan` steps under the examples clock (6.8:
+/// the reference's `effectsChapterSteps`).
+fn effects_chapter_steps() -> Vec<Json> {
+    let chapter = omgbase_surface::reference::query_syntax_section("effects")
+        .expect("the manual has an effects chapter");
+    extract_ladder(&chapter)
+        .0
+        .into_iter()
+        .map(|rung| json!({ "read": { "tool": "plan", "args": rung.args, "ts": EXAMPLES_TS } }))
+        .collect()
+}
+
 /// README §4 "Descriptions" (4.3): every minimal tool's description is a
 /// ladder — a summary line `<tool> — …`, at least one rung, a last line naming
 /// `query_syntax` — whose rungs parse as the call's arguments followed by a
@@ -2542,15 +2558,37 @@ fn example_ladders_are_well_formed_and_match_the_suite_bytewise() {
             .iter()
             .map(|c| c["name"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        [EXAMPLES_CASE]
+        [EXAMPLES_CASE, EFFECTS_CASE]
     );
-    assert_eq!(cases[0]["workspace"], true);
-    let pinned = serde_json::to_string_pretty(&cases[0]["steps"]).unwrap();
-    let ours = serde_json::to_string_pretty(&Json::Array(extracted)).unwrap();
-    assert!(
-        pinned == ours,
-        "spec/surface/cases/examples.json's steps drifted from the descriptions' rungs (SURFACE_SPEC_UPDATE=1 on mcp/examples.test.ts regenerates)\n--- suite\n{pinned}\n--- extracted\n{ours}"
-    );
+    for (case, extracted, what) in [
+        (&cases[0], extracted, "the descriptions' rungs"),
+        (
+            &cases[1],
+            effects_chapter_steps(),
+            "the write chapter's examples",
+        ),
+    ] {
+        assert_eq!(case["workspace"], true);
+        let pinned = serde_json::to_string_pretty(&case["steps"]).unwrap();
+        let ours = serde_json::to_string_pretty(&Json::Array(extracted)).unwrap();
+        assert!(
+            pinned == ours,
+            "spec/surface/cases/examples.json's steps drifted from {what} (SURFACE_SPEC_UPDATE=1 on mcp/examples.test.ts regenerates)\n--- suite\n{pinned}\n--- extracted\n{ours}"
+        );
+        // (6.8) An example is a call that works: no recorded result is a refusal.
+        for (i, r) in case["expect"]["steps"]
+            .as_array()
+            .expect("expect.steps")
+            .iter()
+            .enumerate()
+        {
+            assert!(
+                r.get("error").is_none(),
+                "{}[{i}] is a published example that is refused: {r}",
+                case["name"]
+            );
+        }
+    }
 }
 
 #[test]

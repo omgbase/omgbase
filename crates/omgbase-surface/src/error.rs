@@ -114,6 +114,22 @@ impl From<omgbase_store::Error> for SurfaceError {
             omgbase_store::Error::Mutation(m) => Self::from(m),
             omgbase_store::Error::Search(s) => Self::new(s.code(), s.to_string()),
             omgbase_store::Error::InvalidEffect(m) => Self::filter_invalid(m, "arguments"),
+            // `spec/mutate` §8 (4.5): a shape refusal raised while an effect
+            // was lowered names the effect and the keys its form admits.
+            omgbase_store::Error::InvalidEffectAt {
+                message,
+                effect_index,
+                valid_keys,
+            } => {
+                let mut e = Self::filter_invalid(message, "arguments");
+                if let Some(d) = e.data.as_mut().and_then(Value::as_object_mut) {
+                    if let Some(i) = effect_index {
+                        d.insert("effect_index".to_owned(), json!(i));
+                    }
+                    d.insert("valid_keys".to_owned(), json!(valid_keys));
+                }
+                e
+            }
             // `spec/surface` §2 (4.9): a read of an archived revision whose
             // segment is not attached or not on disk — `{ rev, archive,
             // path? }`, `path` only when the segment is recorded.

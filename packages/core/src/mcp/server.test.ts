@@ -78,7 +78,7 @@ describe("MCP server skeleton", () => {
     const { payload: bad, isError } = (await call("query_syntax", { section: "folow" })) as { payload: { error: string; message: string; data: { hint: string; fix: string } }; isError: boolean };
     expect(isError).toBe(true);
     expect(bad.error).toBe("filter_invalid");
-    expect(bad.message).toBe("unknown section `folow`; the sections are sugar, paths, targets, scoping, scalars, predicates, nested, select, flatten, order, follow, semantic, examples, all (query_syntax takes section?)");
+    expect(bad.message).toBe("unknown section `folow`; the sections are sugar, paths, targets, scoping, scalars, predicates, nested, select, flatten, order, follow, semantic, examples, effects, all (query_syntax takes section?)");
     expect(bad.data).toEqual({ reason: bad.message, hint: "arguments", fix: "{\"section\":\"follow\"}" });
     const { payload: far } = (await call("query_syntax", { section: "grammar" })) as { payload: { data: { fix: string } } };
     expect(far.data.fix).toBe("{\"section\":\"all\"}");

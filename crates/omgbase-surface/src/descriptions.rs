@@ -40,10 +40,11 @@ Find documents by attribute, not by path: query (docs { select _path where ... }
 pub const DOCS_LIST: &str = r#"ENUMERATE live documents (the `omg ls` operation) as a page: `{ items: [{ _id, _path, _updated_at, blocks }], truncated, cursor }` — the document's `_id`, its `_path` (`/`-rooted, as every path the surface returns), last-commit timestamp (ISO, or null) and live block count — ordered by path. This is a flat `ls`, not an orientation primitive: unscoped on a large repo it is hundreds of rows, and the engine has no directory concept here — `path_glob` is a simple LIKE match where `*` matches ANY run INCLUDING `/` (so `projects/*` is the whole subtree; there is no 'immediate children only'). To learn a repo's shape, call docs_tree first, then scope this with a `path_glob` once you know where to look. Paged under the uniform list contract: `limit` (default 200) caps rows, `cursor` (from a truncated page) resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned), and `truncated` is honest — when true you have NOT seen everything. For structured/ranked discovery use `query` or `blocks_resolve`."#;
 
 /// `query_syntax`
-pub const QUERY_SYNTAX: &str = r#"query_syntax — The OQX reference: a card (clause order, the names rule and engine names per kind, consumers, follow, examples), then one chapter at a time.
-{}   the ~3 kB card: { syntax, sections } — enough for most queries
+pub const QUERY_SYNTAX: &str = r#"query_syntax — The reference: the OQX card (clause order, the names rule and engine names per kind, consumers, follow, examples), then one chapter at a time — effects is the write chapter.
+{}   the ~4 kB card: { syntax, sections } — enough for most queries
 {"section":"follow"}   one chapter in full ({ section, syntax }); the names are the card's sections list
-{"section":"all"}   the whole manual (38 kB) — rarely needed
+{"section":"effects"}   writes: every effect op of apply and plan, its keys, the into and at forms, one example per op
+{"section":"all"}   the whole manual (46 kB) — rarely needed
 Call the card before a non-trivial query; every other tool's examples end here, at query_syntax."#;
 
 /// `query`
@@ -69,26 +70,26 @@ pub const BLOCKS_RESOLVE: &str = r#"blocks_resolve — "the id of the thing I me
 Open questions or passages: query with text("...") or order by semantic("...") desc. Grammar: query_syntax."#;
 
 /// `apply`
-pub const APPLY: &str = r###"apply — plan and commit in one call: the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.
-{"effects":[{"op":"set","target":"/substances/salt.md","field":"_frontmatter.verified","value":false}],"reason":"re-check salt"}   bare path = doc target
-{"effects":[{"op":"insert","into":"/lab/2026-02-notes.md","at":"end","markdown":"## Follow-ups\n\n- [ ] re-run cycle 4"}]}   at end; or {before|after:\"b_1\"}
-{"select":"blocks { _type == \"task\" and not checked and _path == \"/processes/calcination.md\" }","effects":[{"op":"set","field":"_attrs.checked","value":true}],"expect":{"max":10}}   bulk check-off (expect.max required)
-{"effects":[{"op":"set","target":"/log.md","field":"content","value":"---\ntype: x\n---\n\n# A\n"}]}   whole doc, fence included (block: markdown)
-Plan first for anything hard to undo; every error's data.fix is the corrected call. Grammar: query_syntax."###;
+pub const APPLY: &str = r#"apply — plan and commit in one call: the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.
+{"effects":[{"op":"create","path":"/lab/april.md","markdown":"---\ntype: plan\n---\n\n# April\n"}],"reason":"open April"}   a NEW doc: path + markdown
+{"effects":[{"op":"set","target":"/substances/salt.md","field":"_frontmatter.verified","value":false}]}   bare path = doc target
+{"effects":[{"op":"insert","into":"/lab/2026-02-notes.md","at":{"after":"b_80"},"markdown":"- [ ] Dry the crop"}]}   after any block, nested too; no at = the end
+{"effects":[{"op":"set","target":"/index.md","field":"content","value":"---\ntype: hub\n---\n\n# Alchemy\n"}]}   replaces an EXISTING doc whole, fence included
+Every op, key, into and at form: query_syntax { section: "effects" }. An error's data.fix is the corrected call."#;
 
 /// `plan`
-pub const PLAN: &str = r##"plan — Preview: the Plan (summary, $new.n ids) burns no id. Commit: execute { plan_id }. Bodies: diffs: true.
+pub const PLAN: &str = r#"plan — Preview: the Plan (summary, $new.n ids) burns no id. Commit: execute { plan_id }. Bodies: diffs: true.
 {"effects":[{"op":"set","target":"/processes/calcination.md","field":"_frontmatter.verified","value":false}]}   path = doc
-{"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"markdown":"- [ ] Weigh the calx"}]}   in a section
-{"effects":[{"op":"create","path":"lab/march.md","markdown":"# March\n"},{"op":"insert","into":"$new.0","markdown":"Hi."}]}   fills $new.0
-{"effects":[{"op":"set","target":"/log.md","field":"content","value":"---\ntype: x\n---\n\n# A\n"}]}   whole doc, fence included (block: markdown)
+{"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"markdown":"- [ ] Weigh the calx"}]}   end of a section
+{"effects":[{"op":"insert","into":"/processes/calcination.md","at":{"after":"b_156"},"markdown":"- [ ] Cool"}]}   after any block, nested too
+{"effects":[{"op":"create","path":"/lab/march.md","markdown":"---\ntype: x\n---\n\n# March\n"},{"op":"insert","into":"$new.0","markdown":"Hi."}]}   NEW doc = $new.0
 {"select":"docs { type == \"lab-note\" }","effects":[{"op":"insert","into":"-> `/processes/${subject}.md`","markdown":"-> `[${_title}](${_path})`"}]}   -> reads the row
-create insert set unset move remove split merge retarget; grammar: query_syntax."##;
+All ops, keys, reason: query_syntax { section: "effects" }."#;
 
 /// `execute`
 pub const EXECUTE: &str = r#"execute — Commit a plan from plan: by plan_id alone (this server remembers the plans it made), or the plan form (the whole Plan object), or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).
-{"plan_id":"4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f"}   the id alone: the remembered plan runs; an id this server never planned is plan_unknown (re-run plan)
-Or {"plan": the Plan as returned} or {"plan_id", "effects"}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax."#;
+{"plan_id":"ed7b2e2f10c0aeeff371b5f61635bc83818dd2601bdb7d6c113343f08904f340"}   the id alone: the remembered plan runs; an id this server never planned is plan_unknown (re-run plan)
+Or {"plan": the Plan as returned} or {"plan_id", "effects"}. reason: the commit's; absent, the one plan was given. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax."#;
 
 /// `blocks_insert`
 pub const BLOCKS_INSERT: &str = r###"Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block — it must be a CONTAINER (a list, list item, task, blockquote or table); a leaf such as a heading or paragraph fails `type_mismatch` (spec/mutate §1.1) — use blocks_append for "into this heading's section / this container" or `at: {after: <ref>}` for "right after this block"; or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: "<path>", markdown: "## New\n\n…" }` (the positional generalization of docs_append). `at` places among the parent's children: "end" (default) / "start" / {before|after: <block ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by "," and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted. Sugar for `apply { effects: [{ op: "insert", into, at, markdown, expect? }] }` — returns the Receipt (`new_ids` holds the inserted blocks' ids, `$new.0` first); preview with `plan` over that effect."###;

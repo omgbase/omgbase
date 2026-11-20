@@ -196,6 +196,70 @@ pub fn stale_revision(req: &Request, t: usize, current: &str) -> Option<String> 
     Some(fix_request(&req.with_effects(mapped)))
 }
 
+/// The same request with effect `i` replaced by `effect` (a plain request:
+/// the effects alone).
+fn with_effect(effects: &[Json], i: usize, effect: Json) -> String {
+    let mapped = effects
+        .iter()
+        .enumerate()
+        .map(|(k, x)| if k == i { effect.clone() } else { x.clone() })
+        .collect();
+    fix_request(&Request {
+        select: None,
+        effects: Json::Array(mapped),
+        expect: None,
+    })
+}
+
+/// `doc_missing` on a `set` of `content` (4.5, plain requests): effect `i`
+/// as written targets a literal path — a bare string, or `{ kind:
+/// "document", _path }` with no `_id` — that is the missing `doc`, and its
+/// value is a string: the same request with that effect rewritten as the
+/// `create` it meant (`path` as written, `markdown` the value).
+#[must_use]
+pub fn set_content_create(req: &Request, i: usize, doc: &str) -> Option<String> {
+    let effects = req.list()?;
+    let e = effects.get(i)?.as_object()?;
+    let path = match e.get("target")? {
+        Json::String(s) => s.as_str(),
+        Json::Object(t)
+            if t.get("kind").and_then(Json::as_str) == Some("document")
+                && !t.contains_key("_id") =>
+        {
+            t.get("_path")?.as_str()?
+        }
+        _ => return None,
+    };
+    let value = e.get("value")?.as_str()?;
+    if e.get("op").and_then(Json::as_str) != Some("set")
+        || e.get("field").and_then(Json::as_str) != Some("content")
+        || doc != path
+    {
+        return None;
+    }
+    Some(with_effect(
+        effects,
+        i,
+        json!({ "op": "create", "path": path, "markdown": value }),
+    ))
+}
+
+/// `target_missing { anchor, parent, _path }` (4.5, plain requests): an
+/// anchor that is a block, but not a child of `into` — the same request
+/// with effect `i`'s `into` the anchor's real parent: `{ kind: "block", _id
+/// }`, or its document's rooted path at the top level.
+#[must_use]
+pub fn anchor_into(req: &Request, i: usize, parent: Option<&str>, path: &str) -> Option<String> {
+    let effects = req.list()?;
+    let mut fixed = effects.get(i)?.as_object()?.clone();
+    let into = match parent {
+        Some(parent) => json!({ "kind": "block", "_id": parent }),
+        None => json!(path),
+    };
+    fixed.insert("into".to_owned(), into);
+    Some(with_effect(effects, i, Json::Object(fixed)))
+}
+
 /// `target_missing { symbol }` for a `$new.n` no earlier effect created
 /// (plain requests): the next `create` moved before the effect that uses it,
 /// the symbol renamed to the one that create will allocate — `$new.<count>`,
@@ -330,11 +394,37 @@ pub fn planning_fix(
                 _ => None,
             }
         }
+        // (4.5) `set content` on a path with no document: the `create` it meant.
+        "doc_missing" if origins.is_none() => {
+            match (
+                data.get("doc").and_then(Json::as_str),
+                index(data.get("effect_index")),
+            ) {
+                (Some(doc), Some(i)) => set_content_create(req, i, doc),
+                _ => None,
+            }
+        }
         "target_missing" if origins.is_none() => {
             match (
                 data.get("symbol").and_then(Json::as_str),
                 index(data.get("effect_index")),
             ) {
+                // (4.5) an anchor that is a block, but not a child of `into`.
+                (_, Some(i))
+                    if data.get("anchor").is_some_and(Json::is_string)
+                        && data.get("_path").is_some_and(Json::is_string)
+                        && req
+                            .list()
+                            .and_then(|l| l.get(i))
+                            .is_some_and(Json::is_object) =>
+                {
+                    anchor_into(
+                        req,
+                        i,
+                        data.get("parent").and_then(Json::as_str),
+                        data.get("_path").and_then(Json::as_str).unwrap_or_default(),
+                    )
+                }
                 (Some(symbol), Some(i)) => {
                     let n = omgbase_mutate::parse_new_symbol(symbol);
                     // Only a symbol nothing allocated yet is "created later".
@@ -352,6 +442,12 @@ pub fn planning_fix(
         && let Some(d) = err.data.as_mut().and_then(Json::as_object_mut)
     {
         d.insert("fix".to_owned(), json!(fix));
+        // (4.5) a `set content` on a path with no document: say what the caller meant.
+        if err.code == "doc_missing" {
+            err.message.push_str(
+                " — `set content` replaces a document that exists; a new one is `create { path, markdown }`",
+            );
+        }
     }
     err
 }
@@ -935,5 +1031,160 @@ mod tests {
             append_into_heading("b_h", "t"),
             "blocks_append {\"_id\":\"b_h\",\"text\":\"t\"}"
         );
+    }
+
+    /// §8 (4.5): `set content` on a path with no document is the `create`
+    /// it meant — a plain request, a literal path target, a string value.
+    #[test]
+    fn a_set_content_on_a_missing_path_is_fixed_to_a_create() {
+        let plain = |effects: Json, data: Json| {
+            planning_fix(
+                &Request {
+                    select: None,
+                    effects,
+                    expect: None,
+                },
+                err("doc_missing", data),
+                None,
+                none,
+            )
+        };
+        let set = json!({ "op": "set", "target": "/notes/new.md", "field": "content", "value": "# New\n", "expect": { "revision": "r_0" } });
+        let e = plain(
+            json!([set]),
+            json!({ "doc": "/notes/new.md", "effect_index": 0 }),
+        );
+        assert_eq!(
+            fix_of(&e).unwrap(),
+            canon(
+                json!({ "effects": [{ "op": "create", "path": "/notes/new.md", "markdown": "# New\n" }] })
+            )
+        );
+        assert_eq!(
+            e.message,
+            "m — `set content` replaces a document that exists; a new one is `create { path, markdown }`"
+        );
+        // the object target without `_id`; the other effects stay as written
+        let e = plain(
+            json!([effects()[1], { "op": "set", "target": { "kind": "document", "_path": "notes/new.md" }, "field": "content", "value": "x" }]),
+            json!({ "doc": "notes/new.md", "effect_index": 1 }),
+        );
+        assert_eq!(
+            fix_of(&e).unwrap(),
+            canon(
+                json!({ "effects": [effects()[1], { "op": "create", "path": "notes/new.md", "markdown": "x" }] })
+            )
+        );
+        // no create to offer: a target by `_id`, another field, another op, a
+        // value that is not a string, a `doc` that is not the path written
+        for (effect, doc) in [
+            (
+                json!({ "op": "set", "target": { "kind": "document", "_id": "d_9" }, "field": "content", "value": "x" }),
+                "d_9",
+            ),
+            (
+                json!({ "op": "set", "target": { "kind": "document", "_id": "d_9", "_path": "n.md" }, "field": "content", "value": "x" }),
+                "n.md",
+            ),
+            (
+                json!({ "op": "set", "target": "/n.md", "field": "_frontmatter.a", "value": "x" }),
+                "/n.md",
+            ),
+            (
+                json!({ "op": "insert", "into": "/n.md", "markdown": "x" }),
+                "/n.md",
+            ),
+            (
+                json!({ "op": "set", "target": "/n.md", "field": "content", "value": 5 }),
+                "/n.md",
+            ),
+            (
+                json!({ "op": "set", "target": "/n.md", "field": "content", "value": "x" }),
+                "/other.md",
+            ),
+        ] {
+            let e = plain(json!([effect]), json!({ "doc": doc, "effect_index": 0 }));
+            assert_eq!(fix_of(&e), None, "{effect}");
+            assert_eq!(e.message, "m");
+        }
+        // under a selector: no fix
+        let e = planning_fix(
+            &Request {
+                select: Some(json!("from docs")),
+                effects: json!([set]),
+                expect: None,
+            },
+            err(
+                "doc_missing",
+                json!({ "doc": "/notes/new.md", "effect_index": 0 }),
+            ),
+            Some(&[]),
+            none,
+        );
+        assert_eq!(fix_of(&e), None);
+    }
+
+    /// §8 (4.5): a misplaced anchor's fix is `into` = its real parent.
+    #[test]
+    fn a_misplaced_anchor_is_fixed_to_its_real_parent() {
+        let insert =
+            json!({ "op": "insert", "into": "b_2", "at": { "after": "b_6" }, "markdown": "x" });
+        let req = Request {
+            select: None,
+            effects: json!([insert]),
+            expect: None,
+        };
+        let e = planning_fix(
+            &req,
+            err(
+                "target_missing",
+                json!({ "anchor": "b_6", "parent": "b_5", "_path": "/a.md", "effect_index": 0 }),
+            ),
+            None,
+            none,
+        );
+        assert_eq!(
+            fix_of(&e).unwrap(),
+            canon(
+                json!({ "effects": [{ "op": "insert", "into": { "kind": "block", "_id": "b_5" }, "at": { "after": "b_6" }, "markdown": "x" }] })
+            )
+        );
+        // top-level: the document's rooted path
+        let e = planning_fix(
+            &req,
+            err(
+                "target_missing",
+                json!({ "anchor": "b_6", "parent": null, "_path": "/a.md", "effect_index": 0 }),
+            ),
+            None,
+            none,
+        );
+        assert_eq!(
+            fix_of(&e).unwrap(),
+            canon(
+                json!({ "effects": [{ "op": "insert", "into": "/a.md", "at": { "after": "b_6" }, "markdown": "x" }] })
+            )
+        );
+        // the kernel's bare `target_missing`, and a selector's: no fix
+        let e = planning_fix(
+            &req,
+            err("target_missing", json!({ "effect_index": 0 })),
+            None,
+            none,
+        );
+        assert_eq!(fix_of(&e), None);
+        let e = planning_fix(
+            &Request {
+                select: Some(json!("from blocks")),
+                ..req.clone()
+            },
+            err(
+                "target_missing",
+                json!({ "anchor": "b_6", "parent": "b_5", "_path": "/a.md", "effect_index": 0 }),
+            ),
+            Some(&[]),
+            none,
+        );
+        assert_eq!(fix_of(&e), None);
     }
 }

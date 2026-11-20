@@ -188,7 +188,8 @@ export interface CrashOutcome {
 /** `{ code, op_index?, block?, current?, retriable? }` — README §8's pinned data fields — plus the
  *  effect layer's (2.3): `effect_index`, `effects`, `focus`, `symbol`, `version`, `supported`, `expected`, `actual`,
  *  the selector's (3.1, §11.8): `template_index`, `row`, `expression`, `count`, `cardinality`, `max`, `implicit`,
- *  and (3.3) `fix` — the corrected example, a literal call both engines compose byte for byte. */
+ *  (3.3) `fix` — the corrected example, a literal call both engines compose byte for byte — and (4.5) `valid_keys`
+ *  (the keys the object a shape error is about admits) and `anchor` + `parent` (a misplaced anchor's real parent). */
 export interface ErrorOutcome {
   error: {
     code: string; op_index?: number; block?: string; current?: Record<string, unknown>; retriable?: boolean;
@@ -197,6 +198,7 @@ export interface ErrorOutcome {
     template_index?: number; row?: Record<string, unknown>; expression?: string; count?: number;
     cardinality?: string | number; max?: number; implicit?: boolean;
     fix?: string;
+    valid_keys?: string[]; anchor?: string; parent?: string | null;
   };
 }
 
@@ -378,6 +380,12 @@ export function errorOutcome(e: unknown): ErrorOutcome {
   if (typeof d.max === "number") error.max = d.max;
   if (typeof d.implicit === "boolean") error.implicit = d.implicit;
   if (typeof d.fix === "string") error.fix = d.fix;
+  // (4.5) what a shape error's object admits, and where a misplaced anchor really is.
+  if (Array.isArray(d.valid_keys)) error.valid_keys = d.valid_keys as string[];
+  if (typeof d.anchor === "string") {
+    error.anchor = d.anchor;
+    error.parent = typeof d.parent === "string" ? d.parent : null;
+  }
   return { error };
 }
 

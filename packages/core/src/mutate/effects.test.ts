@@ -493,3 +493,184 @@ describe("the fix (§8, 3.3): a literal corrected call", () => {
     expect(failure([{ op: "insert", into: "$new.0", markdown: "x" }]).data.fix).toBeUndefined();
   });
 });
+
+// spec/mutate §8 (4.5): the write vocabulary teaches itself. An agent that
+// guesses a key is told the whole set in the same round trip.
+describe("every shape error about an effect carries a fix or the valid keys (§8, 4.5)", () => {
+  /** One well-formed effect per form (§11.1), over the fixture document. */
+  const WELL_FORMED: Record<string, unknown>[] = [
+    { op: "create", path: "/x.md", markdown: "# X\n", frontmatter: { a: 1 } },
+    { op: "insert", into: "/a.md", at: { after: "b_1" }, markdown: "p", expect: { revision: "r_0" } },
+    { op: "insert", into: { kind: "section", heading_id: "b_2" }, markdown: "p" },
+    { op: "set", target: "/a.md", field: "_frontmatter.k", value: 1 },
+    { op: "set", target: "/a.md", field: "content", value: "# New\n" },
+    { op: "set", target: { kind: "block", _id: "b_1" }, field: "markdown", value: "x", expect: { content_hash: "00" } },
+    { op: "set", target: "b_6", field: "_attrs.checked", value: true },
+    { op: "unset", target: { kind: "document", _path: "a.md" }, field: "_frontmatter.status" },
+    { op: "move", target: "/a.md", to: "/c.md", retarget_inbound: false },
+    { op: "move", targets: ["b_3"], into: "/a.md", at: "end" },
+    { op: "remove", target: "/b.md" },
+    { op: "remove", targets: ["b_3"], expect: { b_3: { content_hash: "00" } } },
+    { op: "split", target: "b_1", at: [3] },
+    { op: "merge", targets: ["b_3", "b_4"], separator: " " },
+    { op: "retarget", repairs: [{ from: "/a.md", to: "/z.md" }], path_glob: "*" },
+  ];
+  const JUNK: unknown[] = [42, null, true, "nonsense", "", [], [1], {}, { kind: "galaxy" }, { zzz: 1 }, -1, 1.5];
+
+  /** Every single-fault variant of `e`: an unknown key, each key dropped, each value replaced by each junk value, and the same one level down. */
+  function variants(e: Record<string, unknown>): unknown[] {
+    const out: unknown[] = [{ ...e, zzz: 1 }, { ...e, content: "x" }, { ...e, after: "b_1" }, { ...e, id: "b_1" }];
+    for (const k of Object.keys(e)) {
+      const { [k]: dropped, ...rest } = e;
+      out.push(rest);
+      for (const j of JUNK) out.push({ ...e, [k]: j });
+      if (typeof dropped === "object" && dropped !== null && !Array.isArray(dropped)) {
+        const inner = dropped as Record<string, unknown>;
+        out.push({ ...e, [k]: { ...inner, zzz: 1 } });
+        for (const ik of Object.keys(inner)) {
+          const { [ik]: _gone, ...innerRest } = inner;
+          out.push({ ...e, [k]: innerRest });
+          for (const j of JUNK) out.push({ ...e, [k]: { ...inner, [ik]: j } });
+        }
+      }
+      if (Array.isArray(dropped)) for (const j of JUNK) out.push({ ...e, [k]: [...dropped, j] });
+    }
+    return out;
+  }
+
+  /** The planner's error for a request, or null when it plans (or fails with something that is not a MutationError). */
+  function outcome(request: { effects: unknown; select?: string; expect?: unknown }): MutationError | null {
+    try {
+      planEffects(store, { repoId, docStore: new NullDocStore(), ...request });
+      return null;
+    } catch (e) {
+      if (e instanceof MutationError) return e;
+      throw e;
+    }
+  }
+
+  const teaches = (e: MutationError): boolean => typeof e.data.fix === "string" || (Array.isArray(e.data.valid_keys) && e.data.valid_keys.length > 0);
+
+  it("a sweep of single-fault effects, plain and under a selector: no shape error leaves the caller guessing", () => {
+    const silent: string[] = [];
+    let shapeErrors = 0;
+    const check = (request: { effects: unknown[]; select?: string; expect?: unknown }): void => {
+      const err = outcome(request);
+      if (err === null || err.code !== "filter_invalid" || err.data.hint !== "arguments") return;
+      shapeErrors++;
+      if (!teaches(err)) silent.push(`${JSON.stringify(request)} → ${err.message}`);
+      // the list is the object's own: strings, and the message ends with the same list in words
+      if (Array.isArray(err.data.valid_keys)) {
+        for (const k of err.data.valid_keys) expect(typeof k).toBe("string");
+        expect(err.message).toContain(` takes ${(err.data.valid_keys as string[]).join(", ")})`);
+      }
+    };
+    for (const base of WELL_FORMED) {
+      for (const v of variants(base)) {
+        check({ effects: [v] });
+        // the same fault after a sound effect (the index in the message and the fix moves)
+        check({ effects: [{ op: "set", target: "/b.md", field: "_frontmatter.k", value: 1 }, v] });
+        check({ select: 'blocks { _id == "b_1" }', effects: [v], expect: { max: 1 } });
+      }
+    }
+    for (const j of [...JUNK, { op: "delete", target: "/a.md" }, { op: "update", target: "b_1" }, { op: 5 }]) check({ effects: [j] });
+    expect(shapeErrors, "the sweep must actually provoke shape errors").toBeGreaterThan(1000);
+    expect(silent, `shape errors with neither a fix nor valid_keys:\n${silent.slice(0, 20).join("\n")}`).toEqual([]);
+  });
+
+  it("valid_keys is the form's row of the vocabulary — or the sub-object's, when the fault is inside one", () => {
+    const keys = (effect: unknown): unknown => failure([effect]).data.valid_keys;
+    expect(keys({ op: "create", path: "/x.md" })).toEqual(["op", "path", "markdown", "frontmatter?"]);
+    expect(keys({ op: "insert", into: "/a.md", markdown: "x", where: "end" })).toEqual(["op", "into", "at?", "markdown", "expect?"]);
+    expect(keys({ op: "move", target: "/a.md" })).toEqual(["op", "target", "to", "retarget_inbound?"]);
+    expect(keys({ op: "move", targets: ["b_3"] })).toEqual(["op", "targets", "into", "at?", "expect?"]);
+    expect(keys({ op: "remove", target: "/a.md", force: true })).toEqual(["op", "target"]);
+    expect(keys({ op: "remove", targets: [] })).toEqual(["op", "targets", "expect?"]);
+    expect(keys({ op: "set", target: { kind: "block", _id: "b_1", doc: "/a.md" }, field: "markdown", value: "x" })).toEqual(["kind", "_id"]);
+    expect(keys({ op: "set", target: { kind: "document", path: "/a.md" }, field: "content", value: "x" })).toEqual(["kind", "_id?", "_path?"]);
+    expect(keys({ op: "insert", into: { kind: "section", heading: "b_2" }, markdown: "x" })).toEqual(["kind", "heading_id"]);
+    expect(keys({ op: "set", target: "b_1", field: "markdown", value: "x", expect: { hash: "00" } })).toEqual(["content_hash?", "parent_children_hash?", "revision?"]);
+    expect(keys({ op: "remove", targets: ["b_3"], expect: { b_3: { revision: "r_0" } } })).toEqual(["content_hash?", "parent_children_hash?"]);
+    expect(keys({ op: "retarget", repairs: [{ from: "/a.md", into: "/z.md" }] })).toEqual(["from", "to"]);
+    expect(keys({ op: "delete", target: "/a.md" })).toEqual(["op"]);
+    expect(keys("insert")).toEqual(["op"]);
+  });
+
+  it("the near misses carry the corrected call, and the corrected call plans", () => {
+    const fixed = (effect: Record<string, unknown>): Plan => {
+      const err = failure([effect]);
+      expect(err.code).toBe("filter_invalid");
+      expect(typeof err.data.fix, err.message).toBe("string");
+      return plan((JSON.parse(err.data.fix as string) as { effects: unknown }).effects);
+    };
+    // complaint 2: `content` on a create is `markdown`
+    expect(fixed({ op: "create", path: "/notes/x.md", content: "---\ntype: note\n---\n\n# X\n" }).effects[0]).toMatchObject({ op: "create", markdown: "---\ntype: note\n---\n\n# X\n" });
+    for (const alias of ["body", "text", "raw", "value", "source"]) expect(fixed({ op: "create", path: "/notes/x.md", [alias]: "# X\n" }).effects[0]).toMatchObject({ markdown: "# X\n" });
+    // complaint 4: `after` as a key of an insert is `at: { after }`
+    expect(fixed({ op: "insert", into: "/a.md", after: "b_1", markdown: "p" }).effects[0]).toMatchObject({ at: { after: "b_1" } });
+    expect(fixed({ op: "insert", into: "/a.md", before: "b_1", text: "p" }).effects[0]).toMatchObject({ at: { before: "b_1" }, markdown: "p" });
+    expect(fixed({ op: "move", targets: ["b_9"], into: "/a.md", before: "b_1" }).effects[0]).toMatchObject({ at: { before: "b_1" } });
+    // no half corrections
+    expect(failure([{ op: "create", path: "/x.md", content: "# X\n", title: "X" }]).data.fix).toBeUndefined();
+    expect(failure([{ op: "create", path: "/x.md", markdown: "# X\n", content: "# Y\n" }]).data.fix).toBeUndefined();
+    expect(failure([{ op: "insert", into: "/a.md", markdown: "p", after: 3 }]).data.fix).toBeUndefined();
+    expect(failure([{ op: "set", target: "/a.md", field: "content", content: "x" }]).data.fix).toBeUndefined();
+  });
+
+  it("complaint 1: set content on a path with no document is doc_missing whose fix is the create", () => {
+    const err = failure([{ op: "set", target: "/notes/new.md", field: "content", value: "---\ntype: note\n---\n\n# New\n", expect: { revision: "r_9" } }]);
+    expect(err.code).toBe("doc_missing");
+    expect(err.message).toContain("create { path, markdown }");
+    expect(JSON.parse(err.data.fix as string)).toEqual({ effects: [{ op: "create", path: "/notes/new.md", markdown: "---\ntype: note\n---\n\n# New\n" }] });
+    expect(plan(JSON.parse(err.data.fix as string).effects).opset.creates[0]!.path).toBe("notes/new.md");
+    // nothing to offer for a document named by id, or for another field
+    expect(failure([{ op: "set", target: { kind: "document", _id: "d_77" }, field: "content", value: "x" }]).data.fix).toBeUndefined();
+    expect(failure([{ op: "set", target: "/notes/new.md", field: "_frontmatter.a", value: 1 }]).data.fix).toBeUndefined();
+    expect(failure([{ op: "insert", into: "/notes/new.md", markdown: "x" }]).data.fix).toBeUndefined();
+  });
+
+  it("complaint 5: a nested anchor resolves under a document `into`; under a block or section `into` the error names the real parent and fixes the call", () => {
+    // b_5 is the list, b_6 / b_7 its tasks
+    const direct = plan([{ op: "insert", into: "/a.md", at: { after: "b_6" }, markdown: "- [ ] between" }]);
+    const parentForm = plan([{ op: "insert", into: "b_5", at: { after: "b_6" }, markdown: "- [ ] between" }]);
+    expect(direct.opset.ops).toEqual(parentForm.opset.ops);
+    expect(direct.opset.ops[0]).toMatchObject({ op: "insert", to: { parent: "b_5", at: { after: "b_6" } } });
+    expect(direct.preview!.diffs["a.md"]!.after).toContain("- [ ] alpha\n- [ ] between\n- [ ] beta\n");
+    expect(direct.preview!.summary).toEqual(["insert 1 block after task b_6 in /a.md"]);
+    // a top-level anchor is unchanged
+    expect(plan([{ op: "insert", into: "/a.md", at: { before: "b_3" }, markdown: "p" }]).opset.ops[0]).toMatchObject({ doc: "d_0", to: { parent: { doc: true } } });
+
+    const section = failure([{ op: "insert", into: { kind: "section", heading_id: "b_2" }, at: { after: "b_6" }, markdown: "- [ ] between" }]);
+    expect(section.code).toBe("target_missing");
+    expect(section.data).toMatchObject({ anchor: "b_6", parent: "b_5", _path: "/a.md", effect_index: 0 });
+    expect(section.message).toContain("b_5");
+    const fix = JSON.parse(section.data.fix as string) as { effects: unknown[] };
+    expect(fix.effects[0]).toEqual({ op: "insert", into: { kind: "block", _id: "b_5" }, at: { after: "b_6" }, markdown: "- [ ] between" });
+    expect(plan(fix.effects).opset.ops).toEqual(parentForm.opset.ops);
+
+    const topLevel = failure([{ op: "insert", into: "b_5", at: { after: "b_3" }, markdown: "p" }]);
+    expect(topLevel.data).toMatchObject({ anchor: "b_3", parent: null });
+    expect((JSON.parse(topLevel.data.fix as string) as { effects: { into: unknown }[] }).effects[0]!.into).toBe("/a.md");
+
+    // the document a document `into` names is the one claim it makes
+    const elsewhere = failure([{ op: "insert", into: "/b.md", at: { after: "b_6" }, markdown: "x" }]);
+    expect(elsewhere.data).toMatchObject({ anchor: "b_6", parent: "b_5", _path: "/a.md" });
+    // an anchor nothing knows is the kernel's bare error
+    const unknown = failure([{ op: "insert", into: "/a.md", at: { after: "b_404" }, markdown: "x" }]);
+    expect(unknown.code).toBe("target_missing");
+    expect(unknown.data.anchor).toBeUndefined();
+    expect(unknown.data.fix).toBeUndefined();
+  });
+
+  it("a block an EARLIER effect nested is found in the planner's tree, not the stale row", () => {
+    // effect 0 adds a task to the list b_5; effect 1 anchors on it under the DOCUMENT — no row has it yet
+    const first = plan([{ op: "insert", into: "b_5", markdown: "- [ ] gamma" }]);
+    const gamma = first.preview!.results[0]!.ids[0]!;
+    expect(gamma).toMatch(/^\$new\.\d+$/);
+    const p = plan([
+      { op: "insert", into: "b_5", markdown: "- [ ] gamma" },
+      { op: "insert", into: "/a.md", at: { after: gamma }, markdown: "- [ ] delta" },
+    ]);
+    expect(p.preview!.diffs["a.md"]!.after).toContain("- [ ] beta\n- [ ] gamma\n- [ ] delta\n");
+  });
+});

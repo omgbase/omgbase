@@ -687,12 +687,147 @@ impl Store {
         Ok((doc_id, block_id))
     }
 
-    fn placement(&self, p: &Planning<'_>, into: &Target, at: &At) -> Result<To> {
-        let at = self.kernel_at(p, at)?;
+    /// The rooted path of a document (a created one by its symbol).
+    fn doc_path_of(&self, p: &Planning<'_>, doc_id: &str) -> String {
+        if fx::parse_new_symbol(doc_id).is_some()
+            && let Some(c) = p.creates.iter().find(|c| c.symbol == doc_id)
+        {
+            return reference_path(&c.path);
+        }
+        let path = doc_base(&self.conn, doc_id).ok().flatten().map(|b| b.path);
+        reference_path(path.as_deref().unwrap_or(doc_id))
+    }
+
+    /// Where a block sits (4.5): its document and its parent block (`None`
+    /// at the top level) — from the runner's tree when the document is
+    /// loaded (so an earlier effect's structure counts, and a `$new.n` is
+    /// found), else from the live row. `None` for an id nothing knows.
+    fn block_place(&self, p: &Planning<'_>, id: &str) -> Option<(String, Option<String>)> {
+        if let Some((d, _)) = p.runner.locate_loaded(id) {
+            let path = d.doc.locate(id)?;
+            let parent = d
+                .doc
+                .owner_of(&path[..path.len().saturating_sub(1)])
+                .map(|b| b.id.clone());
+            return Some((d.doc.doc_id.clone(), parent));
+        }
+        if fx::parse_new_symbol(id).is_some() {
+            return None;
+        }
+        self.conn
+            .query_row(
+                "SELECT doc_id, parent_block FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// §11.3 (4.5): under a DOCUMENT `into`, an anchor names its own place —
+    /// a document target makes no claim about the container, and a block id
+    /// is unique, so `into: "/a.md", at: { after: X }` lands right after X
+    /// wherever X sits in that document. The parent the op is placed under:
+    /// X's parent block when X is nested in this document, else `None` (the
+    /// top level — where the kernel then finds X, or reports it missing).
+    fn nested_anchor_parent(
+        &self,
+        p: &Planning<'_>,
+        into: &Target,
+        at: &At,
+    ) -> Result<Option<String>> {
+        let (Target::Document { id: Some(doc), .. }, At::Before(anchor) | At::After(anchor)) =
+            (into, at)
+        else {
+            return Ok(None);
+        };
+        let Some((doc_id, parent)) = self.block_place(p, anchor) else {
+            return Ok(None);
+        };
+        // The one thing a document `into` does claim is the document: an
+        // anchor in another one is refused here, for a `move` too (whose
+        // kernel op would follow the anchor into its own document, §2.3).
+        if doc_id != *doc {
+            return Err(self.misplaced_anchor(p, anchor, &doc_id, parent.as_deref(), Map::new()));
+        }
+        Ok(parent)
+    }
+
+    /// The `target_missing` of an anchor that is a block, but not where
+    /// `into` says (§8, 4.5): `anchor`, its real `parent` (a block id, `null`
+    /// at the top level) and its document's rooted `_path`, added to `data`
+    /// (the kernel error's own, when it raised one); the surface spells the
+    /// `fix` from them (`into` = that parent).
+    fn misplaced_anchor(
+        &self,
+        p: &Planning<'_>,
+        anchor: &str,
+        doc_id: &str,
+        parent: Option<&str>,
+        mut data: Map<String, Value>,
+    ) -> Error {
+        let path = self.doc_path_of(p, doc_id);
+        let place = match parent {
+            None => format!("at the top level of {path}"),
+            Some(parent) => format!("a child of {parent} in {path}"),
+        };
+        let into = Value::String(parent.unwrap_or(&path).to_owned());
+        data.insert("anchor".to_owned(), json!(anchor));
+        data.insert("parent".to_owned(), json!(parent));
+        data.insert("_path".to_owned(), json!(path));
+        merr(
+            ErrorCode::TargetMissing,
+            format!("anchor {anchor} is not a child of `into`: it is {place} — write into: {into}"),
+            Value::Object(data),
+        )
+    }
+
+    /// §8 (4.5): an anchor the kernel did not find among the container's
+    /// children (`target_missing`) that IS a block somewhere — nested
+    /// deeper, in another container, in another document. The error then
+    /// says where ([`Store::misplaced_anchor`]); an anchor nothing knows
+    /// keeps the kernel's error as it is.
+    fn anchor_elsewhere(&self, p: &Planning<'_>, at: &At, err: Error) -> Error {
+        let (Error::Mutation(m), At::Before(anchor) | At::After(anchor)) = (&err, at) else {
+            return err;
+        };
+        if m.code != ErrorCode::TargetMissing
+            || m.data.contains_key("symbol")
+            || m.data.contains_key("anchor")
+        {
+            return err;
+        }
+        match self.block_place(p, anchor) {
+            Some((doc_id, parent)) => {
+                self.misplaced_anchor(p, anchor, &doc_id, parent.as_deref(), m.data.clone())
+            }
+            None => err,
+        }
+    }
+
+    /// Push a placed op (`insert`, a block `move`); a missing anchor that
+    /// exists elsewhere is reported with its real parent
+    /// ([`Store::anchor_elsewhere`]).
+    fn push_placed(&mut self, p: &mut Planning<'_>, at: &At, op: Op) -> Result<()> {
+        match self.push_op(p, op) {
+            Err(e) => Err(self.anchor_elsewhere(p, at, e)),
+            ok => ok,
+        }
+    }
+
+    fn placement(&self, p: &Planning<'_>, into: &Target, written: &At) -> Result<To> {
+        let at = self.kernel_at(p, written)?;
         Ok(match into {
-            Target::Document { .. } => To {
-                parent: Parent::Doc,
-                at,
+            Target::Document { .. } => match self.nested_anchor_parent(p, into, written)? {
+                Some(parent) => To {
+                    parent: Parent::Block(self.kernel_block_id(p, &parent)?),
+                    at,
+                },
+                None => To {
+                    parent: Parent::Doc,
+                    at,
+                },
             },
             Target::Section { heading_id } => To {
                 parent: Parent::Section {
@@ -771,22 +906,29 @@ impl Store {
         Ok(())
     }
 
+    /// `preconditions.parents[]` of an `insert` / block `move` that pins its
+    /// destination: the `into` block, or under a document `into` the
+    /// anchor's real parent (4.5, [`Store::nested_anchor_parent`]).
     fn record_parent_pin(
+        &self,
         p: &mut Planning<'_>,
         doc: &str,
         into: &Target,
+        at: &At,
         expect: Option<&fx::EffectExpect>,
-    ) {
+    ) -> Result<()> {
         if let Some(h) = expect.and_then(|e| e.parent_children_hash.as_deref()) {
+            let parent = match into {
+                Target::Block { id } => Some(id.clone()),
+                _ => self.nested_anchor_parent(p, into, at)?,
+            };
             p.parents.push(ParentPrecondition {
                 doc: doc.to_owned(),
-                parent: match into {
-                    Target::Block { id } => Some(id.clone()),
-                    _ => None,
-                },
+                parent,
                 parent_children_hash: h.to_owned(),
             });
         }
+        Ok(())
     }
 
     /// The kernel `expect` of an `insert`/`move`: the destination-parent CAS
@@ -1105,12 +1247,15 @@ impl Store {
             } => {
                 let doc = self.target_doc(p, into)?;
                 self.check_revision(&doc, expect.as_ref())?;
-                Self::record_parent_pin(p, &doc, into, expect.as_ref());
+                self.record_parent_pin(p, &doc, into, at, expect.as_ref())?;
                 let to = self.placement(p, into, at)?;
-                self.push_op(
+                // `doc` names the document only for its own top level: a
+                // nested anchor places under its parent block (4.5).
+                self.push_placed(
                     p,
+                    at,
                     Op::Insert {
-                        doc: matches!(into, Target::Document { .. }).then(|| doc.clone()),
+                        doc: matches!(to.parent, Parent::Doc).then(|| doc.clone()),
                         to,
                         markdown: markdown.clone(),
                         expect: Self::order_expect(expect.as_ref()),
@@ -1136,21 +1281,24 @@ impl Store {
             } => {
                 let dst = self.target_doc(p, into)?;
                 self.check_revision(&dst, expect.as_ref())?;
-                Self::record_parent_pin(p, &dst, into, expect.as_ref());
+                self.record_parent_pin(p, &dst, into, at, expect.as_ref())?;
                 let to = self.placement(p, into, at)?;
                 let blocks = targets
                     .iter()
                     .map(|id| self.kernel_block_id(p, id))
                     .collect::<Result<Vec<_>>>()?;
                 // `doc` names the destination when `into` is a document
-                // (§2.3, 3.0): a top-level start/end would otherwise mean the
-                // SOURCE document's.
-                self.push_op(
+                // (§2.3, 3.0) and the placement is its top level: a
+                // top-level start/end would otherwise mean the SOURCE
+                // document's.
+                let doc = matches!(to.parent, Parent::Doc).then(|| dst.clone());
+                self.push_placed(
                     p,
+                    at,
                     Op::Move {
                         blocks,
                         to,
-                        doc: matches!(into, Target::Document { .. }).then(|| dst.clone()),
+                        doc,
                         expect: Self::order_expect(expect.as_ref()),
                     },
                 )?;
@@ -1696,6 +1844,17 @@ impl Store {
             Err(Error::Mutation(mut m)) => {
                 m.data.entry("effect_index".to_owned()).or_insert(json!(i));
                 Err(Error::Mutation(m))
+            }
+            // (4.5) a shape refusal the lowering raised (a value's type, a
+            // target of the wrong kind) names the effect and its form's
+            // keys like the shape check's (§8 `valid_keys`).
+            Err(Error::InvalidEffect(message)) => {
+                let form = effect.form();
+                Err(Error::InvalidEffectAt {
+                    message: message + &form.takes(),
+                    effect_index: Some(i),
+                    valid_keys: form.keys(),
+                })
             }
             other => other,
         }

@@ -69,6 +69,60 @@ export type Effect =
 
 export const EFFECT_OPS = ["create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget"] as const;
 
+/**
+ * The keys each effect form admits (§11.1), in the vocabulary's order — an
+ * optional key carries a trailing `?`. The ONE table: the shape check reads
+ * its `onlyKeys` lists from it, a shape error reports it as `valid_keys`
+ * (4.5, §8), and `query_syntax { section: "effects" }` is pinned to it and to
+ * the §11.1 block of `spec/mutate/README.md` (`mcp/effects-reference.test.ts`).
+ * `move` and `remove` have two forms, told apart by `targets` (blocks) vs
+ * `target` (a document).
+ */
+export const EFFECT_KEYS = {
+  create: ["op", "path", "markdown", "frontmatter?"],
+  insert: ["op", "into", "at?", "markdown", "expect?"],
+  set: ["op", "target", "field", "value", "expect?"],
+  unset: ["op", "target", "field", "expect?"],
+  "move:document": ["op", "target", "to", "retarget_inbound?"],
+  "move:blocks": ["op", "targets", "into", "at?", "expect?"],
+  "remove:document": ["op", "target"],
+  "remove:blocks": ["op", "targets", "expect?"],
+  split: ["op", "target", "at", "expect?"],
+  merge: ["op", "targets", "separator?", "expect?"],
+  retarget: ["op", "repairs", "path_glob?"],
+} as const satisfies Record<string, readonly string[]>;
+
+export type EffectForm = keyof typeof EFFECT_KEYS;
+
+/** The keys of the sub-objects an effect holds (§11.1), spelled like `EFFECT_KEYS`. */
+export const TARGET_KEYS = {
+  document: ["kind", "_id?", "_path?"],
+  block: ["kind", "_id"],
+  node: ["kind", "_id"],
+  section: ["kind", "heading_id"],
+} as const;
+export const EXPECT_KEYS = ["content_hash?", "parent_children_hash?", "revision?"] as const;
+export const EXPECT_ENTRY_KEYS = ["content_hash?", "parent_children_hash?"] as const;
+export const REPAIR_KEYS = ["from", "to"] as const;
+
+/** The form an effect object is checked as: its `op`, and for `move`/`remove` whether it names `targets`. `null` for an unknown `op`. */
+export function effectForm(v: { op?: unknown; targets?: unknown }): EffectForm | null {
+  if (typeof v.op !== "string" || !(EFFECT_OPS as readonly string[]).includes(v.op)) return null;
+  if (v.op === "move" || v.op === "remove") return `${v.op}:${"targets" in v ? "blocks" : "document"}` as EffectForm;
+  return v.op as EffectForm;
+}
+
+/** `valid_keys` of an effect (4.5, §8): its form's keys; `["op"]` when the `op` itself is missing or unknown. */
+export function effectValidKeys(v: unknown): readonly string[] {
+  const form = isRecord(v) ? effectForm(v) : null;
+  return form === null ? ["op"] : EFFECT_KEYS[form];
+}
+
+/** A key list without its `?` marks — what `onlyKeys` admits. */
+function bare(keys: readonly string[]): string[] {
+  return keys.map((k) => (k.endsWith("?") ? k.slice(0, -1) : k));
+}
+
 /** `$new.<n>`: an identity an earlier effect of the same request creates (§11.1). */
 export const NEW_SYMBOL_RE = /^\$new\.(0|[1-9][0-9]*)$/;
 export function isNewSymbol(s: string): boolean {
@@ -206,9 +260,58 @@ function invertedExpectMap(v: Record<string, unknown>, here: string, f: EffectFi
 /** §8 (3.4): the block-field misspellings the fix corrects to `markdown`. */
 const BLOCK_FIELD_ALIASES: ReadonlySet<string> = new Set(["text", "content", "body", "raw"]);
 
-function onlyKeys(e: Record<string, unknown>, allowed: readonly string[], here: string): void {
+/**
+ * §8 (4.5): the misspelled keys the shape check corrects. `markdown` is what
+ * a `create` and an `insert` write (`content`, `body`, `text`, `raw`, `value`
+ * and `source` are the guesses); an anchor given as a KEY of an `insert` or a
+ * block `move` — `after: <id>` / `before: <id>` — is `at: { after: <id> }`.
+ */
+const MARKDOWN_ALIASES: ReadonlySet<string> = new Set(["content", "body", "text", "raw", "value", "source"]);
+
+/**
+ * The corrected effect of an unknown-key error, or `null` when the table does
+ * not cover EVERY unknown key (a half-corrected call is no fix): each alias
+ * moves to the key it meant, provided that key is not already written and the
+ * value has the type it takes (a string).
+ */
+function unknownKeyFix(form: EffectForm, written: Record<string, unknown>, extra: string[]): Record<string, unknown> | null {
+  const out: Record<string, unknown> = { ...written };
+  for (const k of extra) {
+    const v = written[k];
+    if (typeof v !== "string") return null;
+    if ((form === "create" || form === "insert") && MARKDOWN_ALIASES.has(k) && !("markdown" in out)) {
+      delete out[k];
+      out.markdown = v;
+    } else if ((form === "insert" || form === "move:blocks") && (k === "after" || k === "before") && !("at" in out)) {
+      delete out[k];
+      out.at = { [k]: v };
+    } else {
+      return null;
+    }
+  }
+  return out;
+}
+
+/** `(insert takes op, into, at?, markdown, expect?)` — the tail every shape error of an effect ends with (4.5). */
+function takes(what: string, keys: readonly string[]): string {
+  return ` (${what} takes ${keys.join(", ")})`;
+}
+
+/**
+ * Refuse a key the object does not admit (§11.1). The error lists the keys it
+ * does (`valid_keys`, 4.5); `what` names the object in the message (`insert`,
+ * `a block target`). For an effect itself (`fixable`: its form and fixer) the
+ * near misses of `unknownKeyFix` carry the corrected call.
+ */
+function onlyKeys(e: Record<string, unknown>, keys: readonly string[], here: string, what: string, fixable?: { form: EffectForm; f: EffectFixer | undefined }): void {
+  const allowed = bare(keys);
   const extra = Object.keys(e).filter((k) => !allowed.includes(k));
-  if (extra.length > 0) throw effectInvalid(`${here}: unknown key${extra.length > 1 ? "s" : ""} ${extra.map((k) => `\`${k}\``).join(", ")}`);
+  if (extra.length === 0) return;
+  const message = `${here}: unknown key${extra.length > 1 ? "s" : ""} ${extra.map((k) => `\`${k}\``).join(", ")}${takes(what, keys)}`;
+  const f = fixable?.f;
+  const corrected = fixable !== undefined && f !== undefined ? unknownKeyFix(fixable.form, f.written, extra) : null;
+  const fix = corrected !== null && f !== undefined ? f.build(corrected) : undefined;
+  throw new MutationError("filter_invalid", message, { reason: message, hint: "arguments", valid_keys: [...keys], ...(fix !== undefined ? { fix } : {}) });
 }
 
 function requireString(e: Record<string, unknown>, key: string, here: string): string {
@@ -274,20 +377,20 @@ export function validateTarget(v: unknown, here: string, kinds: readonly EffectT
   if (!(kinds as readonly string[]).includes(v.kind)) throw effectInvalid(`${here}: \`kind\` must be one of ${kinds.join(", ")} (got "${v.kind}")`);
   switch (v.kind as Exclude<EffectTarget["kind"], "symbol">) {
     case "document": {
-      onlyKeys(v, ["kind", "_id", "_path"], here);
+      onlyKeys(v, TARGET_KEYS.document, here, "a document target");
       const id = optionalString(v, "_id", here);
       const path = optionalString(v, "_path", here);
       if (id === undefined && path === undefined) throw effectInvalid(`${here}: a document target needs \`_id\` or \`_path\``);
       return { kind: "document", ...(id !== undefined ? { _id: id } : {}), ...(path !== undefined ? { _path: path } : {}) };
     }
     case "block":
-      onlyKeys(v, ["kind", "_id"], here);
+      onlyKeys(v, TARGET_KEYS.block, here, "a block target");
       return { kind: "block", _id: requireString(v, "_id", here) };
     case "node":
-      onlyKeys(v, ["kind", "_id"], here);
+      onlyKeys(v, TARGET_KEYS.node, here, "a node target");
       return { kind: "node", _id: requireString(v, "_id", here) };
     case "section":
-      onlyKeys(v, ["kind", "heading_id"], here);
+      onlyKeys(v, TARGET_KEYS.section, here, "a section target");
       return { kind: "section", heading_id: requireString(v, "heading_id", here) };
   }
 }
@@ -312,7 +415,7 @@ function validateExpect(v: unknown, here: string, f?: EffectFixer): EffectExpect
   if (v === undefined) return undefined;
   if (!isRecord(v)) throw effectInvalid(`${here}: \`expect\` must be an object`);
   if ("max" in v) throw effectLevelMax(v, here, f);
-  onlyKeys(v, ["content_hash", "parent_children_hash", "revision"], `${here}.expect`);
+  onlyKeys(v, EXPECT_KEYS, `${here}.expect`, "an effect's expect");
   const out: EffectExpect = {};
   for (const k of ["content_hash", "parent_children_hash", "revision"] as const) {
     const s = optionalString(v, k, `${here}.expect`);
@@ -330,7 +433,7 @@ function validateExpectMap(v: unknown, here: string, f?: EffectFixer): EffectExp
   const out: EffectExpectMap = {};
   for (const [id, x] of Object.entries(v)) {
     if (!isRecord(x)) throw effectInvalid(`${here}.expect[${JSON.stringify(id)}]: must be an object`);
-    onlyKeys(x, ["content_hash", "parent_children_hash"], `${here}.expect[${JSON.stringify(id)}]`);
+    onlyKeys(x, EXPECT_ENTRY_KEYS, `${here}.expect[${JSON.stringify(id)}]`, "a block's expect");
     const e: Expect = {};
     const ch = optionalString(x, "content_hash", `${here}.expect[${JSON.stringify(id)}]`);
     const pch = optionalString(x, "parent_children_hash", `${here}.expect[${JSON.stringify(id)}]`);
@@ -341,22 +444,53 @@ function validateExpectMap(v: unknown, here: string, f?: EffectFixer): EffectExp
   return out;
 }
 
-/** The shape check of one effect (§11.1). `i` names it in the message (`effects[i]`); `fix` (3.4) lets the shape errors of §8 carry their corrected call. */
+/**
+ * The shape check of one effect (§11.1). `i` names it in the message
+ * (`effects[i]`); `fix` (3.4) lets the shape errors of §8 carry their
+ * corrected call. Every refusal names what the object at fault admits (4.5,
+ * §8): `valid_keys` — the sub-object's when `onlyKeys` raised it, else the
+ * effect form's (`["op"]` when the `op` itself is the mistake).
+ */
 export function validateEffect(v: unknown, i: number, fix?: ShapeFixContext): Effect {
+  try {
+    return checkEffect(v, i, fix);
+  } catch (err) {
+    throw withValidKeys(err, v);
+  }
+}
+
+/** Give a shape error (`filter_invalid`, `hint: "arguments"`) its `valid_keys` when it has none: the keys of `effect`'s form, named in the message too. */
+export function withValidKeys(err: unknown, effect: unknown): unknown {
+  if (!(err instanceof MutationError) || err.code !== "filter_invalid" || err.data.hint !== "arguments" || err.data.valid_keys !== undefined) return err;
+  const keys = effectValidKeys(effect);
+  const form = isRecord(effect) ? effectForm(effect) : null;
+  const tail = takes(form === null ? "an effect" : formWords(form), keys);
+  const message = err.message + tail;
+  const out = new MutationError("filter_invalid", message, { ...err.data, reason: message, valid_keys: [...keys] });
+  return out;
+}
+
+/** A form in words, as the messages name it: `insert`, `a block move`, `a document remove`. */
+function formWords(form: EffectForm): string {
+  const [op, kind] = form.split(":");
+  return kind === undefined ? op! : `a ${kind === "blocks" ? "block" : "document"} ${op}`;
+}
+
+function checkEffect(v: unknown, i: number, fix?: ShapeFixContext): Effect {
   const here = `effects[${i}]`;
   if (!isRecord(v) || typeof v.op !== "string") throw effectInvalid(`${here}: an effect is an object whose \`op\` is one of ${EFFECT_OPS.join("/")}`);
   if (!(EFFECT_OPS as readonly string[]).includes(v.op)) throw effectInvalid(`${here}: \`op\` must be one of ${EFFECT_OPS.join("/")} (got "${v.op}")`);
   const f = fixerFor(fix, i, v);
   switch (v.op as Effect["op"]) {
     case "create": {
-      onlyKeys(v, ["op", "path", "markdown", "frontmatter"], here);
+      onlyKeys(v, EFFECT_KEYS["create"], here, "create", { form: "create", f });
       const path = requireString(v, "path", here);
       const markdown = requireString(v, "markdown", here);
       if (v.frontmatter !== undefined && !isRecord(v.frontmatter)) throw effectInvalid(`${here}: \`frontmatter\` must be an object`);
       return { op: "create", path, markdown, ...(v.frontmatter !== undefined ? { frontmatter: v.frontmatter as Record<string, unknown> } : {}) };
     }
     case "insert": {
-      onlyKeys(v, ["op", "into", "at", "markdown", "expect"], here);
+      onlyKeys(v, EFFECT_KEYS["insert"], here, "insert", { form: "insert", f });
       const into = validateTarget(v.into, `${here}.into`, ["document", "section", "block"]);
       const at = validateAt(v.at, here, into, f);
       const markdown = requireString(v, "markdown", here);
@@ -364,7 +498,7 @@ export function validateEffect(v: unknown, i: number, fix?: ShapeFixContext): Ef
       return { op: "insert", into, ...(at !== undefined ? { at } : {}), markdown, ...(expect !== undefined ? { expect } : {}) };
     }
     case "set": {
-      onlyKeys(v, ["op", "target", "field", "value", "expect"], here);
+      onlyKeys(v, EFFECT_KEYS["set"], here, "set", { form: "set", f });
       const target = validateTarget(v.target, `${here}.target`, ["document", "block", "node"]);
       const field = requireString(v, "field", here);
       if (!("value" in v)) throw effectInvalid(`${here}: \`value\` is required`);
@@ -373,7 +507,7 @@ export function validateEffect(v: unknown, i: number, fix?: ShapeFixContext): Ef
       return { op: "set", target, field, value: v.value, ...(expect !== undefined ? { expect } : {}) };
     }
     case "unset": {
-      onlyKeys(v, ["op", "target", "field", "expect"], here);
+      onlyKeys(v, EFFECT_KEYS["unset"], here, "unset", { form: "unset", f });
       const target = validateTarget(v.target, `${here}.target`, ["document"]);
       const field = requireString(v, "field", here);
       if (target.kind !== "symbol") checkField(target.kind, field, here, "unset");
@@ -382,14 +516,14 @@ export function validateEffect(v: unknown, i: number, fix?: ShapeFixContext): Ef
     }
     case "move": {
       if ("targets" in v) {
-        onlyKeys(v, ["op", "targets", "into", "at", "expect"], here);
+        onlyKeys(v, EFFECT_KEYS["move:blocks"], here, "a block move", { form: "move:blocks", f });
         const targets = validateTargets(v.targets, here);
         const into = validateTarget(v.into, `${here}.into`, ["document", "section", "block"]);
         const at = validateAt(v.at, here, into, f);
         const expect = validateExpect(v.expect, here, f);
         return { op: "move", targets, into, ...(at !== undefined ? { at } : {}), ...(expect !== undefined ? { expect } : {}) };
       }
-      onlyKeys(v, ["op", "target", "to", "retarget_inbound"], here);
+      onlyKeys(v, EFFECT_KEYS["move:document"], here, "a document move", { form: "move:document", f });
       const target = validateTarget(v.target, `${here}.target`, ["document"]);
       const to = requireString(v, "to", here);
       if (v.retarget_inbound !== undefined && typeof v.retarget_inbound !== "boolean") throw effectInvalid(`${here}: \`retarget_inbound\` must be a boolean`);
@@ -397,34 +531,34 @@ export function validateEffect(v: unknown, i: number, fix?: ShapeFixContext): Ef
     }
     case "remove": {
       if ("targets" in v) {
-        onlyKeys(v, ["op", "targets", "expect"], here);
+        onlyKeys(v, EFFECT_KEYS["remove:blocks"], here, "a block remove", { form: "remove:blocks", f });
         const targets = validateTargets(v.targets, here);
         const expect = validateExpectMap(v.expect, here, f);
         return { op: "remove", targets, ...(expect !== undefined ? { expect } : {}) };
       }
-      onlyKeys(v, ["op", "target"], here);
+      onlyKeys(v, EFFECT_KEYS["remove:document"], here, "a document remove", { form: "remove:document", f });
       return { op: "remove", target: validateTarget(v.target, `${here}.target`, ["document"]) };
     }
     case "split": {
-      onlyKeys(v, ["op", "target", "at", "expect"], here);
+      onlyKeys(v, EFFECT_KEYS["split"], here, "split", { form: "split", f });
       const target = validateTarget(v.target, `${here}.target`, ["block"]);
       if (!Array.isArray(v.at) || v.at.some((n) => typeof n !== "number" || !Number.isInteger(n) || n < 0)) throw effectInvalid(`${here}: \`at\` must be an array of byte offsets`);
       const expect = validateExpect(v.expect, here, f);
       return { op: "split", target, at: v.at as number[], ...(expect !== undefined ? { expect } : {}) };
     }
     case "merge": {
-      onlyKeys(v, ["op", "targets", "separator", "expect"], here);
+      onlyKeys(v, EFFECT_KEYS["merge"], here, "merge", { form: "merge", f });
       const targets = validateTargets(v.targets, here);
       const separator = optionalString(v, "separator", here);
       const expect = validateExpectMap(v.expect, here, f);
       return { op: "merge", targets, ...(separator !== undefined ? { separator } : {}), ...(expect !== undefined ? { expect } : {}) };
     }
     case "retarget": {
-      onlyKeys(v, ["op", "repairs", "path_glob"], here);
+      onlyKeys(v, EFFECT_KEYS["retarget"], here, "retarget", { form: "retarget", f });
       if (!Array.isArray(v.repairs)) throw effectInvalid(`${here}: \`repairs\` must be an array of { from, to }`);
       const repairs = v.repairs.map((r, j) => {
         if (!isRecord(r)) throw effectInvalid(`${here}.repairs[${j}]: must be { from, to }`);
-        onlyKeys(r, ["from", "to"], `${here}.repairs[${j}]`);
+        onlyKeys(r, REPAIR_KEYS, `${here}.repairs[${j}]`, "a repair");
         return { from: requireString(r, "from", `${here}.repairs[${j}]`), to: requireString(r, "to", `${here}.repairs[${j}]`) };
       });
       const path_glob = optionalString(v, "path_glob", here);
@@ -859,17 +993,102 @@ function nodeBlock(ctx: LoweringContext, nodeId: string): { docId: string; block
   return { docId: row.doc_id, blockId: row.block_id };
 }
 
+/**
+ * Where a block sits (4.5): its document and its parent block (`null` at the
+ * top level) — from the planner's tree when the document is loaded (so an
+ * earlier effect's structure counts, and a `$new.n` is found), else from the
+ * live row. `null` for an id nothing knows.
+ */
+function blockPlace(ctx: LoweringContext, id: string): { docId: string; parent: string | null } | null {
+  const inTree = ctx.planner.locateLoaded(id);
+  if (inTree) {
+    const d = ctx.planner.ensureDoc(inTree.docId);
+    if (d.children === inTree.siblings) return { docId: inTree.docId, parent: null };
+    const find = (blocks: MutBlock[]): string | null => {
+      for (const b of blocks) {
+        if (b.children === inTree.siblings) return b.id;
+        const deeper = find(b.children);
+        if (deeper !== null) return deeper;
+      }
+      return null;
+    };
+    return { docId: inTree.docId, parent: find(d.children) };
+  }
+  if (isNewSymbol(id)) return null;
+  const row = ctx.store.db.prepare("SELECT doc_id, parent_block FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(id) as { doc_id: string; parent_block: string | null } | undefined;
+  return row ? { docId: row.doc_id, parent: row.parent_block } : null;
+}
+
+/**
+ * §11.3 (4.5): under a DOCUMENT `into`, an anchor names its own place — a
+ * document target makes no claim about the container, and a block id is
+ * unique, so `into: "/a.md", at: { after: X }` lands right after X wherever X
+ * sits in that document. The parent the op is placed under: X's parent block
+ * when X is nested in this document, else `null` (the top level — where the
+ * kernel then finds X, or reports it missing).
+ */
+function nestedAnchorParent(ctx: LoweringContext, into: ResolvedTarget, at: EffectAt): string | null {
+  if (into.kind !== "document" || at === "start" || at === "end") return null;
+  const anchor = "before" in at ? at.before : at.after;
+  const place = blockPlace(ctx, anchor);
+  if (place === null) return null;
+  // The one thing a document `into` does claim is the document: an anchor in
+  // another one is refused here, for a `move` too (whose kernel op would
+  // follow the anchor into its own document, §2.3).
+  if (place.docId !== into._id) throw misplacedAnchor(ctx, anchor, place);
+  return place.parent;
+}
+
 function placement(ctx: LoweringContext, into: ResolvedTarget, at: EffectAt): To {
   const kernel = kernelAt(ctx, at);
   switch (into.kind) {
-    case "document":
-      return { parent: { doc: true }, at: kernel };
+    case "document": {
+      const nested = nestedAnchorParent(ctx, into, at);
+      return nested !== null ? { parent: kernelBlockId(ctx, nested), at: kernel } : { parent: { doc: true }, at: kernel };
+    }
     case "section":
       return { parent: { heading: kernelBlockId(ctx, into.heading_id), scope: "section" }, at: kernel };
     case "block":
       return { parent: kernelBlockId(ctx, into._id), at: kernel };
     case "node":
       throw effectInvalid("a node is not a placement target");
+  }
+}
+
+/** `true` when a placement is the document's own top level (the kernel op then names its `doc`). */
+function isDocPlacement(to: To): boolean {
+  return typeof to.parent === "object" && "doc" in to.parent;
+}
+
+/**
+ * §8 (4.5): an anchor the kernel did not find among the container's children
+ * (`target_missing`) that IS a block somewhere — nested deeper, in another
+ * container, in another document. The error then says where: `anchor`, its
+ * real `parent` (a block id, `null` at the top level) and its document's
+ * rooted `_path`; the planner spells the `fix` from them (`into` = that
+ * parent). An anchor nothing knows keeps the kernel's error as it is.
+ */
+function anchorElsewhere(ctx: LoweringContext, at: EffectAt, err: unknown): unknown {
+  if (!(err instanceof MutationError) || err.code !== "target_missing" || err.data.symbol !== undefined || err.data.anchor !== undefined || at === "start" || at === "end") return err;
+  const anchor = "before" in at ? at.before : at.after;
+  const place = blockPlace(ctx, anchor);
+  return place === null ? err : misplacedAnchor(ctx, anchor, place, err.data);
+}
+
+/** The `target_missing` of an anchor that is a block, but not where `into` says (§8, 4.5). */
+function misplacedAnchor(ctx: LoweringContext, anchor: string, place: { docId: string; parent: string | null }, data: Record<string, unknown> = {}): MutationError {
+  const path = docPathOf(ctx, place.docId);
+  const where = place.parent === null ? `at the top level of ${path}` : `a child of ${place.parent} in ${path}`;
+  const into = JSON.stringify(place.parent === null ? path : place.parent);
+  return new MutationError("target_missing", `anchor ${anchor} is not a child of \`into\`: it is ${where} — write into: ${into}`, { ...data, anchor, parent: place.parent, _path: path });
+}
+
+/** Push a placed op (`insert`, a block `move`); a missing anchor that exists elsewhere is reported with its real parent (`anchorElsewhere`). */
+function pushPlaced(ctx: LoweringContext, at: EffectAt, op: Op): void {
+  try {
+    pushOp(ctx, op);
+  } catch (err) {
+    throw anchorElsewhere(ctx, at, err);
   }
 }
 
@@ -914,9 +1133,9 @@ function kernelExpect(e: EffectExpect | undefined, contentHash?: string): Expect
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function recordParentPin(ctx: LoweringContext, doc: string, into: ResolvedTarget, expect: EffectExpect | undefined): void {
+function recordParentPin(ctx: LoweringContext, doc: string, into: ResolvedTarget, at: EffectAt, expect: EffectExpect | undefined): void {
   if (expect?.parent_children_hash === undefined) return;
-  const parent = into.kind === "block" ? into._id : null;
+  const parent = into.kind === "block" ? into._id : nestedAnchorParent(ctx, into, at);
   ctx.parents.push({ doc, parent, parent_children_hash: expect.parent_children_hash });
 }
 
@@ -1254,11 +1473,11 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
     case "insert": {
       const doc = targetDoc(ctx, e.into);
       checkRevision(ctx, doc, e.expect);
-      recordParentPin(ctx, doc, e.into, e.expect);
+      recordParentPin(ctx, doc, e.into, e.at, e.expect);
       const to = placement(ctx, e.into, e.at);
       const expect = kernelExpect(e.expect);
       const where = placeWords(ctx, e.into, e.at, "at");
-      pushOp(ctx, { op: "insert", ...(e.into.kind === "document" ? { doc } : {}), to, markdown: e.markdown, ...(expect !== undefined ? { expect } : {}) });
+      pushPlaced(ctx, e.at, { op: "insert", ...(isDocPlacement(to) ? { doc } : {}), to, markdown: e.markdown, ...(expect !== undefined ? { expect } : {}) });
       ctx.summary.push(`insert ${plural(ctx.planner.results[ctx.planner.results.length - 1]!.ids.length, "block")} ${where}`);
       return;
     }
@@ -1317,14 +1536,14 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         const ids = e.targets.map((t) => blockTarget(t)._id);
         const dst = targetDoc(ctx, e.into);
         checkRevision(ctx, dst, e.expect);
-        recordParentPin(ctx, dst, e.into, e.expect);
+        recordParentPin(ctx, dst, e.into, e.at, e.expect);
         const to = placement(ctx, e.into, e.at);
         const expect = kernelExpect(e.expect);
         const what = ids.length === 1 ? blockName(ctx, ids[0]!) : plural(ids.length, "block");
         const where = placeWords(ctx, e.into, e.at, "to");
         // `doc` names the destination when `into` is a document (§2.3, 3.0): a
         // top-level start/end would otherwise mean the SOURCE document's.
-        pushOp(ctx, { op: "move", blocks: ids.map((id) => kernelBlockId(ctx, id)), to, ...(e.into.kind === "document" ? { doc: dst } : {}), ...(expect !== undefined ? { expect } : {}) });
+        pushPlaced(ctx, e.at, { op: "move", blocks: ids.map((id) => kernelBlockId(ctx, id)), to, ...(isDocPlacement(to) ? { doc: dst } : {}), ...(expect !== undefined ? { expect } : {}) });
         ctx.summary.push(`move ${what} ${where}`);
         return;
       }

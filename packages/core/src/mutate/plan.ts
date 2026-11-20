@@ -9,7 +9,7 @@ import { commitChangeset, readDocBase, type CommitHead, type Effect as InternalE
 import { resolveDocStore, type DocStore } from "./doc-store.js";
 import { parseNewDoc } from "./docs.js";
 import {
-  ConflictTracker, SymbolTable, isNewSymbol, lowerEffect, symbolicMinter, effectInvalid,
+  ConflictTracker, SymbolTable, isNewSymbol, lowerEffect, symbolicMinter, effectInvalid, withValidKeys,
   type CreateEntry, type Effect, type FrontmatterDropWarning, type LoweringContext, type ResolvedEffect, type RetargetPreview,
 } from "./effects.js";
 import type { IdentityPreview } from "./opset.js";
@@ -214,6 +214,10 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
           // (3.3) the corrected example, built from the request as given (§8 "fix").
           const fix = planningFix(err, i, req, origins, symbols);
           if (fix !== undefined && err.data.fix === undefined) err.data = { ...err.data, fix };
+          // (4.5) a `set content` on a path with no document: say what the caller meant.
+          if (err.code === "doc_missing" && fix !== undefined) err.message = `${err.message} — \`set content\` replaces a document that exists; a new one is \`create { path, markdown }\``;
+          // (4.5) a shape refusal the lowering raised (a value's type, a `$new.n` of the wrong kind) names the form's keys like the shape check's.
+          throw withValidKeys(err, e);
         }
         throw err;
       }
@@ -309,6 +313,22 @@ function planningFix(err: MutationError, i: number, req: PlanEffectsRequest, ori
     const e = effects[t] as Record<string, unknown>;
     const expect = { ...(isRecord(e.expect) ? e.expect : {}), revision: err.data.current.revision };
     return fixRequest({ ...requestOf(req), effects: effects.map((x, k) => (k === t ? { ...e, expect } : x)) });
+  }
+  // (4.5) `set content` on a path with no document — on a plain request, a
+  // literal path target and a string value: the same request with that effect
+  // rewritten as the `create` it meant (`path` as written, `markdown` the value).
+  if (err.code === "doc_missing" && !selector && isRecord(effects[i])) {
+    const e = effects[i] as Record<string, unknown>;
+    const path = typeof e.target === "string" ? e.target : isRecord(e.target) && e.target.kind === "document" && e.target._id === undefined && typeof e.target._path === "string" ? e.target._path : undefined;
+    if (e.op !== "set" || e.field !== "content" || typeof e.value !== "string" || path === undefined || err.data.doc !== path) return undefined;
+    return fixRequest({ effects: effects.map((x, k) => (k === i ? { op: "create", path, markdown: e.value } : x)) });
+  }
+  // (4.5) an anchor that is a block, but not a child of `into` (`effects.ts`
+  // `anchorElsewhere`): the same request with that effect's `into` its real
+  // parent — `{ kind: "block", _id }`, or the document's rooted path at the top level.
+  if (err.code === "target_missing" && typeof err.data.anchor === "string" && typeof err.data._path === "string" && !selector && isRecord(effects[i])) {
+    const into: unknown = typeof err.data.parent === "string" ? { kind: "block", _id: err.data.parent } : err.data._path;
+    return fixRequest({ effects: effects.map((x, k) => (k === i ? { ...(x as Record<string, unknown>), into } : x)) });
   }
   if (err.code === "target_missing" && typeof err.data.symbol === "string" && !selector && symbols.kindOf(err.data.symbol) === undefined) {
     const c = effects.findIndex((e, k) => k > i && isRecord(e) && e.op === "create");

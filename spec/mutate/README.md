@@ -285,7 +285,14 @@ its `raw` verbatim. Otherwise, by type:
   joined by `\n`, each indented by two spaces per depth.
 
 `render_item(item, marker)`: if a child has a dirty descendant, the body is
-the children rendered (`list` children via the list rule) joined by `\n`;
+the children rendered (`list` children via the list rule) joined by `\n`,
+**prefixed by the item's checkbox** (4.5) — `^\[[ xX]\][ \t]` matched on the
+item's own first line after its marker, taken verbatim, nothing when the
+item has none: a task's checkbox belongs to the item and is in no child's
+raw (the child paragraph's is the text after it), so through 4.4 any write
+beneath a task — an insert into its nested list, an edit of a nested item —
+rebuilt `- [ ] parent` as `- parent` (`render::task-item-rebuild-keeps-
+checkbox`, `-verbatim`);
 else the body is the item's raw with its leading marker stripped
 (`^(\s*)([-*+]|\d+[.)])(\s+)` on the first line; continuation lines lose the
 same width when it is blank). Then the marker is applied: first line
@@ -672,8 +679,9 @@ yielded a value of the wrong type, is `filter_invalid { reason, hint:
 the index of the effect a planner error arose from, added to every error the
 planner or its kernel ops raise — `effects`, `focus`, `symbol`, `version`,
 `supported`, `expected`, `actual`, since 3.1 `template_index`, `row`,
-`expression`, `count`, `cardinality`, `max`, `implicit`, and since 3.3
-`fix`); messages are not pinned. Inside those fields a row attribute is
+`expression`, `count`, `cardinality`, `max`, `implicit`, since 3.3
+`fix`, and since 4.5 `valid_keys` and `anchor` with `parent`); messages are
+not pinned. Inside those fields a row attribute is
 spelled as the row spells it (4.0): `current: { _hash, markdown }` for a
 content-hash miss and `current: { parent_children_hash }` for a parent miss
 (the guard names are roles), `row: { _id, _path }`, a `focus.target`'s
@@ -713,6 +721,41 @@ list whose first identity is not a string or a row), carries no `fix`:
 | `filter_invalid` (3.4) "a plural-target `expect` is keyed by block id — { <block id>: { content_hash?, parent_children_hash? }, … }": a `remove`/`merge` `expect` whose every key is a guard name (`content_hash` / `parent_children_hash`) and every value a map of strings | the same request with the nesting inverted: `{ <id>: { <guard>: <value> }, … }` (the guards of one id merged into its object) |
 | `filter_invalid` (3.4) "`expect.max` bounds a selection — it is the request's top-level `expect`, beside `select`, not an effect's": `max` inside an effect's `expect` (any op) | the same request with `max` dropped from that effect's `expect` (the other guards stay; an emptied `expect` goes) and, when the request has a `select`, `expect.max` set at the top level to that value — unless the request already has a top-level `expect.max`, which is kept as written; without a `select` nothing is added (a top-level `expect` alone would itself be refused) |
 | `filter_invalid` (3.4) "a block's `field` is `markdown` or `_attrs.checked` (got …)" with `field` one of `text`, `content`, `body`, `raw` on a literal block target | the same request with that effect's `field: "markdown"`; any other block field (a `title`) gets the error and no `fix` |
+| `filter_invalid` (4.5) "unknown key …" on an effect whose every unknown key is a near miss of the table below, the key it meant not already written and the value a string | the same request with that effect's keys moved: on a `create` or an `insert`, `content` / `body` / `text` / `raw` / `value` / `source` → `markdown`; on an `insert` or a block `move`, `after: <id>` / `before: <id>` → `at: { after: <id> }` / `at: { before: <id> }`. One unknown key outside the table, an alias beside the key it would become, or a value that is not a string: the error and no `fix` (a half-corrected call is not a correction) |
+| `doc_missing` (4.5) on a `set` of `content` — a plain request, the target a path (a bare string, or `{ kind: "document", _path }` with no `_id`) that names no document, the value a string | the same request with that effect rewritten as the `create` it meant: `{ op: "create", path: <the path as written>, markdown: <the value> }` (its `expect` dropped). A target by `_id`, a `_frontmatter.<key>` set, any other op on a missing document: no `fix` |
+| `target_missing { anchor, parent }` (4.5) — an `at: { before \| after }` anchor that is a block, but not where `into` says (below) — on a plain request | the same request with that effect's `into` the anchor's real parent: `{ kind: "block", _id: <parent> }`, or its document's rooted path (`"/a.md"`) when the anchor is top-level. Under a selector (`into` is bound per hit) the error carries `anchor` and `parent` and no `fix` |
+
+**`valid_keys` (4.5).** Every `filter_invalid { hint: "arguments" }` raised
+about an effect — by the shape check of §11.1, or while the effect is lowered
+(a `content` value that is not a string, a `$new.n` of the wrong kind) —
+carries `data.valid_keys`: the keys the **object at fault** admits, in the
+order of the §11.1 vocabulary, an optional key suffixed `?`. An unknown key
+inside a target object lists that target kind's keys (`["kind", "_id?",
+"_path?"]` for a document, `["kind", "_id"]` for a block or a node,
+`["kind", "heading_id"]` for a section), inside an effect's `expect` the
+guards (`["content_hash?", "parent_children_hash?", "revision?"]`; a plural
+`expect`'s entry `["content_hash?", "parent_children_hash?"]`), inside a
+`repairs[]` entry `["from", "to"]`; every other shape error lists the keys of
+the effect's **form** — the row of the §11.1 block its `op` names, `move` and
+`remove` told apart by `targets` exactly as the check tells them apart — and
+`["op"]` when the `op` itself is missing or not one of the nine. So an agent
+that guessed a key is told the whole set in the same round trip, with or
+without a `fix`: the two are independent, and every shape error has at least
+the list. The message ends with the same list in words (`(insert takes op,
+into, at?, markdown, expect?)`). `effects::keys-*`.
+
+**A misplaced anchor (4.5).** `at: { before | after: X }` places among the
+children of `into`. When X is not one of them the kernel's error is
+`target_missing` with nothing to act on; the planner now looks X up — in its
+working trees first (so a block an earlier effect created or moved counts),
+then the live rows — and, when X is a block, reports where it is:
+`target_missing { anchor: X, parent: <its parent block id, or null at the top
+level> }` (and `_path`, its document's rooted path, unpinned), with the `fix`
+of the table. An X that is no block keeps the kernel's bare `target_missing`.
+This is the error of a **block or section `into`** whose claim about the
+container the anchor contradicts, and of a **document `into`** whose anchor
+lives in another document; under a document `into` an anchor nested in THAT
+document is not an error at all (§11.3). `effects::anchor-*`.
 
 The four shape fixes (3.4) are built by the shape check itself — the
 reference's `effects.ts` `validateEffect` given a `ShapeFixContext { request,
@@ -1243,7 +1286,18 @@ the member; an empty `effects` is one too. Four shape mistakes carry a `fix`
 (3.4, §8): `at` as the bare string `"after"`/`"before"` (the fix anchors on
 the block from its parent), a plural `expect` nested guard-first (inverted),
 `expect.max` inside an effect (moved beside `select`, or dropped), and a
-block `field` of `text`/`content`/`body`/`raw` (`markdown`).
+block `field` of `text`/`content`/`body`/`raw` (`markdown`). Every shape
+error names the keys the object at fault admits (`valid_keys`, 4.5), and an
+unknown key that is a near miss — `content` for a `create`'s `markdown`,
+`after: <id>` for an `insert`'s `at: { after: <id> }` — carries the
+corrected call (§8).
+
+The block above is the one statement of the vocabulary: the reference's
+`EFFECT_KEYS` (`mutate/effects.ts`) and the port's table are checked against
+it line by line, `valid_keys` is read from that table, and the surface's
+write chapter (`query_syntax { section: "effects" }`, `spec/surface` §4)
+quotes its `Effect` lines verbatim under a test — so a key added here reaches
+the shape check, the errors and the agent-facing reference together.
 
 ### 11.2 Fields
 
@@ -1288,7 +1342,7 @@ the TypeScript reference's `mutate/effects.ts`, the port's
 | Effect | Lowers to |
 | --- | --- |
 | `create` | a live document at `path`, a path an earlier effect of the plan already creates or moves to, or a file on disk → `path_taken`; the document symbol is allocated (kind `document`), then `source = composeFile(markdown, frontmatter)` (§6 `docs_create`) is **parsed into the planner's working tree** per the path's format — the frontmatter block as the head, each body block minted in pre-order (the next `$new.k`, kind `block`) with its exact trivia — and **adopted** as a loaded document with no row behind it (3.0): no triple, an empty `before`, no prior ids. `opset.creates[] = { symbol, path, source, before_op }`, `before_op` the number of kernel ops planned so far (where `execute` re-adopts it, §11.7); `preconditions.absent_paths += path`. Every later effect addresses the document (`into`/`target` `{ kind: "document", _id: "$new.n" }` — its `doc` in the kernel op) and its blocks (`$new.k`, kept literally in the ops) like any other; `set`/`unset _frontmatter.<key>` on it is a head (the row below), `set content` on it is `target_missing { symbol }` (its content is the create's markdown), `move`/`remove` of the document itself are `target_missing` too. At commit: `ingest_known` with no triple — the `path_taken` guard re-checked, §4 step 5 (b) — so every block is `inserted / api`. Through 2.x the create was a reconciling ingest at commit and a later frontmatter patch was folded into its composition (§10 "Changed (3.0)") |
-| `insert into document` | kernel `insert { doc, to: { parent: { doc: true }, at }, markdown, expect? }` |
+| `insert into document` | kernel `insert { doc, to: { parent: { doc: true }, at }, markdown, expect? }` — or, when `at` is an anchor **nested** in that document (4.5, below), `insert { to: { parent: <the anchor's parent>, at }, markdown, expect? }`: exactly the op the block form lowers to |
 | `insert into section` | `insert { to: { parent: { heading: heading_id, scope: "section" }, at }, markdown, expect? }` (§1.1; an unknown heading is `parent_missing`) |
 | `insert into block` | `insert { to: { parent: id, at }, markdown, expect? }` (the container rule → `type_mismatch`) |
 | `set`/`unset _frontmatter.<key>` on a document | the frontmatter is edited **by entry** (3.6; the split rule is §11.10): the document's `frontmatter_raw` is cut at the closing fence (the first line after the opening one that is `---` plus optional spaces/tabs) into the block's raw and the separator, and the raw into its parts — `set`: the first part whose key is `<key>` has its entry lines replaced by `stringify({ <key>: value })` (in the fence's line endings: `\r\n` when the opening fence ends so), its lead lines (the comment that documents it) kept, and every further part of the same key removed; a key with no part gains one inserted after the last entry part (before the trailing comments and the closing fence), or, when no part has a key, immediately before the closing fence — `unset`: every part of the key is removed. Every other part is byte-identical. The new head is the parts joined + the separator, or — when nothing but the two fences would remain — the separator minus its first line ending (§6: the body's leading blank line stays). The head becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins; `doc` a created document's symbol when it is one, 3.0 — `effects::create-then-set-on-new-doc`) and replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes. A document **without** frontmatter (or whose head the fence rule does not recognise) composes as 3.5 did — `split(render(doc))`, the key set or deleted, `after = composeFile(body, merged)`, the head `after` minus the rendered body blocks (a file without a trailing newline gains one on its last block's trivia). Byte parity with `set_meta` (itself this effect since 3.0) is pinned by `effects::set-fm-matches-set-meta-bytes`; the untouched entries by `effects::set-fm-leaves-other-parts-byte-identical` and the §11.10 cases |
@@ -1297,12 +1351,30 @@ the TypeScript reference's `mutate/effects.ts`, the port's
 | `set _attrs.checked` on a block | `update { block, attrs: { checked }, expect }` |
 | `set <prop>` on a node | §5 `node_set(node, prop, value)` → its one `update`, the pin as above (`node_not_editable` / `block_missing` as there) |
 | `move` a document | `opset.moves[] = { _id, from, to }` (`doc_missing`; `path_taken` for a live document, an earlier create/move of the plan, or a file at `to`; `absent_paths += to`; the document's triple → `preconditions.docs`) and, unless `retarget_inbound` is `false`, the inbound rewrite of §6 `docs_move` as kernel `update`s (pinned). At commit: `move_path` — the moved document's revision of its unchanged tree at the NEW path (store 17.0, D11; when it is itself a source its rewrite's revision carries the path instead) — then the sources' revisions — §6, one commit |
-| `move` blocks | `move { blocks, to, doc?, expect? }` — `doc` the destination document's id (or symbol) when `into` is a document (§2.3, 3.0) |
+| `move` blocks | `move { blocks, to, doc?, expect? }` — `doc` the destination document's id (or symbol) when `into` is a document (§2.3, 3.0) and the placement is its top level; a nested anchor under a document `into` places under the anchor's parent as for `insert` (4.5) |
 | `remove` a document | `opset.tombstones[] = { _id, _path }` (`doc_missing`; the triple → `preconditions.docs`); at commit the tombstone of §6 `docs_delete` (nothing pooled) |
 | `remove` blocks | `remove { blocks, expect: { <id>: { content_hash (pinned), … } } }` |
 | `split` | `split { block, at, expect }` |
 | `merge` | `merge { blocks, separator, expect: { <id>: … } }` |
 | `retarget` | §5 `links_repair(repairs, path_glob)` → its `update` per top-most block (pinned); no hit → no op; its hits and pair counts → `preview.retarget[] = { effect_index, hits, pairs }` (3.0) |
+
+**An anchor under a document `into` names its own place (4.5).** A document
+target says which document, nothing about the container, and a block id is
+unique — so `{ into: "/a.md", at: { after: X } }` lands right after X
+wherever X sits in that document: the planner finds X's parent (its working
+tree when the document is loaded, else the live row) and, when X is nested,
+places the op under that parent — the same kernel op, results and bytes as
+`{ into: <parent>, at: { after: X } }`, which stays valid. The resolved
+effect keeps the `into` as written, so the two spellings are two plans (two
+`plan_id`s) over one opset. `expect.parent_children_hash` then guards the
+anchor's real parent, and `preconditions.parents[].parent` names it. The one
+claim a document `into` does make is the document: an X that is a block of
+another document is `target_missing { anchor, parent }` (§8) — for a block
+`move` too, whose kernel op would otherwise follow the anchor into its own
+document (§2.3) while the summary named the `into`. A **block** or
+**section** `into` is unchanged: it names the container, and an anchor that
+is not among its children is refused, now with the anchor's real parent and
+the corrected call. `effects::anchor-nested-*`.
 
 A kernel error raised while an effect's ops are planned keeps its own data
 and gains `effect_index` (§8).
@@ -1871,6 +1943,43 @@ key-less part; the new key goes before the closing fence and the body's
 bytes stay), `::unset-fm-keeps-comments-and-fences`.
 
 ## Decisions
+
+- 2026-11-19, mutate 4.5: **the write vocabulary teaches itself.** An agent
+  holding only the tools made five wrong calls in a row on routine writes — a
+  `set content` on a new path, `content` for a `create`'s `markdown`, `after`
+  as a key of an `insert`, an anchor nested under a document `into` — and
+  each error named what was wrong without saying what was right. Four
+  changes, all additive (a minor): (1) every shape error about an effect
+  carries **`valid_keys`**, the keys the object at fault admits, read from
+  the one table the shape check itself uses (§8, §11.1); (2) an unknown key
+  that is a near miss carries the corrected call (`content` → `markdown`,
+  `after: X` → `at: { after: X }`), and so does a `doc_missing` on `set
+  content` (the `create` it meant) (§8); (3) an anchor that is a block but
+  not a child of `into` is `target_missing { anchor, parent }` with `into`
+  corrected (§8); (4) **under a document `into` a nested anchor resolves on
+  its own** (§11.3). On (4) the alternative was to keep requiring the parent
+  and only improve the error. Resolving won because the request is
+  unambiguous — a document target claims a document, not a container, and a
+  block id is unique — so refusing it made the caller fetch a parent id the
+  engine already had; the parent form stays valid and lowers to the same op.
+  It stops at the document: a block or section `into` IS a claim about the
+  container, and when the anchor contradicts it the engine cannot tell which
+  half is the mistake, so it refuses and names the real parent rather than
+  pick. One existing behavior changed with it: a block `move` whose `into`
+  is a document and whose anchor is a block of ANOTHER document used to
+  follow the anchor (the kernel's rule, §2.3) while its summary line named
+  the `into`; it is now refused like the `insert` it mirrors. Fixtures:
+  `effects::keys-*`, `set-content-missing-doc-*`, `anchor-*`; the `shape-*`
+  and three `sugar-*` cases gained `valid_keys` and nothing else.
+  Found by the acceptance run of this change (an agent holding only the
+  tools inserted a task after a nested task, correctly, and its read-back
+  showed the PARENT task's checkbox gone): **a task item rebuilt from its
+  children lost its checkbox** — on any write beneath a task, by either
+  spelling, since the item rule was written (§3). The rebuild now puts the
+  item's own checkbox back, verbatim. A fix (the bytes were wrong, no caller
+  could want them), carried by the same minor; no existing fixture had a
+  nested write under a task, so none moved. Fixtures:
+  `render::task-item-rebuild-keeps-checkbox`, `-verbatim`.
 
 - 2026-11-07, mutate 4.2: **a section target's `heading_id` must resolve to
   a HEADING block** — the sibling of 1.2's "the destination parent of

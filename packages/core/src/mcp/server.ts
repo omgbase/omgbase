@@ -205,7 +205,7 @@ function selectorArgs(args: { select?: string | undefined; expect?: { max: numbe
   return { ...(args.select !== undefined ? { select: args.select } : {}), ...(args.expect !== undefined ? { expect: args.expect } : {}) };
 }
 const effectSchema = z.looseObject({ op: z.enum(["create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget"]) }).describe(
-  "one effect: { op: \"create\", path, markdown, frontmatter? } | { op: \"insert\", into: Target, at?, markdown, expect? } | { op: \"set\", target, field, value, expect? } | { op: \"unset\", target: document, field: \"_frontmatter.<key>\", expect? } | { op: \"move\", target: document, to, retarget_inbound? } | { op: \"move\", targets: [block…], into, at?, expect? } | { op: \"remove\", target: document } | { op: \"remove\", targets: [block…], expect? } | { op: \"split\", target: block, at: [byte…], expect? } | { op: \"merge\", targets: [block…], separator?, expect? } | { op: \"retarget\", repairs: [{ from, to }], path_glob? }. Target: a bare document path, a block/node id, $new.<n> (an identity an earlier effect creates), or { kind: \"document\", _id? | _path? } | { kind: \"block\", _id } | { kind: \"node\", _id } | { kind: \"section\", heading_id }. at: \"start\" | \"end\" | { before: <block id> } | { after: <block id> } — a place among the children of `into`, so \"right after block X\" is into: X's parent (its parent block id, or the document path when X is top-level), at: { after: X }. field: a block's is \"markdown\" or \"_attrs.checked\"; a document's \"_frontmatter.<key>\" or (set only) \"content\" (the complete document, frontmatter included — a value with no fence clears whatever frontmatter the document has); a node's an editable property (value, name, checked). expect on a single-target op: { content_hash?, parent_children_hash?, revision? }; on remove/merge targets it is keyed by block id: { <block id>: { content_hash?, parent_children_hash? } }. expect: { max } is the request's top-level argument beside select, never inside an effect.",
+  "one effect: { op: \"create\", path, markdown, frontmatter? } | { op: \"insert\", into: Target, at?, markdown, expect? } | { op: \"set\", target, field, value, expect? } | { op: \"unset\", target: document, field: \"_frontmatter.<key>\", expect? } | { op: \"move\", target: document, to, retarget_inbound? } | { op: \"move\", targets: [block…], into, at?, expect? } | { op: \"remove\", target: document } | { op: \"remove\", targets: [block…], expect? } | { op: \"split\", target: block, at: [byte…], expect? } | { op: \"merge\", targets: [block…], separator?, expect? } | { op: \"retarget\", repairs: [{ from, to }], path_glob? }. Target: a bare document path, a block/node id, $new.<n> (an identity an earlier effect creates), or { kind: \"document\", _id? | _path? } | { kind: \"block\", _id } | { kind: \"node\", _id } | { kind: \"section\", heading_id }. at: \"start\" | \"end\" | { before: <block id> } | { after: <block id> } — a place among the children of `into`, so \"right after block X\" is into: X's document path (under a document `into` the anchor may sit at any depth) or X's parent block, at: { after: X }; under a block or section `into` the anchor must be one of its children. Every op with a working example: query_syntax { section: \"effects\" }. field: a block's is \"markdown\" or \"_attrs.checked\"; a document's \"_frontmatter.<key>\" or (set only) \"content\" (the complete document, frontmatter included — a value with no fence clears whatever frontmatter the document has); a node's an editable property (value, name, checked). expect on a single-target op: { content_hash?, parent_children_hash?, revision? }; on remove/merge targets it is keyed by block id: { <block id>: { content_hash?, parent_children_hash? } }. expect: { max } is the request's top-level argument beside select, never inside an effect.",
 );
 
 // An example ladder (spec/surface §4 "Descriptions", 4.3): the description of
@@ -324,10 +324,19 @@ export function buildServer(ctx: ServerContext): McpServer {
   // 5–19 kB of plan as its own output. Per process: a plan_id this server never
   // produced (another server's, a restart) is `plan_unknown`, retriable.
   const plans = new Map<string, Plan>();
-  function rememberPlan(plan: Plan): void {
+  /** (6.8) `plan_id` → the `reason` its `plan` call carried; evicted with the plan. */
+  const planReasons = new Map<string, string>();
+  function rememberPlan(plan: Plan, reason?: string): void {
     plans.delete(plan.plan_id);
     plans.set(plan.plan_id, plan);
-    while (plans.size > PLAN_MEMORY) plans.delete(plans.keys().next().value!);
+    // (6.8) the reason `plan` was given, kept beside the plan (the latest `plan` of an id wins, a reasonless one clears it).
+    if (reason !== undefined) planReasons.set(plan.plan_id, reason);
+    else planReasons.delete(plan.plan_id);
+    while (plans.size > PLAN_MEMORY) {
+      const evicted = plans.keys().next().value!;
+      plans.delete(evicted);
+      planReasons.delete(evicted);
+    }
   }
   function rememberedPlan(planId: string): Plan {
     const plan = plans.get(planId);
@@ -902,10 +911,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query_syntax",
     {
       description: ladder(
-        "query_syntax — The OQX reference: a card (clause order, the names rule and engine names per kind, consumers, follow, examples), then one chapter at a time.",
-        "{}   the ~3 kB card: { syntax, sections } — enough for most queries",
+        "query_syntax — The reference: the OQX card (clause order, the names rule and engine names per kind, consumers, follow, examples), then one chapter at a time — effects is the write chapter.",
+        "{}   the ~4 kB card: { syntax, sections } — enough for most queries",
         "{\"section\":\"follow\"}   one chapter in full ({ section, syntax }); the names are the card's sections list",
-        "{\"section\":\"all\"}   the whole manual (38 kB) — rarely needed",
+        "{\"section\":\"effects\"}   writes: every effect op of apply and plan, its keys, the into and at forms, one example per op",
+        "{\"section\":\"all\"}   the whole manual (46 kB) — rarely needed",
         "Call the card before a non-trivial query; every other tool's examples end here, at query_syntax.",
       ),
       inputSchema: { section: z.string().optional() },
@@ -1049,11 +1059,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "apply — plan and commit in one call: the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.",
-        "{\"effects\":[{\"op\":\"set\",\"target\":\"/substances/salt.md\",\"field\":\"_frontmatter.verified\",\"value\":false}],\"reason\":\"re-check salt\"}   bare path = doc target",
-        "{\"effects\":[{\"op\":\"insert\",\"into\":\"/lab/2026-02-notes.md\",\"at\":\"end\",\"markdown\":\"## Follow-ups\\n\\n- [ ] re-run cycle 4\"}]}   at end; or {before|after:\\\"b_1\\\"}",
-        "{\"select\":\"blocks { _type == \\\"task\\\" and not checked and _path == \\\"/processes/calcination.md\\\" }\",\"effects\":[{\"op\":\"set\",\"field\":\"_attrs.checked\",\"value\":true}],\"expect\":{\"max\":10}}   bulk check-off (expect.max required)",
-        "{\"effects\":[{\"op\":\"set\",\"target\":\"/log.md\",\"field\":\"content\",\"value\":\"---\\ntype: x\\n---\\n\\n# A\\n\"}]}   whole doc, fence included (block: markdown)",
-        "Plan first for anything hard to undo; every error's data.fix is the corrected call. Grammar: query_syntax.",
+        "{\"effects\":[{\"op\":\"create\",\"path\":\"/lab/april.md\",\"markdown\":\"---\\ntype: plan\\n---\\n\\n# April\\n\"}],\"reason\":\"open April\"}   a NEW doc: path + markdown",
+        "{\"effects\":[{\"op\":\"set\",\"target\":\"/substances/salt.md\",\"field\":\"_frontmatter.verified\",\"value\":false}]}   bare path = doc target",
+        "{\"effects\":[{\"op\":\"insert\",\"into\":\"/lab/2026-02-notes.md\",\"at\":{\"after\":\"b_80\"},\"markdown\":\"- [ ] Dry the crop\"}]}   after any block, nested too; no at = the end",
+        "{\"effects\":[{\"op\":\"set\",\"target\":\"/index.md\",\"field\":\"content\",\"value\":\"---\\ntype: hub\\n---\\n\\n# Alchemy\\n\"}]}   replaces an EXISTING doc whole, fence included",
+        "Every op, key, into and at form: query_syntax { section: \"effects\" }. An error's data.fix is the corrected call.",
       ),
       inputSchema: {
         effects: z.array(effectSchema),
@@ -1087,13 +1097,13 @@ export function buildServer(ctx: ServerContext): McpServer {
       description: ladder(
         "plan — Preview: the Plan (summary, $new.n ids) burns no id. Commit: execute { plan_id }. Bodies: diffs: true.",
         "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"_frontmatter.verified\",\"value\":false}]}   path = doc",
-        "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   in a section",
-        "{\"effects\":[{\"op\":\"create\",\"path\":\"lab/march.md\",\"markdown\":\"# March\\n\"},{\"op\":\"insert\",\"into\":\"$new.0\",\"markdown\":\"Hi.\"}]}   fills $new.0",
-        "{\"effects\":[{\"op\":\"set\",\"target\":\"/log.md\",\"field\":\"content\",\"value\":\"---\\ntype: x\\n---\\n\\n# A\\n\"}]}   whole doc, fence included (block: markdown)",
+        "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   end of a section",
+        "{\"effects\":[{\"op\":\"insert\",\"into\":\"/processes/calcination.md\",\"at\":{\"after\":\"b_156\"},\"markdown\":\"- [ ] Cool\"}]}   after any block, nested too",
+        "{\"effects\":[{\"op\":\"create\",\"path\":\"/lab/march.md\",\"markdown\":\"---\\ntype: x\\n---\\n\\n# March\\n\"},{\"op\":\"insert\",\"into\":\"$new.0\",\"markdown\":\"Hi.\"}]}   NEW doc = $new.0",
         "{\"select\":\"docs { type == \\\"lab-note\\\" }\",\"effects\":[{\"op\":\"insert\",\"into\":\"-> `/processes/${subject}.md`\",\"markdown\":\"-> `[${_title}](${_path})`\"}]}   -> reads the row",
-        "create insert set unset move remove split merge retarget; grammar: query_syntax.",
+        "All ops, keys, reason: query_syntax { section: \"effects\" }.",
       ),
-      inputSchema: { effects: z.array(effectSchema), select: z.string().optional(), expect: selectionExpectSchema.optional(), diffs: z.boolean().optional(), ...REPO_ARG },
+      inputSchema: { effects: z.array(effectSchema), select: z.string().optional(), expect: selectionExpectSchema.optional(), diffs: z.boolean().optional(), reason: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1102,14 +1112,19 @@ export function buildServer(ctx: ServerContext): McpServer {
         const planned = planEffects(store, { repoId, rootPath, effects: args.effects, ...selectorArgs(args), ...LOCK_DIR });
         // (5.1) remembered for `execute { plan_id }` alone — the Plan as planned,
         // preview included (its `summary` is the Receipt's).
-        rememberPlan(planned);
+        // (6.8) `reason` rides on the Plan — its last member, outside the
+        // digest — and in the plan memory, so `execute` commits under it
+        // unless it names its own: `apply { reason }` ≡ `plan { reason }` +
+        // `execute { plan_id }`.
+        const reason = args.reason ? { reason: args.reason } : {};
+        rememberPlan(planned, args.reason || undefined);
         const plan = surfacePlan(planned);
         // (4.5) `preview.diffs` — whole before/after bodies of every touched
         // document — only on request: `diffs: true`. The digest is over the
         // core, never the preview, so `plan_id` is the same either way.
-        if (args.diffs === true || plan.preview === undefined) return ok(plan);
+        if (args.diffs === true || plan.preview === undefined) return ok({ ...plan, ...reason });
         const { diffs: _diffs, ...preview } = plan.preview;
-        return ok({ ...plan, preview });
+        return ok({ ...plan, preview, ...reason });
       } catch (e) {
         return fail(e);
       }
@@ -1121,8 +1136,8 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "execute — Commit a plan from plan: by plan_id alone (this server remembers the plans it made), or the plan form (the whole Plan object), or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).",
-        "{\"plan_id\":\"4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f\"}   the id alone: the remembered plan runs; an id this server never planned is plan_unknown (re-run plan)",
-        "Or {\"plan\": the Plan as returned} or {\"plan_id\", \"effects\"}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax.",
+        "{\"plan_id\":\"ed7b2e2f10c0aeeff371b5f61635bc83818dd2601bdb7d6c113343f08904f340\"}   the id alone: the remembered plan runs; an id this server never planned is plan_unknown (re-run plan)",
+        "Or {\"plan\": the Plan as returned} or {\"plan_id\", \"effects\"}. reason: the commit's; absent, the one plan was given. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax.",
       ),
       inputSchema: { plan: z.record(z.string(), z.unknown()).optional(), plan_id: z.string().optional(), effects: z.array(effectSchema).optional(), select: z.string().optional(), expect: selectionExpectSchema.optional(), reason: z.string().optional(), ...REPO_ARG },
     },
@@ -1140,7 +1155,14 @@ export function buildServer(ctx: ServerContext): McpServer {
         const digestForm = !idForm && (args.plan_id !== undefined || args.effects !== undefined || selector);
         if (planForm === (idForm || digestForm)) throw argumentError("execute", "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects`", shape);
         if (digestForm && (args.plan_id === undefined || args.effects === undefined)) throw argumentError("execute", "the digest form needs both `plan_id` and `effects`", shape);
-        const origin = { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) };
+        // (6.8) the commit's reason: `execute`'s own, else the one `plan` was
+        // given — the remembered plan's (the id form) or the `reason` member
+        // of the Plan handed back (the plan form). The digest form re-plans,
+        // so it has only its own.
+        if (planForm && args.plan!.reason !== undefined && typeof args.plan!.reason !== "string") throw argumentError("execute", "`plan.reason` must be a string", shape);
+        const planned = planForm ? (args.plan!.reason as string | undefined) : idForm ? planReasons.get(args.plan_id!) : undefined;
+        const reason = args.reason || planned;
+        const origin = { actor: "agent:mcp", ...(reason ? { reason } : {}) };
         const receipt = planForm
           ? executePlan(store, { repoId, rootPath, plan: args.plan, origin, ...LOCK_DIR })
           : idForm

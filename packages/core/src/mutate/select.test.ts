@@ -157,7 +157,7 @@ describe("static admission (§11.8 step 1)", () => {
   it("the template's shape is checked with a probe in every slot — the ordinary effects[i] errors, hint arguments", () => {
     const e = refused("from nodes", [{ op: "insert", markdown: "x" }]);
     expect(e.data).toMatchObject({ hint: "arguments" });
-    expect(e.message).toBe('effects[0].into: `kind` must be one of document, section, block (got "node")');
+    expect(e.message).toBe('effects[0].into: `kind` must be one of document, section, block (got "node") (insert takes op, into, at?, markdown, expect?)');
     expect(refused(COMPLETED, [{ op: "remove", targets: [] }]).message).toContain("`targets` must be a non-empty array");
     expect(refused(COMPLETED, [{ op: "set", field: "title", value: 1 }]).message).toContain("a document's `field` is `_frontmatter.<key>` or `content`");
     expect(refused(COMPLETED, [{ op: "set", field: "_frontmatter.x", value: 1, bogus: true }]).message).toContain("unknown key `bogus`");
@@ -461,8 +461,8 @@ describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
       // the bare form and the object form plan identically
       expect(planPlain([insert("ws/alpha.md", "A")]).plan_id).toBe(planPlain([insert({ kind: "document", _path: "ws/alpha.md" }, "A")]).plan_id);
       // the op's kind table still applies
-      expect(refusedPlain([{ op: "split", target: "d_0", at: [1] }]).message).toBe('effects[0].target: `kind` must be one of block (got "document")');
-      expect(refusedPlain([{ op: "remove", targets: ["ws/alpha.md"] }]).message).toBe('effects[0].targets[0]: `kind` must be one of block (got "document")');
+      expect(refusedPlain([{ op: "split", target: "d_0", at: [1] }]).message).toBe('effects[0].target: `kind` must be one of block (got "document") (split takes op, target, at, expect?)');
+      expect(refusedPlain([{ op: "remove", targets: ["ws/alpha.md"] }]).message).toBe('effects[0].targets[0]: `kind` must be one of block (got "document") (a block remove takes op, targets, expect?)');
       const locator = refusedPlain([insert("hub.md#Status", "x")]);
       expect(locator.code).toBe("filter_invalid");
       expect(locator.data).toMatchObject({ hint: "arguments", fix: expect.stringContaining("blocks_resolve") });
@@ -494,7 +494,7 @@ describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
         { op: "remove", targets: [{ kind: "block", _id: "$new.1" }] },
       ]).plan_id);
       // the slot's kind table applies to the recorded kind; a symbol nothing created is target_missing; the field rule follows the kind
-      expect(refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, { op: "unset", target: "$new.1", field: "_frontmatter.k" }])).toMatchObject({ code: "filter_invalid", message: 'effects[1].target: `kind` must be one of document (got "block")' });
+      expect(refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, { op: "unset", target: "$new.1", field: "_frontmatter.k" }])).toMatchObject({ code: "filter_invalid", message: 'effects[1].target: `kind` must be one of document (got "block") (unset takes op, target, field, expect?)', data: { valid_keys: ["op", "target", "field", "expect?"] } });
       expect(refusedPlain([insert("$new.0", "x")])).toMatchObject({ code: "target_missing", data: { symbol: "$new.0", effect_index: 0 } });
       expect(refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, { op: "set", target: "$new.1", field: "_frontmatter.k", value: 1 }]).message).toContain("a block's `field` is `markdown` or `_attrs.checked`");
       expect(refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, { op: "set", target: "$new.0", field: "markdown", value: "x" }]).message).toContain("a document's `field` is `_frontmatter.<key>` or `content`");
@@ -525,7 +525,7 @@ describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
       // the op's kind table applies to the bound kind
       const wrong = refused(COMPLETED, [{ op: "split", target: "-> _id", at: [1] }]);
       expect(wrong.data).toMatchObject({ hint: "arguments" });
-      expect(wrong.message).toBe('effects[0].target: `kind` must be one of block (got "document")');
+      expect(wrong.message).toBe('effects[0].target: `kind` must be one of block (got "document") (split takes op, target, at, expect?)');
       // a value that names no identity
       expect(refused(COMPLETED, [insert("-> parent", "x")])).toMatchObject({ code: "target_missing", data: { effect_index: 0, template_index: 0, row: { _id: "d_1", _path: "/ws/alpha.md" }, expression: "parent" } });
       expect(refused(COMPLETED, [insert('-> ^docs collect { where type == "workstream" }', "x")])).toMatchObject({ code: "ambiguous_target", data: { count: 3 } });

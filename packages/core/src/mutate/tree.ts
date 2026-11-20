@@ -220,9 +220,22 @@ export function disambiguateListMarker(list: MutBlock, neighbors: MutBlock[]): v
 function renderItem(item: MutBlock, marker: string): string {
   if (item.children.some(hasDirtyDescendant)) {
     const body = item.children.map((c) => (c.type === "list" ? renderList(c) : renderBlock(c, 0))).join("\n");
-    return applyMarker(body, marker);
+    // (4.5) A task's checkbox is the ITEM's, not its first child's: the child
+    // paragraph's raw is the text after it, so a rebuild from the children
+    // must put it back — through 4.4 any write under a task (an insert into
+    // its nested list, an edit of a nested item) silently turned `- [ ] x`
+    // into `- x`. Taken verbatim from the item's own first line.
+    return applyMarker(checkboxOf(item) + body, marker);
   }
   return applyMarker(stripMarker(item.raw), marker);
+}
+
+/** The checkbox a list item's first line carries after its marker — `[ ] `, `[x] `, with the one space after it; `""` when it has none. */
+function checkboxOf(item: MutBlock): string {
+  const first = item.raw.split("\n")[0] ?? "";
+  const m = MARKER_RE.exec(first);
+  const box = /^\[[ xX]\][ \t]/.exec(m ? first.slice(m[0].length) : first);
+  return box ? box[0] : "";
 }
 
 // Remove a leading list marker + its indentation from the first line, and the

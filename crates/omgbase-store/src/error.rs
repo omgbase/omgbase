@@ -34,6 +34,18 @@ pub enum Error {
     /// a field no target kind has, a value of the wrong type. The surface
     /// reports it as `filter_invalid`.
     InvalidEffect(String),
+    /// An [`Error::InvalidEffect`] raised while effect `effect_index` of a
+    /// plan was lowered (`spec/mutate` §8, 4.5): the message ends with the
+    /// keys the effect's form admits, and `valid_keys` lists them (an
+    /// optional key suffixed `?`). The surface reports it as `filter_invalid
+    /// { reason, hint: "arguments", effect_index, valid_keys }`.
+    InvalidEffectAt {
+        message: String,
+        /// `None` once a sugar tool has dropped it (the tool built the
+        /// effects; the index names nothing the caller wrote).
+        effect_index: Option<usize>,
+        valid_keys: &'static [&'static str],
+    },
     /// A read of an archived revision whose segment is not recorded, or
     /// recorded but not on disk (spec §6.2 "Through a segment", 15.0; the
     /// surface's `revision_archived { rev, archive, path? }`).
@@ -207,6 +219,7 @@ impl fmt::Display for Error {
                 "mint({prefix}): {rejected} consecutive candidates were already in use; the minter cannot produce a fresh id"
             ),
             Error::InvalidEffect(msg) => write!(f, "invalid effect: {msg}"),
+            Error::InvalidEffectAt { message, .. } => write!(f, "invalid effect: {message}"),
             // The reference's `RevisionArchived` messages, byte for byte
             // (`spec/surface` §2: the CLI prints them).
             Error::RevisionArchived {

@@ -1,5 +1,8 @@
 // Agent-facing syntax reference, surfaced as the query_syntax MCP tool. Agents
-// lean on it heavily before writing a non-trivial query. It is a condensed,
+// lean on it heavily before writing a non-trivial query — and, since 6.8, before
+// a write: the last chapter (`effects`) is the write vocabulary of spec/mutate
+// §11, pinned to that spec and to the shape check's own key table by
+// `effects-reference.test.ts`, its examples run by the `examples` suite. It is a condensed,
 // example-led distillation of docs/query-language.md — enough to compose a
 // correct call without reading the normative spec. Kept in one place so the
 // tool handler stays thin. Semantics are the @omgbase/oqx contract (ADR-013);
@@ -564,6 +567,76 @@ pointing at \`_path\`); the engine's are \`_path\`/\`_id\`/\`_title\`/\`_tags\`;
 data.path\` is gone — write \`path\`. Another: \`where tags == "x"\` on a list-valued
 key is false — write \`"x" in tags\`. Another: \`select _path: _doc._path\` — alias it
 (\`p: _doc._path\`).
+
+## Effects — writes (apply, plan, execute)
+
+A write is a list of EFFECTS. apply { effects, reason? } plans and commits the list as ONE commit and returns the
+Receipt { plan_id, commit, revisions, new_ids, summary }; plan { effects, reason? } previews the same list and
+writes nothing; execute { plan_id } commits that plan. Effects run in order, and a later one sees what an earlier
+one did. Paths are /-rooted. A refusal's data.fix, when present, IS the corrected call; a wrong key or member also
+lists data.valid_keys — the keys that object takes.
+
+  Effect  { op: "create",   path, markdown, frontmatter? }
+          { op: "insert",   into: Target(document|section|block), at? = "end", markdown, expect? }
+          { op: "set",      target: Target(document|block|node), field, value, expect? }
+          { op: "unset",    target: Target(document), field: "_frontmatter.<key>", expect? }
+          { op: "move",     target: Target(document), to, retarget_inbound? = true }
+          { op: "move",     targets: [Target(block)…], into: Target(document|section|block), at? = "end", expect? }
+          { op: "remove",   target: Target(document) }
+          { op: "remove",   targets: [Target(block)…], expect?: { <block id>: Expect } }
+          { op: "split",    target: Target(block), at: [byte…], expect? }
+          { op: "merge",    targets: [Target(block)…], separator? = " ", expect?: { <block id>: Expect } }
+          { op: "retarget", repairs: [{ from, to }], path_glob? }
+
+TARGET (target, into, every member of targets) is a bare string or its object form:
+  a path "/notes/x.md" — a document, the same as { kind: "document", _path: "/notes/x.md" } (or by _id: "d_14")
+  an id "b_153" or "n_494a3234acfd" — a block or a node, the same as { kind: "block", _id: "b_153" } and
+  { kind: "node", _id: "n_494a3234acfd" } (a node is a set target only)
+  "$new.0" — what an EARLIER effect of this call creates: a create's document, then each of its blocks in
+  order; the blocks an insert adds. plan lists them (new_ids), the Receipt maps them to the minted ids
+  { kind: "section", heading_id: "b_153" } — the section under a heading, up to the next heading of the same
+  or a higher level (into only; the heading's block id is a nodes query, below)
+INTO is a document, a section, or a CONTAINER block (a list, a list item, a blockquote). A paragraph or a
+heading holds no children (type_mismatch): place beside it with at, or into its section. A list item joins an
+EXISTING list only when into is that list block, or at is beside one of its items; inserted into a section or
+a document it starts a new list of its own.
+AT is "end" (the default), "start", { before: "<block id>" } or { after: "<block id>" } — a place among the
+children of into. Under a DOCUMENT into the anchor may sit at any depth: into: "/a.md", at: { after: X } lands
+right after X wherever X is nested. Under a block or a section into the anchor must be one of its children;
+otherwise target_missing names the anchor's real parent and its fix is the call with that parent as into.
+FIELD of set and unset. A document: _frontmatter.<key> (any JSON value; unset removes the key), or content — set
+only, the WHOLE file with its frontmatter fence, of a document that already EXISTS (a new document is create;
+a value without a fence drops the frontmatter). A block: markdown (its source, re-parsed) or _attrs.checked
+(true or false). A node: value, name or checked.
+EXPECT is optional. On one target: { revision } (a document's rev from docs_read), { content_hash } (a block's
+_hash). On remove and merge it is keyed by block id. Beside select, the request's own expect: { max } bounds
+the hits and is required on apply.
+IDS come from docs_read { _path, include_ids: true } (every block id, hash and parent of one document) or a query:
+  blocks { select _type, _depth, _text where _path == "/processes/calcination.md" }
+  nodes { select _block_id, blocks: _blocks { select _id, _type, _depth } where _kind == "md:section" and _name == "Tasks" and _path == "/processes/calcination.md" }
+The second is a heading by its text: _block_id is the heading_id, blocks its section's blocks (the list to extend).
+
+One working example per op — each line is the arguments of apply (or of plan, to preview it):
+{"effects":[{"op":"create","path":"/lab/april.md","markdown":"---\\ntype: lab-note\\ntags: [lab]\\n---\\n\\n# April\\n\\n## Tasks\\n\\n- [ ] order alum\\n"}]}   create: a NEW document; markdown is the whole file, frontmatter fence included
+{"effects":[{"op":"create","path":"/lab/may.md","markdown":"# May\\n","frontmatter":{"type":"lab-note"}},{"op":"insert","into":"$new.0","markdown":"Opened."}]}   create with frontmatter as an object; $new.0 is the new document
+{"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"markdown":"- [ ] Weigh the calx"}]}   insert at the end of the section under a heading (a new block there)
+{"effects":[{"op":"insert","into":"b_154","markdown":"- [ ] Weigh the calx"}]}   append an item to an EXISTING list: into is the list block
+{"effects":[{"op":"insert","into":"/processes/calcination.md","at":{"after":"b_156"},"markdown":"- [ ] Weigh the calx"}]}   insert right after a block at any depth (b_156 is a list item)
+{"effects":[{"op":"insert","into":"/processes/calcination.md","at":"start","markdown":"> Under review."}]}   insert at the start of a document ("end" is the default)
+{"effects":[{"op":"set","target":"/substances/salt.md","field":"_frontmatter.verified","value":false}]}   set one frontmatter key
+{"effects":[{"op":"set","target":"b_156","field":"_attrs.checked","value":true}]}   set: check a task
+{"effects":[{"op":"set","target":"b_139","field":"markdown","value":"Heating a substance in air until it is a calx."}]}   set a block's markdown
+{"effects":[{"op":"set","target":"/index.md","field":"content","value":"---\\ntype: hub\\n---\\n\\n# Alchemy\\n\\nRewritten.\\n"}]}   set content: replace an EXISTING document whole
+{"effects":[{"op":"unset","target":"/substances/salt.md","field":"_frontmatter.verified"}]}   unset a frontmatter key
+{"effects":[{"op":"move","target":"/lab/2026-01-notes.md","to":"/lab/january.md"}]}   move a document: same _id, inbound links rewritten
+{"effects":[{"op":"move","targets":["b_157"],"into":"/processes/calcination.md","at":{"before":"b_155"}}]}   move blocks beside an anchor
+{"effects":[{"op":"remove","targets":["b_157"]}]}   remove blocks (their children go with them)
+{"effects":[{"op":"remove","target":"/lab/2026-01-notes.md"}]}   remove a document
+{"effects":[{"op":"split","target":"b_147","at":[69]}]}   split a block at byte offsets of its source
+{"effects":[{"op":"merge","targets":["b_146","b_147"]}]}   merge adjacent sibling blocks into the first
+{"effects":[{"op":"retarget","repairs":[{"from":"/processes/coagulation.md","to":"/processes/calcination.md"}]}]}   retarget every link from one path to another
+{"select":"blocks { _type == \\"task\\" and not checked and _path == \\"/processes/calcination.md\\" }","effects":[{"op":"set","field":"_attrs.checked","value":true}],"expect":{"max":10}}   select: the effects run once per hit; no target = the hit
+{"select":"docs { type == \\"lab-note\\" }","effects":[{"op":"insert","into":"-> \`/processes/\${subject}.md\`","markdown":"-> \`[\${_title}](\${_path})\`"}]}   a string starting "-> " is an OQX expression over the hit
 `;
 
 /**
@@ -587,6 +660,7 @@ export const QUERY_SYNTAX_SECTIONS: readonly { slug: string; heading: string }[]
   { slug: "follow", heading: "Graph traversal (follow) and links" },
   { slug: "semantic", heading: "semantic grain" },
   { slug: "examples", heading: "Examples" },
+  { slug: "effects", heading: "Effects — writes (apply, plan, execute)" },
 ];
 
 /** The `section` names a caller may pass: every slug, then `all` (the whole manual). */
@@ -660,6 +734,7 @@ backlinks; refs(before) a property's documents; $depth per row. SEARCH: text("wo
   revisions { select _seq, _ts, _hash where _path == "/processes/calcination.md" order by _seq desc }
   docs { select tags, n: count($rows) flatten tags group by tags order by count($rows) desc }
 
-Every error is filter_invalid naming what to change; when the engine can correct the call, data.fix IS the call.
-Chapters: sugar paths targets scoping scalars predicates nested select flatten order follow semantic examples; all.
+Every error names what to change; when the engine can correct the call, data.fix IS the call.
+WRITES (apply, plan): every effect op, its keys, into and at, with examples: query_syntax { section: "effects" }.
+Chapters: sugar paths targets scoping scalars predicates nested select flatten order follow semantic examples effects; all.
 `;

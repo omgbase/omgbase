@@ -121,6 +121,10 @@ pub struct Surface {
     /// Plan. A re-planned id moves to the back; an id this surface never
     /// produced is `plan_unknown`.
     plans: VecDeque<Plan>,
+    /// (6.8) `plan_id` → the `reason` its `plan` call carried, kept beside
+    /// the remembered plan and dropped with it: `execute { plan_id }` commits
+    /// under it unless it names its own.
+    plan_reasons: std::collections::HashMap<String, String>,
     /// Which tools this surface lists and accepts ([`Surface::tools`]);
     /// `Full` unless the host chose otherwise (`omgbase mcp --tools`).
     profile: Profile,
@@ -312,6 +316,17 @@ fn strip_effect_index(e: omgbase_store::Error) -> omgbase_store::Error {
             m.data.remove("effect_index");
             omgbase_store::Error::Mutation(m)
         }
+        // (mutate 4.5) a shape refusal raised while lowering keeps its
+        // `valid_keys` and loses the index, as the reference's does.
+        omgbase_store::Error::InvalidEffectAt {
+            message,
+            valid_keys,
+            ..
+        } => omgbase_store::Error::InvalidEffectAt {
+            message,
+            effect_index: None,
+            valid_keys,
+        },
         other => other,
     }
 }
@@ -655,6 +670,7 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("select", s()),
                     ("expect", obj()),
                     ("diffs", b()),
+                    ("reason", s()),
                 ],
                 &["effects"],
                 true,
@@ -975,6 +991,7 @@ impl Surface {
             preview: false,
             last_plan: None,
             plans: VecDeque::new(),
+            plan_reasons: std::collections::HashMap::new(),
             profile: Profile::Full,
             vocabulary: VocabularyCache::default(),
         }
@@ -983,11 +1000,20 @@ impl Surface {
     /// Remember a `plan` result for `execute { plan_id }` alone (5.1): the
     /// newest at the back, a re-planned id moved there, the oldest dropped
     /// past [`PLAN_MEMORY`].
-    fn remember_plan(&mut self, plan: &Plan) {
+    ///
+    /// (6.8) The `reason` the `plan` call carried is kept with it — the
+    /// latest `plan` of an id wins, so a reasonless one clears it.
+    fn remember_plan(&mut self, plan: &Plan, reason: Option<&str>) {
         self.plans.retain(|p| p.plan_id != plan.plan_id);
         self.plans.push_back(plan.clone());
+        match reason {
+            Some(r) => self.plan_reasons.insert(plan.plan_id.clone(), r.to_owned()),
+            None => self.plan_reasons.remove(&plan.plan_id),
+        };
         while self.plans.len() > PLAN_MEMORY {
-            self.plans.pop_front();
+            if let Some(evicted) = self.plans.pop_front() {
+                self.plan_reasons.remove(&evicted.plan_id);
+            }
         }
     }
 
@@ -2235,8 +2261,16 @@ impl Surface {
                 // (5.1) remembered for `execute { plan_id }` alone — the Plan
                 // as planned, preview included (its `summary` is the
                 // Receipt's).
-                self.remember_plan(&plan);
+                // (6.8) `reason` rides on the Plan — its last member, outside
+                // the digest — and in the plan memory, so `execute` commits
+                // under it unless it names its own: `apply { reason }` ≡
+                // `plan { reason }` + `execute { plan_id }`.
+                let reason = arg_str(args, "reason").filter(|r| !r.is_empty());
+                self.remember_plan(&plan, reason);
                 let mut plan = plan_json(&plan);
+                if let (Some(r), Some(o)) = (reason, plan.as_object_mut()) {
+                    o.insert("reason".to_owned(), json!(r));
+                }
                 // (4.5) `preview.diffs` — whole before/after bodies of every
                 // touched document — only on request: `diffs: true`. The
                 // digest is over the core, never the preview, so `plan_id`
@@ -2251,8 +2285,6 @@ impl Surface {
             "execute" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let reason = arg_str(args, "reason").map(str::to_owned);
-                let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
                 let ctx = self.plan_ctx(&repo);
                 // §4 (3.1; 5.1): exactly one form — the plan, the id alone
                 // (5.1: the plan this surface remembers under it, run as the
@@ -2272,6 +2304,34 @@ impl Surface {
                         &spec.input_schema,
                     ));
                 }
+                // (6.8) the commit's reason: `execute`'s own, else the one
+                // `plan` was given — the remembered plan's (the id form) or
+                // the `reason` member of the Plan handed back (the plan
+                // form). The digest form re-plans, so it has only its own.
+                if plan_form && args["plan"].get("reason").is_some_and(|r| !r.is_string()) {
+                    return Err(argument_error(
+                        name,
+                        "`plan.reason` must be a string",
+                        &spec.input_schema,
+                    ));
+                }
+                let planned_reason = if plan_form {
+                    args["plan"]
+                        .get("reason")
+                        .and_then(Json::as_str)
+                        .map(str::to_owned)
+                } else if id_form {
+                    self.plan_reasons
+                        .get(arg_str(args, "plan_id").unwrap_or_default())
+                        .cloned()
+                } else {
+                    None
+                };
+                let reason = arg_str(args, "reason")
+                    .filter(|r| !r.is_empty())
+                    .map(str::to_owned)
+                    .or(planned_reason.filter(|r| !r.is_empty()));
+                let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
                 let receipt = if plan_form || id_form {
                     let plan = if id_form {
                         self.remembered_plan(arg_str(args, "plan_id").unwrap_or_default())?

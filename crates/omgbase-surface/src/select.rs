@@ -135,15 +135,60 @@ fn shape_error(message: String) -> SurfaceError {
     SurfaceError::filter_invalid(message, "arguments")
 }
 
-/// A shape error with its `fix` (§8, 3.4) when the shape check spelled one.
+/// A shape error with its `valid_keys` (§8, 4.5: the keys the object at
+/// fault admits) and its `fix` (3.4) when the shape check spelled one.
 fn shape_error_of(e: ShapeError) -> SurfaceError {
     let mut err = shape_error(e.message);
-    if let Some(fix) = e.fix
-        && let Some(d) = err.data.as_mut().and_then(Json::as_object_mut)
-    {
-        d.insert("fix".to_owned(), json!(fix));
+    if let Some(d) = err.data.as_mut().and_then(Json::as_object_mut) {
+        if !e.valid_keys.is_empty() {
+            d.insert("valid_keys".to_owned(), json!(e.valid_keys));
+        }
+        if let Some(fix) = e.fix {
+            d.insert("fix".to_owned(), json!(fix));
+        }
     }
     err
+}
+
+/// Give a shape error about `effect` (`filter_invalid`, `hint: "arguments"`)
+/// its `valid_keys` when it has none (§8, 4.5; the reference's
+/// `withValidKeys`): the keys of the effect's form, named in the message
+/// too. The shape check's own errors carry theirs ([`shape_error_of`]); this
+/// covers the ones raised around it — a bare target that is no target, an
+/// `op` that is not row-shaped.
+fn with_valid_keys(mut err: SurfaceError, effect: &Json) -> SurfaceError {
+    if err.code != "filter_invalid" {
+        return err;
+    }
+    let Some(d) = err.data.as_mut().and_then(Json::as_object_mut) else {
+        return err;
+    };
+    if d.get("hint").and_then(Json::as_str) != Some("arguments") || d.contains_key("valid_keys") {
+        return err;
+    }
+    let message = format!("{}{}", err.message, omgbase_mutate::effect_takes(effect));
+    d.insert("reason".to_owned(), json!(message));
+    d.insert(
+        "valid_keys".to_owned(),
+        json!(omgbase_mutate::effect_valid_keys(effect)),
+    );
+    err.message = message;
+    err
+}
+
+/// A selector template as the shape check will see it, for the form its
+/// `valid_keys` name: a `move` with an `into` is the block form — its
+/// `targets` default to the hit.
+fn template_form(raw: &Json) -> Json {
+    let mut v = raw.clone();
+    if let Some(o) = v.as_object_mut()
+        && o.get("op").and_then(Json::as_str) == Some("move")
+        && o.contains_key("into")
+        && !o.contains_key("targets")
+    {
+        o.insert("targets".to_owned(), Json::Null);
+    }
+    v
 }
 
 /// The live-row lookup behind the anchor fix (§8, 3.4; the reference's
@@ -1518,7 +1563,9 @@ pub fn compile(req: &SelectRequest) -> Result<Compiled> {
         .iter()
         .enumerate()
         .map(|(t, v)| {
-            let (v, d) = desugar_effect(v, t, Some(&request))?;
+            // (4.5) a bare target that is no target names the template's keys.
+            let (v, d) = desugar_effect(v, t, Some(&request))
+                .map_err(|e| with_valid_keys(e, &template_form(v)))?;
             admit_template(t, &v, root, false, &d, Some(&fix))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -1716,7 +1763,8 @@ fn bind_one(root: Target, hit: &Json, t: &Template, o: &Origin<'_>) -> Result<(J
             }
             SlotKind::WholeTarget { key, member } => {
                 let v = identity_value(v, s, o)?;
-                let (target, symbol) = whole_target(v, s, o, *member, &t.op, field.as_deref())?;
+                let (target, symbol) = whole_target(v, s, o, *member, &t.op, field.as_deref())
+                    .map_err(|err| with_valid_keys(err, &e))?;
                 if symbol {
                     symbols.push(*member);
                 }
@@ -1724,7 +1772,8 @@ fn bind_one(root: Target, hit: &Json, t: &Template, o: &Origin<'_>) -> Result<(J
             }
             SlotKind::WholeTargets { k } => {
                 let v = identity_value(v, s, o)?;
-                let (target, symbol) = whole_target(v, s, o, Member::Targets(*k), &t.op, None)?;
+                let (target, symbol) = whole_target(v, s, o, Member::Targets(*k), &t.op, None)
+                    .map_err(|err| with_valid_keys(err, &e))?;
                 if symbol {
                     symbols.push(Member::Targets(*k));
                 }
@@ -1790,7 +1839,7 @@ fn bind_one(root: Target, hit: &Json, t: &Template, o: &Origin<'_>) -> Result<(J
             }
         }
     }
-    Effect::validate(&e, o.k).map_err(shape_error)?;
+    Effect::validate_with(&e, o.k, None).map_err(shape_error_of)?;
     Ok((e, symbols))
 }
 
@@ -1865,8 +1914,8 @@ fn finish(
         return Ok(first);
     }
     settle(e, symbols, prefix);
-    Effect::validate(e, k).map_err(|m| {
-        let mut err = shape_error(m);
+    Effect::validate_with(e, k, None).map_err(|m| {
+        let mut err = shape_error_of(m);
         if let Some(d) = err.data.as_mut().and_then(Json::as_object_mut) {
             d.insert("effect_index".to_owned(), json!(k));
         }
@@ -1912,7 +1961,7 @@ pub fn bind(c: &Compiled, hits: &[Json], settle: &mut Settle<'_>) -> Result<Boun
                 request: Some(&c.request),
             };
             let (mut e, symbols) = bind_one(c.root, hit, t, &o)?;
-            let first = Effect::validate(&e, k).map_err(shape_error)?;
+            let first = Effect::validate_with(&e, k, None).map_err(shape_error_of)?;
             let effect = finish(&mut e, k, &symbols, &b.effects, settle, first)?;
             b.effects.push(effect);
         }
@@ -2138,7 +2187,7 @@ fn scope_of(
         let list = e.get("targets").and_then(Json::as_array);
         if list.is_none_or(Vec::is_empty) {
             // the shape check's `targets` message
-            Effect::validate(&Json::Object(e.clone()), i).map_err(shape_error)?;
+            Effect::validate_with(&Json::Object(e.clone()), i, None).map_err(shape_error_of)?;
         }
         Ok((
             "targets[0]".to_owned(),
@@ -2195,11 +2244,15 @@ fn scope_of(
         "merge" => first(BLOCK)?,
         _ => {
             // an unknown op (or `retarget`): the shape check refuses it
-            Effect::validate(&Json::Object(e.clone()), i).map_err(shape_error)?;
-            return Err(shape_error(format!(
-                "{here}: `op` {} is not row-shaped",
-                Json::String(op.to_owned())
-            )));
+            let effect = Json::Object(e.clone());
+            Effect::validate_with(&effect, i, None).map_err(shape_error_of)?;
+            return Err(with_valid_keys(
+                shape_error(format!(
+                    "{here}: `op` {} is not row-shaped",
+                    Json::String(op.to_owned())
+                )),
+                &effect,
+            ));
         }
     };
     let where_ = format!("{here}.{key}");
@@ -2353,7 +2406,8 @@ pub fn expand_plain(
     };
     let mut desugared = Vec::with_capacity(raw.len());
     for (i, v) in raw.iter().enumerate() {
-        desugared.push(desugar_effect(v, i, Some(&request))?);
+        // (4.5) a bare target that is no target names the effect's keys.
+        desugared.push(desugar_effect(v, i, Some(&request)).map_err(|e| with_valid_keys(e, v))?);
     }
     let any_expression = desugared.iter().any(|(v, _)| contains_oqx(v));
     let mut staged: Vec<Option<Plain>> = (0..raw.len()).map(|_| None).collect();
@@ -2369,7 +2423,9 @@ pub fn expand_plain(
                 staged[i] = Some(Plain::Literal(v.clone(), d.symbols.clone()));
                 continue;
             };
-            let scope = scope_of(store, &ctx.repo_id, o, i, d)?;
+            // (4.5) every shape refusal about the effect names its form's keys.
+            let scope =
+                scope_of(store, &ctx.repo_id, o, i, d).map_err(|e| with_valid_keys(e, v))?;
             let lookup = parent_lookup(store);
             let fix = shape_fix(&request, &lookup);
             let t = admit_template(i, v, scope.root, true, d, Some(&fix))?;
@@ -2882,9 +2938,13 @@ mod tests {
         );
         assert_eq!(
             e.message,
-            "effects[0].into: `kind` must be one of document, section, block (got \"node\")"
+            "effects[0].into: `kind` must be one of document, section, block (got \"node\") (insert takes op, into, at?, markdown, expect?)"
         );
         assert_eq!(data(&e)["hint"], "arguments");
+        assert_eq!(
+            data(&e)["valid_keys"],
+            json!(["op", "into", "at?", "markdown", "expect?"])
+        );
         let e = refuse("from docs", json!([{ "op": "split", "at": [1] }]), None);
         assert_eq!(data(&e)["hint"], "arguments");
         let e = refuse(
@@ -3450,9 +3510,13 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             e.message,
-            "effects[0].target: `kind` must be one of block (got \"document\")"
+            "effects[0].target: `kind` must be one of block (got \"document\") (split takes op, target, at, expect?)"
         );
         assert_eq!(data(&e)["hint"], "arguments");
+        assert_eq!(
+            data(&e)["valid_keys"],
+            json!(["op", "target", "at", "expect?"])
+        );
     }
 
     /// A leader where no expression is admitted — `op`, `field`, `expect`, a
@@ -3846,7 +3910,11 @@ mod tests {
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
-            "effects[1].target: `kind` must be one of document (got \"block\")"
+            "effects[1].target: `kind` must be one of document (got \"block\") (unset takes op, target, field, expect?)"
+        );
+        assert_eq!(
+            data(&e)["valid_keys"],
+            json!(["op", "target", "field", "expect?"])
         );
         assert_eq!(data(&e)["effect_index"], 1);
         assert_eq!(data(&e)["hint"], "arguments");
@@ -3859,5 +3927,191 @@ mod tests {
         .unwrap_err();
         assert_eq!(e.code, "target_missing");
         assert_eq!(data(&e)["symbol"], "$new.3");
+    }
+
+    /// §8 (4.5): every `filter_invalid { hint: "arguments" }` about an effect
+    /// carries `valid_keys` — the shape check's, a bare target that is no
+    /// target, an `op` that is not row-shaped, a refusal raised while the
+    /// effect is lowered.
+    #[test]
+    fn shape_errors_about_an_effect_carry_valid_keys() {
+        let (mut store, ctx, ds) = seeded();
+        let insert = json!(["op", "into", "at?", "markdown", "expect?"]);
+        // an unknown key: the form's keys and, for a near miss, the corrected call
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "insert", "into": "/hub.md", "after": "b_1", "markdown": "x" }]),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0]: unknown key `after` (insert takes op, into, at?, markdown, expect?)"
+        );
+        assert_eq!(data(&e)["reason"], json!(e.message));
+        assert_eq!(data(&e)["valid_keys"], insert);
+        assert_eq!(
+            data(&e)["fix"],
+            r#"{"effects":[{"at":{"after":"b_1"},"into":"/hub.md","markdown":"x","op":"insert"}]}"#
+        );
+        // a bare target that is no target (raised by the desugar, around the shape check)
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "insert", "into": "hub.md#Status", "markdown": "x" }]),
+        )
+        .unwrap_err();
+        assert_eq!(data(&e)["fix"], crate::fixes::LOCATOR);
+        assert_eq!(data(&e)["valid_keys"], insert);
+        assert!(
+            e.message
+                .ends_with(" (insert takes op, into, at?, markdown, expect?)")
+        );
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "remove", "targets": ["hub"] }]),
+        )
+        .unwrap_err();
+        assert_eq!(data(&e)["valid_keys"], json!(["op", "targets", "expect?"]));
+        // a template's: a `move` with an `into` is the block form (its `targets` default to the hit)
+        let e = compile(&req(
+            "from blocks",
+            json!([{ "op": "move", "into": "hub.md#Status" }]),
+            None,
+        ))
+        .unwrap_err();
+        assert_eq!(
+            data(&e)["valid_keys"],
+            json!(["op", "targets", "into", "at?", "expect?"])
+        );
+        // an `op` that is not row-shaped
+        let retarget = json!({ "op": "retarget", "repairs": [{ "from": "a.md", "to": "b.md" }] });
+        let e = scope_of(
+            &store,
+            &ctx.repo_id,
+            retarget.as_object().unwrap(),
+            0,
+            &Desugared::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0]: `op` \"retarget\" is not row-shaped (retarget takes op, repairs, path_glob?)"
+        );
+        assert_eq!(data(&e)["hint"], "arguments");
+        assert_eq!(data(&e)["reason"], json!(e.message));
+        assert_eq!(
+            data(&e)["valid_keys"],
+            json!(["op", "repairs", "path_glob?"])
+        );
+        // raised while the effect is lowered: the effect's index and its form's keys
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "set", "target": "/hub.md", "field": "content", "value": 5 }]),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(
+            e.message,
+            "`content` takes a string value: the complete proposed document (set takes op, target, field, value, expect?)"
+        );
+        assert_eq!(data(&e)["hint"], "arguments");
+        assert_eq!(data(&e)["effect_index"], 0);
+        assert_eq!(
+            data(&e)["valid_keys"],
+            json!(["op", "target", "field", "value", "expect?"])
+        );
+        // a selection error is not a shape error: no list
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "create", "path": "-> nope(", "markdown": "x" }]),
+        )
+        .unwrap_err();
+        assert_eq!(data(&e)["hint"], HINT);
+        assert!(data(&e).get("valid_keys").is_none());
+    }
+
+    /// §8 / §11.3 (4.5): `set content` on a missing path offers the create;
+    /// an anchor under a document `into` names its own place, and one that
+    /// contradicts a block `into` is refused with its real parent.
+    #[test]
+    fn missing_documents_and_misplaced_anchors_name_the_correction() {
+        let (mut store, ctx, ds) = seeded();
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "set", "target": "/notes/new.md", "field": "content", "value": "# New\n" }]),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "doc_missing");
+        assert_eq!(
+            e.message,
+            "doc /notes/new.md not found — `set content` replaces a document that exists; a new one is `create { path, markdown }`"
+        );
+        assert_eq!(
+            data(&e)["fix"],
+            r##"{"effects":[{"markdown":"# New\n","op":"create","path":"/notes/new.md"}]}"##
+        );
+        // a block `into` claims the container: an anchor that is not among
+        // its children is refused with its real parent (l.md: `$new.1` the
+        // list, `$new.2` / `$new.3` its items, `$new.4` the paragraph)
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([
+                { "op": "create", "path": "l.md", "markdown": "- one\n- two\n\nTail.\n" },
+                { "op": "insert", "into": "$new.1", "at": { "after": "$new.4" }, "markdown": "- x" },
+            ]),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "target_missing");
+        assert_eq!(
+            e.message,
+            "anchor $new.4 is not a child of `into`: it is at the top level of /l.md — write into: \"/l.md\""
+        );
+        assert_eq!(data(&e)["anchor"], "$new.4");
+        assert_eq!(data(&e)["parent"], Json::Null);
+        assert_eq!(data(&e)["_path"], "/l.md");
+        assert_eq!(data(&e)["effect_index"], 1);
+        // (hub.md: b_0 `# Hub`, b_1 `## Status`, b_2 the paragraph)
+        // a document `into` claims the document: an anchor of another one is refused
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "insert", "into": "/ws/alpha.md", "at": { "after": "b_2" }, "markdown": "x" }]),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "target_missing");
+        assert_eq!(data(&e)["anchor"], "b_2");
+        assert_eq!(
+            data(&e)["fix"],
+            r#"{"effects":[{"at":{"after":"b_2"},"into":"/hub.md","markdown":"x","op":"insert"}]}"#
+        );
+        // a nested anchor under a document `into` lands under its parent
+        let plan = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([
+                { "op": "create", "path": "l.md", "markdown": "- one\n- two\n" },
+                { "op": "insert", "into": "$new.0", "at": { "after": "$new.2" }, "markdown": "- between" },
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            plan.opset.ops[0].to_json(),
+            json!({ "op": "insert", "to": { "parent": "$new.1", "at": { "after": "$new.2" } }, "markdown": "- between" })
+        );
     }
 }

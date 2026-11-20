@@ -4,7 +4,7 @@ import { TUPLE_HINT, bracketListAsTuple, checkRootSpellings, oqxRunQuery, reserv
 import { rootTarget } from "../oqx-js/planner.js";
 import { FilterInvalid } from "../core/filter-invalid.js";
 import {
-  EFFECT_OPS, EXPRESSION_LEADER, bareTarget, effectInvalid, findDocumentTarget, isNewSymbol, isTargetId, looksLikePath, validateEffect, validateTarget,
+  EFFECT_OPS, EXPRESSION_LEADER, bareTarget, effectInvalid, findDocumentTarget, isNewSymbol, isTargetId, looksLikePath, validateEffect, validateTarget, withValidKeys,
   type Effect, type EffectTarget, type ShapeFixContext,
 } from "./effects.js";
 import { MutationError } from "./tree.js";
@@ -736,7 +736,11 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
         if (!isRowRef(v) && !looksLikePath(ref) && !isTargetId(ref) && !isNewSymbol(ref)) {
           throw selectionInvalid(`${s.here}: the expression yielded ${describeValue(v)}, not an identity (a document path, an id or a row)`, { ...data, expression: s.expression });
         }
-        s.put(e, bareTarget(ref, s.here));
+        try {
+          s.put(e, bareTarget(ref, s.here));
+        } catch (err) {
+          throw withValidKeys(err, e);
+        }
         break;
       }
       case "string":
@@ -813,7 +817,7 @@ function scopeOf(store: Store, repoId: string, e: Record<string, unknown>, i: nu
       break;
     default:
       validateEffect(e, i); // an unknown op (or `retarget`): the shape check refuses it
-      throw effectInvalid(`${here}: \`op\` ${JSON.stringify(e.op)} is not row-shaped`);
+      throw withValidKeys(effectInvalid(`${here}: \`op\` ${JSON.stringify(e.op)} is not row-shaped`), e);
   }
   if (isOqx(v) || (isRecord(v) && (isOqx(v._id) || isOqx(v._path)))) throw needsSelector(`${here}.${key!}`);
   const t = validateTarget(v, `${here}.${key!}`, kinds!);
@@ -878,7 +882,13 @@ export function compilePlain(store: Store, repoId: string, raw: unknown): Compil
       effects[i] = validateEffect(e, i, fix);
       return;
     }
-    const scope = scopeOf(store, repoId, e, i);
+    // (4.5) every shape refusal about an effect names its form's keys — the target checks `scopeOf` runs itself included.
+    let scope: Scope;
+    try {
+      scope = scopeOf(store, repoId, e, i);
+    } catch (err) {
+      throw withValidKeys(err, e);
+    }
     const t = admitTemplate(e, i, scope.root, true, fix);
     if (t.slots.length === 0) {
       // `{ oqx }` only inside data (a nested `value`): literal, as for a template.
