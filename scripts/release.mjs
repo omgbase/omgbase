@@ -19,6 +19,7 @@ import { computePlan, renderPlan } from "./lib/plan.mjs";
 import { applyPlan } from "./lib/apply.mjs";
 import { registryStatus } from "./lib/registry.mjs";
 import { runPublish } from "./lib/publish.mjs";
+import { defaultCheckBase, gitIn } from "./lib/check-base.mjs";
 
 const USAGE = `usage: release <command> [options]
 
@@ -99,14 +100,6 @@ function sequenceLines(plan, ws) {
 
 // ---------------------------------------------------------------- check
 
-function defaultBase() {
-  const head = git(["rev-parse", "HEAD"]).stdout.trim();
-  const mb = git(["merge-base", "HEAD", "origin/main"], { allowFailure: true });
-  const base = mb.status === 0 ? mb.stdout.trim() : null;
-  if (!base) return "HEAD~1";
-  return base === head ? "HEAD~1" : base;
-}
-
 function changedFiles(base) {
   const diff = git(["diff", "--name-only", base]).stdout.split("\n");
   const untracked = git(["ls-files", "--others", "--exclude-standard"]).stdout.split("\n");
@@ -114,7 +107,8 @@ function changedFiles(base) {
 }
 
 function check(ws, flags) {
-  const base = flags.base ?? defaultBase();
+  const picked = flags.base ? { base: flags.base, label: flags.base, why: "--base" } : defaultCheckBase(gitIn(ROOT));
+  const { base } = picked;
   const files = changedFiles(base);
   const { notes, errors } = loadNotes(ws);
   const noted = new Set(notes.flatMap((n) => n.bumps.map((b) => b.key)));
@@ -130,7 +124,7 @@ function check(ws, flags) {
     if (!owners.has(key)) owners.set(key, []);
     owners.get(key).push(f);
   }
-  console.log(`release check: ${files.length} file${files.length === 1 ? "" : "s"} changed since ${base} (working tree included)`);
+  console.log(`release check: ${files.length} file${files.length === 1 ? "" : "s"} changed since ${picked.label} (${picked.why})`);
   console.log(`  ${owners.size} package${owners.size === 1 ? "" : "s"} touched, ${ignored.length} test/corpus/README/CHANGELOG file${ignored.length === 1 ? "" : "s"} ignored`);
   console.log(`  ${notes.length} pending note${notes.length === 1 ? "" : "s"} in changes/${notes.length ? ": " + notes.map((n) => n.slug).join(", ") : ""}`);
   const missing = [...owners.keys()].filter((k) => !noted.has(k)).sort();

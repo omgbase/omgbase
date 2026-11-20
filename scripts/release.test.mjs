@@ -10,6 +10,7 @@ import { foldLevel, bumpVersion, computePlan, renderPlan } from "./lib/plan.mjs"
 import { bumpPackageJson, bumpCargoToml, rewriteCargoPins, renderChangelogSection, prependChangelogSection, bodyAsBullet, applyPlan, changelogHeader } from "./lib/apply.mjs";
 import { parseNpmJson } from "./lib/registry.mjs";
 import { otpRejected } from "./lib/publish.mjs";
+import { defaultCheckBase, gitIn } from "./lib/check-base.mjs";
 
 // ---------------------------------------------------------------- fixture workspace
 
@@ -386,4 +387,77 @@ test("otpRejected recognizes npm's one-time-password refusals and nothing else",
   assert.equal(otpRejected("npm ERR! 401 Unauthorized - PUT https://registry.npmjs.org/@omgbase%2fcore - You must provide a one-time pass. Upgrade your client to npm@latest in order to use 2FA."), true);
   assert.equal(otpRejected('Failed to publish package @omgbase/sync@0.4.1 (status 403 Forbidden):\n{"success":false,"error":"You cannot publish over the previously published versions: 0.4.1."}'), false);
   assert.equal(otpRejected("npm error code E404"), false);
+});
+
+// ---------------------------------------------------------------- check base
+
+function repo() {
+  const dir = mkdtempSync(join(tmpdir(), "release-base-"));
+  const run = gitIn(dir);
+  const g = (...args) => {
+    const r = run(args);
+    assert.equal(r.status, 0, `git ${args.join(" ")}`);
+    return r.stdout.trim();
+  };
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "t@example.com");
+  g("config", "user.name", "t");
+  g("config", "commit.gpgsign", "false");
+  const commit = (subject, file = subject.replace(/\W+/g, "-")) => {
+    writeFileSync(join(dir, file), subject);
+    g("add", "-A");
+    g("commit", "-q", "-m", subject);
+    return g("rev-parse", "HEAD");
+  };
+  const push = () => g("update-ref", "refs/remotes/origin/main", "HEAD");
+  return { dir, run, commit, push };
+}
+
+test("check base: in sync with origin and clean → the last commit", () => {
+  const r = repo();
+  const a = r.commit("a");
+  r.commit("b");
+  r.push();
+  assert.deepEqual(defaultCheckBase(r.run), { base: a, label: "HEAD~1", why: "the last commit" });
+  rmSync(r.dir, { recursive: true });
+});
+
+test("check base: in sync with origin and dirty → the working tree only", () => {
+  const r = repo();
+  r.commit("a");
+  const b = r.commit("b");
+  r.push();
+  writeFileSync(join(r.dir, "new"), "x");
+  assert.deepEqual(defaultCheckBase(r.run), { base: b, label: "HEAD", why: "working tree" });
+  rmSync(r.dir, { recursive: true });
+});
+
+test("check base: right after a pushed release commit → nothing behind it is checked", () => {
+  const r = repo();
+  r.commit("a");
+  const rel = r.commit("release: x@1.0.0");
+  r.push();
+  assert.equal(defaultCheckBase(r.run).base, rel); // clean: the release itself needs no notes
+  writeFileSync(join(r.dir, "README.md"), "x");
+  assert.equal(defaultCheckBase(r.run).base, rel); // dirty: the working tree only
+  rmSync(r.dir, { recursive: true });
+});
+
+test("check base: unpushed commits → origin/main, clamped to an unpushed release commit", () => {
+  const r = repo();
+  const a = r.commit("a");
+  r.push();
+  r.commit("b");
+  assert.deepEqual(defaultCheckBase(r.run), { base: a, label: "origin/main", why: "unpushed commits + working tree" });
+  const rel = r.commit("release: x@1.0.0");
+  r.commit("c");
+  assert.equal(defaultCheckBase(r.run).base, rel);
+  rmSync(r.dir, { recursive: true });
+});
+
+test("check base: no origin/main and a single commit → HEAD", () => {
+  const r = repo();
+  const a = r.commit("a");
+  assert.deepEqual(defaultCheckBase(r.run), { base: a, label: "HEAD", why: "working tree" });
+  rmSync(r.dir, { recursive: true });
 });
